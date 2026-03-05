@@ -17,7 +17,7 @@ const pool = new Pool({
   max: 20, // Número máximo de clientes no pool
   min: 2, // Número mínimo de clientes no pool
   idleTimeoutMillis: 30000, // Tempo que um cliente pode ficar ocioso
-  connectionTimeoutMillis: 10000, // Tempo máximo para tentar conectar
+  connectionTimeoutMillis: 20000, // Tempo máximo para tentar conectar
   allowExitOnIdle: true, // Permite que o processo saia quando o pool estiver ocioso
   ssl: true,
   sslmode: 'require',
