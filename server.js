@@ -20,6 +20,7 @@ let leadsInitialized = false;
 
 // Porta padrão: 4000 (e respeita PORT se o host definir)
 const PORT = Number(process.env.PORT) || 4000;
+const PORT_HEALTH = Number(process.env.PORT_HEALTH) || 8000;
 
 // Cria servidor HTTP (necessário para socket.io)
 const server = http.createServer(app);
@@ -180,7 +181,7 @@ async function startServer() {
     console.log("✅ SERVIDOR PRINCIPAL ATIVO");
     console.log("=".repeat(60));
     console.log(`📡 Porta: ${PORT}`);
-    console.log(`🏥 Health Check: http://localhost:${PORT}/health`);
+    console.log(`🏥 Health Check: http://localhost:${PORT_HEALTH}/health`);
 
     if (leadsInitialized) {
       console.log(`🚗 Leads: http://localhost:${PORT}/garagemweb/api/leads`);
