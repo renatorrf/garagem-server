@@ -20,7 +20,6 @@ let leadsInitialized = false;
 
 // Porta padrão: 4000 (e respeita PORT se o host definir)
 const PORT = Number(process.env.PORT) || 4000;
-const PORT_HEALTH = Number(process.env.PORT_HEALTH) || 8000;
 
 // Cria servidor HTTP (necessário para socket.io)
 const server = http.createServer(app);
@@ -68,10 +67,9 @@ async function testKoyebAPI() {
 
     console.log("Koyeb Services:", resp.data);
   } catch (error) {
-    const msg =
-      error?.response?.data
-        ? JSON.stringify(error.response.data)
-        : error?.message || error;
+    const msg = error?.response?.data
+      ? JSON.stringify(error.response.data)
+      : error?.message || error;
     console.error("Erro ao acessar Koyeb API:", msg);
   }
 }
@@ -80,7 +78,9 @@ async function initializeLeadsSystem() {
   try {
     // Verificar se as variáveis de email estão configuradas
     if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
-      console.log("⚠️  Sistema de leads: Credenciais de email não configuradas");
+      console.log(
+        "⚠️  Sistema de leads: Credenciais de email não configuradas",
+      );
       console.log("💡 Para ativar, configure no .env:");
       console.log("   EMAIL_USER=leads.nextcaruberlandia@gmail.com");
       console.log("   EMAIL_PASSWORD=sua_app_password");
@@ -110,7 +110,9 @@ async function initializeLeadsSystem() {
     return true;
   } catch (error) {
     console.error("❌ Erro ao inicializar sistema de leads:", error.message);
-    console.log("⚠️  O sistema principal continuará funcionando sem captura de leads");
+    console.log(
+      "⚠️  O sistema principal continuará funcionando sem captura de leads",
+    );
     return false;
   }
 }
@@ -164,7 +166,13 @@ process.on("unhandledRejection", (reason) => {
 async function startServer() {
   console.log("🚀 Iniciando sistema Garagem Web...");
   console.log(`📊 Ambiente: ${process.env.NODE_ENV || "development"}`);
-  console.log(`👤 Banco: ${process.env.DATABASE_URL?.split("@")[1] || "Configurado"}`);
+  console.log(
+    `👤 Banco: ${process.env.DATABASE_URL?.split("@")[1] || "Configurado"}`,
+  );
+
+  if (process.env.NODE_ENV !== "production") {
+    require("dotenv-safe").config({ example: ".env.example" });
+  }
 
   // Rodar testes do Koyeb apenas quando explicitamente solicitado
   if (process.env.RUN_KOYEB_TESTS === "true") {
@@ -181,7 +189,7 @@ async function startServer() {
     console.log("✅ SERVIDOR PRINCIPAL ATIVO");
     console.log("=".repeat(60));
     console.log(`📡 Porta: ${PORT}`);
-    console.log(`🏥 Health Check: http://localhost:${PORT_HEALTH}/health`);
+    console.log(`🏥 Health Check: http://localhost:${PORT}/health`);
 
     if (leadsInitialized) {
       console.log(`🚗 Leads: http://localhost:${PORT}/garagemweb/api/leads`);
