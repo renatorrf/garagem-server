@@ -1,5 +1,7 @@
 const db = require("../config/database");
-require("dotenv-safe").config();
+if (process.env.NODE_ENV !== "production") {
+  require("dotenv-safe").config({ example: ".env.example" });
+}
 const moment = require("moment");
 const cron = require('node-cron');
 const jwt = require("jsonwebtoken");
