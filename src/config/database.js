@@ -20,6 +20,7 @@ const pool = new Pool({
   connectionTimeoutMillis: 10000, // Tempo máximo para tentar conectar
   allowExitOnIdle: true, // Permite que o processo saia quando o pool estiver ocioso
   ssl: true,
+  sslmode: 'require',
 });
 
 // Tratamento de erros centralizado
