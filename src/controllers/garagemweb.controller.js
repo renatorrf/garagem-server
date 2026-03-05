@@ -336,7 +336,7 @@ exports.salvaVeiculo = async (req, res) => {
       success: false,
       message: 'Erro ao processar a requisição no servidor',
       details: error.message,
-      errorDetails: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      //errorDetails: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 };
@@ -533,7 +533,7 @@ exports.buscaImgVeiculo = async (req, res) => {
       success: false,
       message: 'Falha ao recuperar imagens do veículo',
       details: error.message,
-      errorDetails: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      //errorDetails: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 };
@@ -1690,7 +1690,7 @@ exports.importarFinanceiroOFX = async (req, res) => {
       success: false,
       message: 'Erro ao importar movimentos OFX',
       details: error.message,
-      errorDetails: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      //errorDetails: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 };
@@ -1766,7 +1766,7 @@ exports.conciliarEncontrados = async (req, res) => {
       success: false,
       message: 'Erro ao conciliar movimentos',
       details: error.message,
-      errorDetails: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      //errorDetails: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 };
