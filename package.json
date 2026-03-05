@@ -1,0 +1,72 @@
+{
+  "name": "garagemweb",
+  "version": "1.0.0",
+  "description": "Sistema completo de gestão + NextCar Leads",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "dev": "nodemon server.js",
+    "lint": "eslint --ext .js, -f ./node_modules/eslint-friendly-formatter . --fix",
+    "prepush": "npm run lint",
+    "start": "node server.js",
+    "leads:setup": "node scripts/leads/setup-database.js",
+    "leads:test-email": "node scripts/leads/test-email.js",
+    "leads:test-db": "node scripts/leads/test-database.js",
+    "leads:backfill": "RUN_BACKFILL=true node server.js",
+    "leads:seed-test": "node scripts/leads/seed-test-leads.js",
+    "health": "curl -s http://localhost:3001/health | jq . || echo 'Servidor não está rodando'",
+    "leads:status": "curl -s http://localhost:3001/garagemweb/api/leads/email/status || echo 'Servidor não está rodando'",
+    "leads:stats": "curl -s http://localhost:3001/garagemweb/api/leads/dashboard/stats || echo 'Servidor não está rodando'",
+    "docker:build": "docker build -t inventarionline .",
+    "docker:run": "docker run -p 3001:3001 --env-file .env inventarionline"
+  },
+  "author": "RenatoFilho",
+  "license": "MIT",
+  "devDependencies": {
+    "eslint": "^8.11.0",
+    "eslint-friendly-formatter": "^4.0.1",
+    "husky": "^7.0.4",
+    "nodemon": "^2.0.22"
+  },
+  "dependencies": {
+    "@koyeb/api-client-js": "^1.1.6",
+    "@koyeb/sandbox-sdk": "^1.0.9",
+    "axios": "^1.6.7",
+    "cheerio": "^1.2.0",
+    "cjs": "^0.0.11",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.0",
+    "dotenv-safe": "^8.2.0",
+    "express": "^4.22.1",
+    "express-promise-router": "^4.1.1",
+    "fast-xml-parser": "^5.3.7",
+    "github": "^14.0.0",
+    "imap": "^0.8.19",
+    "jsonwebtoken": "^8.5.1",
+    "mailparser": "^3.9.1",
+    "moment": "^2.29.4",
+    "morgan": "^1.10.1",
+    "multer": "^1.4.5-lts.1",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.9.7",
+    "pdfkit": "^0.13.0",
+    "pg": "^8.11.3",
+    "socket.io": "^4.7.2"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
+  },
+  "keywords": [
+    "inventario",
+    "bi",
+    "digitalrf",
+    "gestao",
+    "cadastros",
+    "vendas",
+    "financeiro",
+    "nextcar",
+    "leads",
+    "automotivo"
+  ]
+}
