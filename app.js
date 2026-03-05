@@ -14,6 +14,7 @@ const app = express();
 const corsOptions = {
   origin: [
     "https://localhost:8100",
+    "http://localhost:8100",
     "https://nextcarltda.firebaseapp.com",
     "http://localhost:3000",
     "http://localhost:4200",
