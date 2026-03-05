@@ -270,7 +270,7 @@ class EmailCaptureService {
           nome: platformData.parsed.nome || "Não informado",
           veiculoInteresse:
             platformData.parsed.veiculo ||
-            extractVehicleInfo(subject, text || ""),
+            this.extractVehicleInfo(subject, text || ""),
           mensagem: subject,
           origem: platformData.platform,
           status: "novo",
