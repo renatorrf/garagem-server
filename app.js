@@ -64,7 +64,6 @@ app.use("/garagemweb/webhooks/whatsapp", whatsappWebhookRoutes);
 /**
  * ✅ Iniciar workflow (crons)
  */
-const LeadWorkflowService = require("./src/services/LeadWorkflowService");
 LeadWorkflowService.start();
 
 app.get("/healthz", (req, res) => res.status(200).send("ok"));
