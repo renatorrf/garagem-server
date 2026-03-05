@@ -201,54 +201,28 @@ class EmailCaptureService {
 
   async processMessage(msg, leads) {
     return new Promise((resolve, reject) => {
-      const messageData = {
-        attributes: null,
-        buffer: "",
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        resolve();
       };
 
-      // Capturar atributos
-      msg.on("attributes", (attrs) => {
-        messageData.attributes = attrs;
-      });
+      const timeout = setTimeout(() => {
+        console.warn("⏰ Timeout no processamento de mensagem");
+        finish();
+      }, 30000);
 
-      // Capturar corpo
-      msg.on("body", (stream) => {
-        stream.on("data", (chunk) => {
-          messageData.buffer += chunk.toString("utf8");
-        });
-      });
-
-      // Quando a mensagem terminar
+      // ...
       msg.once("end", async () => {
+        clearTimeout(timeout);
         try {
-          if (!messageData.buffer) {
-            console.warn("⚠️ Mensagem sem conteúdo");
-            return resolve();
-          }
-
-          const parsed = await simpleParser(messageData.buffer);
-          const lead = await this.saveLeadFromEmail(
-            parsed,
-            messageData.attributes || {},
-          );
-
-          if (lead) {
-            leads.push(lead);
-            console.log(`📝 Processado: ${lead.emailRemetente}`);
-          }
-
-          resolve();
-        } catch (error) {
-          console.error("❌ Erro ao processar mensagem:", error.message);
-          reject(error);
+          // processa
+          finish();
+        } catch (e) {
+          finish(); // ou reject(e) se quiser falhar
         }
       });
-
-      // Timeout para evitar mensagens travadas
-      setTimeout(() => {
-        console.warn("⏰ Timeout no processamento de mensagem");
-        resolve();
-      }, 30000); // 30 segundos timeout
     });
   }
 
@@ -296,7 +270,7 @@ class EmailCaptureService {
           nome: platformData.parsed.nome || "Não informado",
           veiculoInteresse:
             platformData.parsed.veiculo ||
-            this.extractVehicleInfo(subject, text || ""),
+            extractVehicleInfo(subject, text || ""),
           mensagem: subject,
           origem: platformData.platform,
           status: "novo",
@@ -372,6 +346,13 @@ class EmailCaptureService {
         console.log(`   Origem: ${savedLead.origem}`);
         console.log(`   Veículo: ${savedLead.veiculoInteresse}`);
         console.log(`   Status: ${savedLead.status}`);
+
+        try {
+          const LeadWorkflowService = require("./LeadWorkflowService");
+          await LeadWorkflowService.onNewLead(savedLead);
+        } catch (e) {
+          console.error("⚠️ Falha ao notificar WhatsApp:", e.message);
+        }
       }
 
       return savedLead;
@@ -959,6 +940,58 @@ class EmailCaptureService {
     }
 
     return "baixa";
+  }
+
+  htmlToText(html) {
+    if (!html) return "";
+    try {
+      const $ = cheerio.load(html);
+      $("script, style").remove();
+      return $("body").text().replace(/\s+/g, " ").trim();
+    } catch {
+      return String(html)
+        .replace(/<[^>]*>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+  }
+
+  extractVehicleInfo(subject = "", text = "") {
+    const combined = (subject + " " + text).trim();
+    return combined ? combined.substring(0, 120) : "Veículo não especificado";
+  }
+
+  extractLeadData(emailData) {
+    const text = emailData.text || this.htmlToText(emailData.html);
+    const subject = emailData.subject || "";
+
+    const phone = (
+      text.match(/(\+55)?\s?\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}/)?.[0] || ""
+    ).replace(/\D/g, "");
+    return {
+      telefone: phone.length >= 10 ? phone : null,
+      nome: null,
+      veiculo: this.extractVehicleInfo(subject, text),
+    };
+  }
+
+  detectClassifiedOrigin(emailData) {
+    const { subject, text, html } = emailData;
+    const fullText = (
+      subject +
+      " " +
+      (text || "") +
+      " " +
+      this.htmlToText(html || "")
+    ).toLowerCase();
+
+    if (fullText.includes("olx")) return "OLX";
+    if (fullText.includes("webmotors")) return "Webmotors";
+    if (fullText.includes("icarros")) return "iCarros";
+    if (fullText.includes("mercadolivre")) return "MercadoLivre";
+    if (fullText.includes("facebook")) return "Facebook";
+    if (fullText.includes("instagram")) return "Instagram";
+    return "Email";
   }
 
   // extractLeadData(emailData) {

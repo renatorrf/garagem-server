@@ -40,22 +40,6 @@ io.on("connection", (socket) => {
   });
 });
 
-async function testSandbox() {
-  try {
-    const sandbox = await Sandbox.create({
-      image: "ubuntu",
-      name: "hello-world",
-      wait_ready: true,
-    });
-
-    const result = await sandbox.exec("echo 'Sandbox is ready!'");
-    console.log(result.stdout);
-
-    await sandbox.delete();
-  } catch (error) {
-    console.error("Erro ao testar Sandbox:", error?.message || error);
-  }
-}
 
 async function testKoyebAPI() {
   try {
