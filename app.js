@@ -138,7 +138,7 @@ const emailCaptureRoutes = require("./src/routes/lead.router");
 app.use(index);
 app.use("/garagemweb/", garagemWeb);
 app.use("/garagemweb/integradores", integrador);
-app.use("/garagemweb/api", emailCaptureRoutes); // Rotas de leads em /garagemweb/api/leads
+app.use("/garagemweb/leads", emailCaptureRoutes); // Rotas de leads em /garagemweb/api/leads
 app.post("/importar-garaje", importadorGaraje.importarGarajeManual);
 
 //inicia o cron ao subir o servidor
