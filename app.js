@@ -47,6 +47,8 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 
+app.get("/healthz", (req, res) => res.status(200).send("ok"));
+
 // Health Check aprimorado
 app.get('/health', async (req, res) => {
   try {
@@ -72,6 +74,15 @@ app.get('/health', async (req, res) => {
       timestamp: new Date().toISOString(),
       error: error.message
     });
+  }
+});
+
+app.get("/ready", async (req, res) => {
+  try {
+    await db.query("SELECT 1");
+    res.status(200).send("ready");
+  } catch {
+    res.status(503).send("db not ready");
   }
 });
 

@@ -13,14 +13,10 @@ dotenv.config();
 // Configurações avançadas do pool de conexões
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  // Configurações recomendadas para otimização
-  max: 20, // Número máximo de clientes no pool
-  min: 2, // Número mínimo de clientes no pool
-  idleTimeoutMillis: 30000, // Tempo que um cliente pode ficar ocioso
-  connectionTimeoutMillis: 20000, // Tempo máximo para tentar conectar
-  allowExitOnIdle: true, // Permite que o processo saia quando o pool estiver ocioso
-  ssl: true,
-  sslmode: 'require',
+  ssl: { rejectUnauthorized: true }, // se der erro de certificado, mude p/ false
+  max: 5,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 30000,
 });
 
 // Tratamento de erros centralizado
