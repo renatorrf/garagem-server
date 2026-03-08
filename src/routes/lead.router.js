@@ -25,4 +25,6 @@ router.post('/email/manual-process', EmailCaptureController.processManualEmail);
 
 router.get('/leads', leads.getLeads);
 
+router.get('/leads/dashboard', leads.getDashboardStats);
+
 module.exports = router;
