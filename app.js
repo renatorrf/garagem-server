@@ -144,7 +144,7 @@ app.post("/importar-garaje", importadorGaraje.importarGarajeManual);
 //inicia o cron ao subir o servidor
 importadorGaraje.startGarajeCron({
   schema: process.env.SCHEMA_PADRAO, // obrigatório
- url: process.env.GARAJE_URL
+  url: process.env.GARAJE_URL
 });
 
 // Middleware para 404

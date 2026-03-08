@@ -2,9 +2,6 @@
 const db = require("../config/database");
 
 class Lead {
-  /**
-   * Construtor do lead
-   */
   constructor(data = {}) {
     this.id = data.id;
     this.emailId = data.email_id || data.emailId;
@@ -18,12 +15,12 @@ class Lead {
     this.origem = data.origem || "Email";
     this.status = data.status || "novo";
     this.prioridade = data.prioridade || "media";
-    this.dataRecebimento =
-      data.data_recebimento || data.dataRecebimento || new Date();
+    this.dataRecebimento = data.data_recebimento || data.dataRecebimento || new Date();
     this.dataContato = data.data_contato || data.dataContato;
     this.observacoes = data.observacoes;
     this.vendedorId = data.vendedor_id || data.vendedorId;
     this.metadata = data.metadata || {};
+
     if (typeof this.metadata === "string") {
       try {
         this.metadata = JSON.parse(this.metadata);
@@ -31,67 +28,50 @@ class Lead {
         this.metadata = {};
       }
     }
-    this.score = data.score || this.calculateScore();
+
+    this.score = data.score ?? this.calculateScore();
     this.tags = data.tags || this.extractTags();
     this.createdAt = data.created_at || data.createdAt || new Date();
     this.updatedAt = data.updated_at || data.updatedAt || new Date();
   }
 
-  /**
-   * Calcular score do lead
-   */
+  static get tableName() {
+    return "teste.leads";
+  }
+
   calculateScore() {
     let score = 0;
 
-    // Telefone presente: +20 pontos
     if (this.telefone && this.telefone.length >= 10) score += 20;
-
-    // Nome presente: +10 pontos
     if (this.nome && this.nome.length > 3) score += 10;
-
-    // Veículo especificado: +15 pontos
     if (this.veiculoInteresse) score += 15;
 
-    // Palavras-chave de urgência
+    const text = `${this.assunto || ""} ${this.mensagem || ""}`.toLowerCase();
     const urgentKeywords = ["urgente", "hoje", "imediato", "rápido", "agora"];
-    const text = (this.assunto + " " + this.mensagem).toLowerCase();
-    if (urgentKeywords.some((keyword) => text.includes(keyword))) score += 25;
 
-    // Mensagem longa (mais detalhes): +10 pontos
+    if (urgentKeywords.some((keyword) => text.includes(keyword))) score += 25;
     if (this.mensagem && this.mensagem.length > 100) score += 10;
 
     return Math.min(score, 100);
   }
 
-  /**
-   * Extrair tags automaticamente
-   */
   extractTags() {
     const tags = [];
-    const text = (
-      (this.assunto || "") +
-      " " +
-      (this.mensagem || "")
-    ).toLowerCase();
+    const text = `${this.assunto || ""} ${this.mensagem || ""} ${this.veiculoInteresse || ""}`.toLowerCase();
 
-    // Tags por origem
     if (this.origem) tags.push(this.origem.toLowerCase());
 
-    // Tags por tipo de interesse
     const interests = {
-      financiamento: ["financiamento", "parcelamento", "entrada"],
+      financiamento: ["financiamento", "parcelamento", "entrada", "crédito", "pre-analisado"],
       troca: ["troca", "permuta", "meu carro"],
-      consórcio: ["consórcio", "carta"],
-      "teste-drive": ["test drive", "experimentar", "dirigir"],
+      consorcio: ["consórcio", "consorcio", "carta"],
+      "teste-drive": ["test drive", "teste drive", "experimentar", "dirigir"],
     };
 
     Object.entries(interests).forEach(([tag, keywords]) => {
-      if (keywords.some((keyword) => text.includes(keyword))) {
-        tags.push(tag);
-      }
+      if (keywords.some((keyword) => text.includes(keyword))) tags.push(tag);
     });
 
-    // Tags de veículo
     const vehicleTypes = {
       suv: ["suv", "4x4", "off-road"],
       hatch: ["hatch", "hatchback"],
@@ -101,17 +81,12 @@ class Lead {
     };
 
     Object.entries(vehicleTypes).forEach(([tag, keywords]) => {
-      if (keywords.some((keyword) => text.includes(keyword))) {
-        tags.push(tag);
-      }
+      if (keywords.some((keyword) => text.includes(keyword))) tags.push(tag);
     });
 
-    return [...new Set(tags)]; // Remover duplicatas
+    return [...new Set(tags)];
   }
 
-  /**
-   * Validar lead
-   */
   validate() {
     const errors = [];
 
@@ -123,19 +98,11 @@ class Lead {
       errors.push("emailRemetente inválido");
     }
 
-    if (
-      this.status &&
-      !["novo", "contatado", "agendado", "vendido", "perdido"].includes(
-        this.status,
-      )
-    ) {
+    if (this.status && !["novo", "contatado", "agendado", "vendido", "perdido"].includes(this.status)) {
       errors.push("status inválido");
     }
 
-    if (
-      this.prioridade &&
-      !["alta", "media", "baixa"].includes(this.prioridade)
-    ) {
+    if (this.prioridade && !["alta", "media", "baixa"].includes(this.prioridade)) {
       errors.push("prioridade inválida");
     }
 
@@ -143,49 +110,18 @@ class Lead {
   }
 
   isValidEmail(email) {
-    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return re.test(email);
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   }
 
-  /**
-   * Salvar lead no banco
-   */
-  // models/Lead.js - Atualize o método save()
-
   async save() {
-    console.log("\n💾 INICIANDO SAVE DO LEAD");
-    console.log(
-      "Dados recebidos:",
-      JSON.stringify(
-        {
-          emailId: this.emailId,
-          remetente: this.remetente,
-          emailRemetente: this.emailRemetente,
-          assunto: this.assunto,
-          telefone: this.telefone,
-          nome: this.nome,
-          veiculoInteresse: this.veiculoInteresse,
-          mensagem: this.mensagem?.substring(0, 100),
-          origem: this.origem,
-          status: this.status,
-          prioridade: this.prioridade,
-        },
-        null,
-        2,
-      ),
-    );
     const errors = this.validate();
     if (errors.length > 0) {
       throw new Error(`Validation failed: ${errors.join(", ")}`);
     }
 
-    // Atualizar timestamp
     this.updatedAt = new Date();
-    if (!this.createdAt) {
-      this.createdAt = new Date();
-    }
+    if (!this.createdAt) this.createdAt = new Date();
 
-    // Garantir valores padrão para campos obrigatórios
     const insertData = {
       emailId: this.emailId,
       remetente: this.remetente || "Não informado",
@@ -203,22 +139,25 @@ class Lead {
       observacoes: this.observacoes || null,
       vendedorId: this.vendedorId || null,
       metadata: this.metadata || {},
-      score: this.score || 0,
+      score: this.score ?? 0,
       tags: this.tags || [],
       createdAt: this.createdAt,
       updatedAt: this.updatedAt,
     };
 
     const query = `
-    INSERT INTO teste.leads (
-      email_id, remetente, email_remetente, assunto, telefone, 
-      nome, veiculo_interesse, mensagem, origem, status, 
-      prioridade, data_recebimento, data_contato, observacoes, 
-      vendedor_id, metadata, score, tags, created_at, updated_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
-    ON CONFLICT (email_id) DO NOTHING
-    RETURNING *
-  `;
+      INSERT INTO ${Lead.tableName} (
+        email_id, remetente, email_remetente, assunto, telefone,
+        nome, veiculo_interesse, mensagem, origem, status,
+        prioridade, data_recebimento, data_contato, observacoes,
+        vendedor_id, metadata, score, tags, created_at, updated_at
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+        $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
+      )
+      ON CONFLICT (email_id) DO NOTHING
+      RETURNING *;
+    `;
 
     const params = [
       insertData.emailId,
@@ -243,56 +182,15 @@ class Lead {
       insertData.updatedAt,
     ];
 
-    console.log("💾 Tentando salvar lead com parâmetros:");
-    console.log(`   Email ID: ${insertData.emailId}`);
-    console.log(`   Nome: ${insertData.nome}`);
-    console.log(`   Email: ${insertData.emailRemetente}`);
-    console.log(`   Telefone: ${insertData.telefone}`);
-    console.log(`   Veículo: ${insertData.veiculoInteresse}`);
-    console.log(`   Origem: ${insertData.origem}`);
-
-    try {
-      const result = await db.query(query, params);
-
-      if (result.rows.length === 0) {
-        console.log("⚠️  Lead não inserido (provavelmente já existe)");
-        return null;
-      }
-
-      console.log(`✅ Lead inserido com ID: ${result.rows[0].id}`);
-      return new Lead(result.rows[0]);
-    } catch (error) {
-      console.error("❌ ERRO no INSERT:");
-      console.error("   Query:", query);
-      console.error(
-        "   Parâmetros:",
-        params.map((p, i) => `${i + 1}: ${p}`).join(", "),
-      );
-      console.error("   Erro PostgreSQL:", error.message);
-      console.error("   Código:", error.code);
-      console.error("   Detalhe:", error.detail);
-
-      if (error.code === "23505") {
-        // Unique violation
-        throw new Error("Lead com este emailId já existe");
-      }
-      throw error;
-    }
+    const result = await db.query(query, params);
+    return result.rows[0] ? new Lead(result.rows[0]) : null;
   }
 
-  /**
-   * Atualizar lead
-   */
   async update(updates = {}) {
     Object.assign(this, updates);
     this.updatedAt = new Date();
 
-    if (
-      updates.assunto ||
-      updates.mensagem ||
-      updates.status ||
-      updates.prioridade
-    ) {
+    if (updates.assunto || updates.mensagem || updates.status || updates.prioridade) {
       this.score = this.calculateScore();
       this.tags = this.extractTags();
     }
@@ -321,86 +219,65 @@ class Lead {
       tags: "tags",
     };
 
-    // campos simples
     for (const key of Object.keys(updates)) {
       if (!fieldMap[key]) continue;
-
       fields.push(`${fieldMap[key]} = $${paramCount}`);
       values.push(updates[key]);
       paramCount++;
     }
 
-    // metadata (merge específico do wa quando vier metadata.wa)
     if (updates.metadata) {
       const hasWaPatch =
-        updates.metadata &&
         typeof updates.metadata === "object" &&
         updates.metadata.wa &&
         typeof updates.metadata.wa === "object";
 
       if (hasWaPatch) {
         fields.push(`
-        metadata = jsonb_set(
-          COALESCE(metadata,'{}'::jsonb),
-          '{wa}',
-          COALESCE(metadata->'wa','{}'::jsonb) || $${paramCount}::jsonb,
-          true
-        )
-      `);
+          metadata = jsonb_set(
+            COALESCE(metadata,'{}'::jsonb),
+            '{wa}',
+            COALESCE(metadata->'wa','{}'::jsonb) || $${paramCount}::jsonb,
+            true
+          )
+        `);
         values.push(JSON.stringify(updates.metadata.wa));
-        paramCount++;
       } else {
         fields.push(`metadata = $${paramCount}::jsonb`);
         values.push(JSON.stringify(updates.metadata));
-        paramCount++;
       }
+      paramCount++;
     }
 
-    // updated_at sempre
     fields.push(`updated_at = $${paramCount}`);
     values.push(this.updatedAt);
     paramCount++;
 
-    // WHERE
     values.push(this.id);
 
     const query = `
-    UPDATE teste.leads
-    SET ${fields.join(", ")}
-    WHERE id = $${paramCount}
-    RETURNING *;
-  `;
+      UPDATE ${Lead.tableName}
+      SET ${fields.join(", ")}
+      WHERE id = $${paramCount}
+      RETURNING *;
+    `;
 
     const result = await db.query(query, values);
     return result.rows[0] ? new Lead(result.rows[0]) : null;
   }
-  /**
-   * Métodos estáticos
-   */
 
-  /**
-   * Buscar lead por ID
-   */
   static async findById(id) {
-    const query =
-      "SELECT * FROM teste.leads WHERE id = $1 AND deleted_at IS NULL";
+    const query = `SELECT * FROM ${Lead.tableName} WHERE id = $1 AND deleted_at IS NULL`;
     const result = await db.getOne(query, [id]);
     return result ? new Lead(result) : null;
   }
 
-  /**
-   * Buscar lead por emailId
-   */
   static async findByEmailId(emailId) {
-    const query =
-      "SELECT * FROM teste.leads WHERE id = $1 AND deleted_at IS NULL";
+    const query = `SELECT * FROM ${Lead.tableName} WHERE email_id = $1 AND deleted_at IS NULL`;
     const result = await db.getOne(query, [emailId]);
     return result ? new Lead(result) : null;
   }
 
-  /**
-   * Buscar todos os leads com filtros
-   */
   static async findAll({
     status,
     origem,
@@ -412,11 +289,10 @@ class Lead {
     page = 1,
     limit = 50,
   } = {}) {
-    let whereConditions = [];
+    let whereConditions = ["deleted_at IS NULL"];
     let params = [];
     let paramCount = 1;
 
-    // Build WHERE clause
     if (status) {
       whereConditions.push(`status = $${paramCount}`);
       params.push(status);
@@ -453,54 +329,49 @@ class Lead {
       paramCount++;
     }
 
-    // Busca textual
     if (search) {
       whereConditions.push(`
-        (to_tsvector('portuguese', 
-          COALESCE(assunto, '') || ' ' || 
-          COALESCE(mensagem, '') || ' ' || 
-          COALESCE(veiculo_interesse, '')
-        ) @@ to_tsquery('portuguese', $${paramCount})
-        OR email_remetente ILIKE $${paramCount + 1}
-        OR telefone ILIKE $${paramCount + 1}
-        OR nome ILIKE $${paramCount + 1})
+        (
+          to_tsvector('portuguese',
+            COALESCE(assunto, '') || ' ' ||
+            COALESCE(mensagem, '') || ' ' ||
+            COALESCE(veiculo_interesse, '')
+          ) @@ to_tsquery('portuguese', $${paramCount})
+          OR email_remetente ILIKE $${paramCount + 1}
+          OR telefone ILIKE $${paramCount + 1}
+          OR nome ILIKE $${paramCount + 1}
+        )
       `);
-      const searchTerm = search.split(" ").join(" & ");
+      const searchTerm = search.trim().split(/\s+/).join(" & ");
       params.push(searchTerm, `%${search}%`);
       paramCount += 2;
     }
 
-    const whereClause =
-      whereConditions.length > 0
-        ? `WHERE ${whereConditions.join(" AND ")}`
-        : "";
+    const whereClause = `WHERE ${whereConditions.join(" AND ")}`;
 
-    // Calcular offset
     const offset = (page - 1) * limit;
     params.push(limit, offset);
 
-    // Query para dados
     const query = `
       SELECT *, COUNT(*) OVER() as total_count
-      FROM teste.leads 
+      FROM ${Lead.tableName}
       ${whereClause}
-      ORDER BY 
+      ORDER BY
         CASE WHEN status = 'novo' THEN 1 ELSE 2 END,
-        CASE prioridade 
-          WHEN 'alta' THEN 1 
-          WHEN 'media' THEN 2 
-          WHEN 'baixa' THEN 3 
+        CASE prioridade
+          WHEN 'alta' THEN 1
+          WHEN 'media' THEN 2
+          WHEN 'baixa' THEN 3
         END,
         data_recebimento DESC
-      LIMIT $${paramCount} 
+      LIMIT $${paramCount}
       OFFSET $${paramCount + 1}
     `;
 
     const result = await db.query(query, params);
 
     const leads = result.rows.map((row) => new Lead(row));
-    const totalCount =
-      result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0;
+    const totalCount = result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0;
 
     return {
       leads,
@@ -513,56 +384,43 @@ class Lead {
     };
   }
 
-  /**
-   * Contar leads por status
-   */
   static async countByStatus() {
     const query = `
       SELECT status, COUNT(*) as count
-      FROM teste.leads
+      FROM ${Lead.tableName}
+      WHERE deleted_at IS NULL
       GROUP BY status
       ORDER BY count DESC
     `;
-
     const result = await db.query(query);
     return result.rows;
   }
 
-  /**
-   * Contar leads por origem
-   */
   static async countByOrigem() {
     const query = `
       SELECT origem, COUNT(*) as count
-      FROM teste.leads
+      FROM ${Lead.tableName}
+      WHERE deleted_at IS NULL
       GROUP BY origem
       ORDER BY count DESC
     `;
-
     const result = await db.query(query);
     return result.rows;
   }
 
-  /**
-   * Deletar lead (soft delete)
-   */
   static async delete(id) {
     const query = `
-      UPDATE teste.leads 
+      UPDATE ${Lead.tableName}
       SET deleted_at = NOW(), updated_at = NOW()
       WHERE id = $1
-      RETURNING *
+      RETURNING *;
     `;
-
     const result = await db.query(query, [id]);
     return result.rows[0] ? new Lead(result.rows[0]) : null;
   }
 
-  /**
-   * Dashboard statistics
-   */
   static async getDashboardStats(dataInicio, dataFim) {
-    const whereConditions = [];
+    const whereConditions = ["deleted_at IS NULL"];
     const params = [];
     let paramCount = 1;
 
@@ -578,21 +436,18 @@ class Lead {
       paramCount++;
     }
 
-    const whereClause =
-      whereConditions.length > 0
-        ? `WHERE ${whereConditions.join(" AND ")}`
-        : "";
+    const whereClause = `WHERE ${whereConditions.join(" AND ")}`;
 
     const query = `
       WITH stats AS (
-        SELECT 
+        SELECT
           COUNT(*) as total_leads,
           COUNT(CASE WHEN status = 'novo' THEN 1 END) as novos_leads,
           COUNT(CASE WHEN status = 'vendido' THEN 1 END) as vendidos,
           COUNT(CASE WHEN data_recebimento >= CURRENT_DATE THEN 1 END) as leads_hoje,
           COUNT(CASE WHEN prioridade = 'alta' THEN 1 END) as alta_prioridade,
           COUNT(CASE WHEN status = 'contatado' THEN 1 END) as contatados
-        FROM teste.leads
+        FROM ${Lead.tableName}
         ${whereClause}
       )
       SELECT * FROM stats
@@ -600,14 +455,14 @@ class Lead {
 
     const result = await db.getOne(query, params);
 
-    // Timeline (últimos 30 dias)
     const timelineQuery = `
-      SELECT 
+      SELECT
         DATE(data_recebimento) as date,
         COUNT(*) as total,
         COUNT(CASE WHEN status = 'vendido' THEN 1 END) as vendidos
-      FROM teste.leads
-      WHERE data_recebimento >= CURRENT_DATE - INTERVAL '30 days'
+      FROM ${Lead.tableName}
+      WHERE deleted_at IS NULL
+        AND data_recebimento >= CURRENT_DATE - INTERVAL '30 days'
       GROUP BY DATE(data_recebimento)
       ORDER BY date ASC
     `;
@@ -631,13 +486,10 @@ class Lead {
     sortBy = "dataRecebimento",
     order = "DESC",
   }) {
-    const db = require("../config/database");
-
-    let whereConditions = [];
+    let whereConditions = ["deleted_at IS NULL"];
     let params = [];
     let paramCount = 1;
 
-    // Filtros dinâmicos
     if (filters.status) {
       whereConditions.push(`status = $${paramCount}`);
       params.push(filters.status);
@@ -668,25 +520,25 @@ class Lead {
       paramCount++;
     }
 
-    // Busca textual
     if (filters.search) {
       whereConditions.push(`
-        (to_tsvector('portuguese', 
-          COALESCE(assunto, '') || ' ' || 
-          COALESCE(mensagem, '') || ' ' || 
-          COALESCE(veiculo_interesse, '')
-        ) @@ to_tsquery('portuguese', $${paramCount})
-        OR email_remetente ILIKE $${paramCount + 1}
-        OR telefone ILIKE $${paramCount + 1}
-        OR nome ILIKE $${paramCount + 1})
+        (
+          to_tsvector('portuguese',
+            COALESCE(assunto, '') || ' ' ||
+            COALESCE(mensagem, '') || ' ' ||
+            COALESCE(veiculo_interesse, '')
+          ) @@ to_tsquery('portuguese', $${paramCount})
+          OR email_remetente ILIKE $${paramCount + 1}
+          OR telefone ILIKE $${paramCount + 1}
+          OR nome ILIKE $${paramCount + 1}
+        )
       `);
-      const searchTerm = filters.search.split(" ").join(" & ");
+      const searchTerm = filters.search.trim().split(/\s+/).join(" & ");
       params.push(searchTerm, `%${filters.search}%`);
       paramCount += 2;
     }
 
-    // Filtro por tags
-    if (filters.tags && Array.isArray(filters.tags)) {
+    if (filters.tags && Array.isArray(filters.tags) && filters.tags.length > 0) {
       const tagConditions = filters.tags.map((tag, index) => {
         params.push(tag);
         return `$${paramCount + index} = ANY(tags)`;
@@ -695,32 +547,25 @@ class Lead {
       paramCount += filters.tags.length;
     }
 
-    const whereClause =
-      whereConditions.length > 0
-        ? `WHERE ${whereConditions.join(" AND ")}`
-        : "";
-
-    // Ordenação
+    const whereClause = `WHERE ${whereConditions.join(" AND ")}`;
     const orderBy = this.getOrderBy(sortBy, order);
 
-    // Paginação
     const offset = (page - 1) * limit;
     params.push(limit, offset);
 
     const query = `
       SELECT *, COUNT(*) OVER() as total_count
-      FROM teste.leads 
+      FROM ${Lead.tableName}
       ${whereClause}
       ${orderBy}
-      LIMIT $${paramCount} 
+      LIMIT $${paramCount}
       OFFSET $${paramCount + 1}
     `;
 
     const result = await db.query(query, params);
 
     const leads = result.rows.map((row) => new Lead(row));
-    const totalCount =
-      result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0;
+    const totalCount = result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0;
 
     return {
       leads,
@@ -745,29 +590,27 @@ class Lead {
     const field = fieldMap[sortBy] || "data_recebimento";
     const dir = order.toUpperCase() === "ASC" ? "ASC" : "DESC";
 
-    // Ordenação especial para prioridade
     if (sortBy === "prioridade") {
       return `
-        ORDER BY 
-          CASE prioridade 
-            WHEN 'alta' THEN 1 
-            WHEN 'media' THEN 2 
-            WHEN 'baixa' THEN 3 
+        ORDER BY
+          CASE prioridade
+            WHEN 'alta' THEN 1
+            WHEN 'media' THEN 2
+            WHEN 'baixa' THEN 3
           END ${dir},
           data_recebimento DESC
       `;
     }
 
-    // Ordenação especial para status (novos primeiro)
     if (sortBy === "status") {
       return `
-        ORDER BY 
-          CASE status 
-            WHEN 'novo' THEN 1 
-            WHEN 'contatado' THEN 2 
-            WHEN 'agendado' THEN 3 
-            WHEN 'vendido' THEN 4 
-            WHEN 'perdido' THEN 5 
+        ORDER BY
+          CASE status
+            WHEN 'novo' THEN 1
+            WHEN 'contatado' THEN 2
+            WHEN 'agendado' THEN 3
+            WHEN 'vendido' THEN 4
+            WHEN 'perdido' THEN 5
           END ${dir},
           data_recebimento DESC
       `;
@@ -776,20 +619,16 @@ class Lead {
     return `ORDER BY ${field} ${dir}`;
   }
 
-  /**
-   * Atribuir múltiplos leads a um vendedor
-   */
   static async assignToSeller(ids, vendedorId) {
-    const db = require("../config/database");
-
     const query = `
-      UPDATE teste.leads 
-      SET vendedor_id = $1, 
-          status = 'contatado', 
+      UPDATE ${Lead.tableName}
+      SET vendedor_id = $1,
+          status = 'contatado',
           data_contato = NOW(),
           updated_at = NOW()
       WHERE id = ANY($2::uuid[])
-      RETURNING *
+        AND deleted_at IS NULL
+      RETURNING *;
     `;
 
     const result = await db.query(query, [vendedorId, ids]);
@@ -800,13 +639,8 @@ class Lead {
     };
   }
 
-  /**
-   * Exportar leads
-   */
   static async export({ dataInicio, dataFim, status, origem } = {}) {
-    const db = require("../config/database");
-
-    let whereConditions = [];
+    let whereConditions = ["deleted_at IS NULL"];
     let params = [];
     let paramCount = 1;
 
@@ -834,20 +668,13 @@ class Lead {
       paramCount++;
     }
 
-    const whereClause =
-      whereConditions.length > 0
-        ? `WHERE ${whereConditions.join(" AND ")}`
-        : "";
+    const whereClause = `WHERE ${whereConditions.join(" AND ")}`;
+    const query = `SELECT * FROM ${Lead.tableName} ${whereClause} ORDER BY data_recebimento DESC`;
 
-    const query = `SELECT * FROM teste.leads ${whereClause} ORDER BY data_recebimento DESC`;
     const result = await db.query(query, params);
-
     return result.rows.map((row) => new Lead(row));
   }
 
-  /**
-   * Converter leads para CSV
-   */
   static toCSV(leads) {
     const headers = [
       "ID",
@@ -868,63 +695,49 @@ class Lead {
     const rows = leads.map((lead) => [
       lead.id,
       lead.nome || "",
-      lead.emailRemetente,
+      lead.emailRemetente || "",
       lead.telefone || "",
       lead.veiculoInteresse || "",
-      lead.origem,
-      lead.status,
-      lead.prioridade,
-      lead.score,
-      new Date(lead.dataRecebimento).toLocaleString("pt-BR"),
-      lead.dataContato
-        ? new Date(lead.dataContato).toLocaleString("pt-BR")
-        : "",
+      lead.origem || "",
+      lead.status || "",
+      lead.prioridade || "",
+      lead.score ?? 0,
+      lead.dataRecebimento ? new Date(lead.dataRecebimento).toLocaleString("pt-BR") : "",
+      lead.dataContato ? new Date(lead.dataContato).toLocaleString("pt-BR") : "",
       lead.vendedorId || "",
       lead.tags?.join(", ") || "",
     ]);
 
     return [headers, ...rows]
-      .map((row) =>
-        row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","),
-      )
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
       .join("\n");
   }
 
-  /**
-   * Obter leads por período
-   */
   static async getByPeriod(startDate, endDate) {
-    const db = require("../config/database");
-
     const query = `
-      SELECT * FROM teste.leads 
-      WHERE data_recebimento BETWEEN $1 AND $2
+      SELECT * FROM ${Lead.tableName}
+      WHERE deleted_at IS NULL
+        AND data_recebimento BETWEEN $1 AND $2
       ORDER BY data_recebimento DESC
     `;
-
     const result = await db.query(query, [startDate, endDate]);
     return result.rows.map((row) => new Lead(row));
   }
 
-  /**
-   * Obter leads não atendidos
-   */
   static async getUnattended(limit = 50) {
-    const db = require("../config/database");
-
     const query = `
-      SELECT * FROM teste.leads 
-      WHERE status = 'novo'
-      ORDER BY 
-        CASE prioridade 
-          WHEN 'alta' THEN 1 
-          WHEN 'media' THEN 2 
-          WHEN 'baixa' THEN 3 
+      SELECT * FROM ${Lead.tableName}
+      WHERE deleted_at IS NULL
+        AND status = 'novo'
+      ORDER BY
+        CASE prioridade
+          WHEN 'alta' THEN 1
+          WHEN 'media' THEN 2
+          WHEN 'baixa' THEN 3
         END,
         data_recebimento ASC
       LIMIT $1
     `;
-
     const result = await db.query(query, [limit]);
     return result.rows.map((row) => new Lead(row));
   }

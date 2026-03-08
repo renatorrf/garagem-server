@@ -636,6 +636,12 @@ class EmailCaptureService {
       .replace(/\n{2,}/g, "\n")
       .trim();
 
+      try {
+        
+      } catch (error) {
+        
+      }
+
     const pickLabelValue = (label) => {
       const re = new RegExp(`${label}\\s*\\n\\s*([^\\n]+)`, "i");
       const m = clean.match(re);

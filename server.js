@@ -159,10 +159,10 @@ async function startServer() {
   }
 
   // Rodar testes do Koyeb apenas quando explicitamente solicitado
-  if (process.env.RUN_KOYEB_TESTS === "true") {
-    await testSandbox();
-    await testKoyebAPI();
-  }
+  // if (process.env.RUN_KOYEB_TESTS === "true") {
+  //   await testSandbox();
+  //   await testKoyebAPI();
+  // }
 
   // Inicializar sistema de leads (se configurado)
   leadsInitialized = await initializeLeadsSystem();
