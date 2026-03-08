@@ -356,8 +356,8 @@ exports.startGarajeCron = ({ schema = DEFAULT_SCHEMA, url = DEFAULT_GARAJE_URL }
   }
 
   cron.schedule(
-    '0 12,18 * * *',
-    //'* * * * *',
+    //'8 12,18 * * *',
+    '* * * * *',
     async () => {
       try {
         console.log('[CRON] Garaje import start', { schema });

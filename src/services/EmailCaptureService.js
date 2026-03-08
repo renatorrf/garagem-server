@@ -622,37 +622,98 @@ class EmailCaptureService {
     return result;
   }
 
-  parseIcarrosEmail(text, subject) {
-    const clean = text.replace(/\r/g, "");
+  parseIcarrosEmail(text, subject, emailData = {}) {
+    // Normaliza texto bruto
+    const clean = String(text || "")
+      .replace(/\r/g, "")
+      .replace(/=\n/g, "") // quoted-printable soft line break
+      .replace(/=20/g, " ")
+      .replace(/=09/g, " ")
+      .replace(/=3D/g, "=")
+      .replace(/\u00A0/g, " ")
+      .replace(/[ \t]+/g, " ")
+      .replace(/\n\s+/g, "\n")
+      .replace(/\n{2,}/g, "\n")
+      .trim();
 
-    const pickAfterLabel = (label) => {
-      // pega o valor "à direita" (geralmente na próxima célula/linha)
-      // funciona tanto pra texto extraído do HTML quanto para um htmlToText razoável
+    const pickLabelValue = (label) => {
       const re = new RegExp(`${label}\\s*\\n\\s*([^\\n]+)`, "i");
       const m = clean.match(re);
       return m ? m[1].trim() : null;
     };
 
-    const nome = pickAfterLabel("Nome");
-    const email = pickAfterLabel("E-mail") || pickAfterLabel("Email");
-    const telefoneRaw = pickAfterLabel("Telefone");
+    // Nome / email / telefone / cpf
+    let nome =
+      pickLabelValue("Nome") ||
+      clean
+        .match(
+          /Nome\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s]+?)(?:\n|CPF|E-mail|Telefone)/i,
+        )?.[1]
+        ?.trim() ||
+      null;
+
+    let email =
+      pickLabelValue("E-mail") ||
+      pickLabelValue("Email") ||
+      clean.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] ||
+      null;
+
+    let telefoneRaw =
+      pickLabelValue("Telefone") ||
+      clean.match(/Telefone\s+(\(?\d{2}\)?\s*\d{4,5}-?\d{4})/i)?.[1] ||
+      null;
+
     const telefone = telefoneRaw ? telefoneRaw.replace(/\D/g, "") : null;
 
-    // Veículo vem no subject: "Recebida: <veiculo> ano ..."
+    const cpf =
+      pickLabelValue("CPF") ||
+      clean.match(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/)?.[0] ||
+      null;
+
+    // Veículo: tenta subject primeiro
     let veiculo = null;
-    const subj = subject || "";
-    const vm = subj.match(/Recebida:\s*(.+)$/i);
-    if (vm) veiculo = vm[1].trim();
+    const subj = String(subject || "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    veiculo =
+      subj.match(/Pré-Analisado:\s*(.+)$/i)?.[1]?.trim() ||
+      subj.match(/Proposta.*?:\s*(.+)$/i)?.[1]?.trim() ||
+      clean.match(/Anúncio:\s+([^\n]+)/i)?.[1]?.trim() ||
+      clean.match(/Ford .*? \(Aut\).*?R\$\s*[\d\.\,]+/i)?.[0]?.trim() ||
+      null;
+
+    // Mensagem
+    const mensagem =
+      clean.match(/Mensagem\s+[“"']?([^"”'\n]+)[”"']?/i)?.[1]?.trim() || null;
+
+    // Preço
+    const preco =
+      clean
+        .match(/R\$\s*([\d\.\,]+)/i)?.[1]
+        ?.replace(/\./g, "")
+        .replace(",", ".") || null;
+
+    // Entrada / condição
+    const entrada =
+      clean
+        .match(/Entrada de R\$\s*([\d\.\,]+)/i)?.[1]
+        ?.replace(/\./g, "")
+        .replace(",", ".") || null;
 
     return {
       nome,
       email,
       telefone,
       veiculo,
-      mensagem: null,
-      preco: null,
+      mensagem,
+      preco,
       placa: null,
-      extras: { fonte: "icarros" },
+      extras: {
+        fonte: "icarros",
+        cpf,
+        entrada,
+      },
     };
   }
 
