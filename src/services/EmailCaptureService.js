@@ -515,6 +515,23 @@ class EmailCaptureService {
         : { platform: null, parsed: null };
     }
 
+    // BV / NaPista
+    if (
+      senderEmail.includes("napista.com.br") ||
+      senderEmail.includes("mandrillapp.com") ||
+      subject?.toLowerCase().includes("lead bv") ||
+      fullText.toLowerCase().includes("simulação aprovada no banco bv") ||
+      fullText.toLowerCase().includes("simulacao aprovada no banco bv") ||
+      fullText.toLowerCase().includes("dados do cliente")
+    ) {
+      console.log("🎯 Detectado: BV");
+      return {
+        platform: "BV",
+        parsed: this.parseBvEmail(fullText, subject || "", emailData),
+        rawData: { subject, senderEmail, senderName },
+      };
+    }
+
     // 6. FACEBOOK MARKETPLACE
     if (
       senderEmail.includes("facebookmail.com") ||
@@ -565,6 +582,185 @@ class EmailCaptureService {
       "🔧 Nenhuma plataforma específica detectada, usando parser genérico",
     );
     return { platform: null, parsed: null };
+  }
+
+  parseBvEmail(text, subject, emailData = {}) {
+    const clean = String(text || "")
+      .replace(/\r/g, "")
+      .replace(/=\n/g, "")
+      .replace(/=20/g, " ")
+      .replace(/=09/g, " ")
+      .replace(/=3D/g, "=")
+      .replace(/\u00A0/g, " ")
+      .replace(/[ \t]+/g, " ")
+      .replace(/\n\s+/g, "\n")
+      .replace(/\n{2,}/g, "\n")
+      .trim();
+
+    const pickBlock = (startLabel, endLabel = null) => {
+      if (!startLabel) return null;
+      const pattern = endLabel
+        ? new RegExp(`${startLabel}\\s*\\n([\\s\\S]*?)\\n${endLabel}`, "i")
+        : new RegExp(`${startLabel}\\s*\\n([\\s\\S]*?)$`, "i");
+
+      return clean.match(pattern)?.[1]?.trim() || null;
+    };
+
+    const dadosClienteBlock =
+      pickBlock("Dados do cliente", "Mensagem") ||
+      pickBlock("Dados do cliente", "Veículo de interesse") ||
+      null;
+
+    let nome = null;
+    let telefone = null;
+    let email = null;
+    let cpf = null;
+
+    if (dadosClienteBlock) {
+      const lines = dadosClienteBlock
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean);
+
+      nome =
+        lines.find(
+          (l) => /^[A-ZÀ-Ú][A-ZÀ-Ú\s]{8,}$/.test(l) && !l.includes("CPF"),
+        ) || null;
+
+      telefone =
+        lines.find((l) => /\(?\d{2}\)?\s*9?\d{4,5}-?\d{4}/.test(l)) || null;
+
+      email =
+        lines.find((l) => /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(l)) ||
+        null;
+
+      cpf =
+        lines.find((l) => /CPF:\s*\d{3}\.\d{3}\.\d{3}-\d{2}/i.test(l)) || null;
+    }
+
+    nome =
+      nome?.trim() ||
+      clean
+        .match(/Dados do cliente[\s\S]*?\n([A-ZÀ-Ú][A-ZÀ-Ú\s]{8,})\n/i)?.[1]
+        ?.trim() ||
+      clean.match(/Lead BV:\s*([A-ZÀ-Ú]+)\s+tem interesse/i)?.[1]?.trim() ||
+      null;
+
+    const telefoneRaw =
+      telefone || clean.match(/(\(?\d{2}\)?\s*9?\d{4,5}-?\d{4})/)?.[1] || null;
+
+    telefone = telefoneRaw ? telefoneRaw.replace(/\D/g, "") : null;
+
+    email =
+      email?.trim() ||
+      clean.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] ||
+      null;
+
+    cpf =
+      cpf?.replace(/^CPF:\s*/i, "").trim() ||
+      clean.match(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/)?.[0] ||
+      null;
+
+    const veiculoBlock =
+      pickBlock("Veículo de interesse", "Com interesse em financiar no BV") ||
+      pickBlock("Veículo de interesse", "Seguros selecionados") ||
+      null;
+
+    let veiculo = null;
+    let veiculoDetalhes = null;
+
+    if (veiculoBlock) {
+      const lines = veiculoBlock
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean);
+
+      veiculo = lines[0] || null;
+      veiculoDetalhes = lines[1] || null;
+    }
+
+    const financiamentoBlock =
+      pickBlock("Com interesse em financiar no BV", "Seguros selecionados") ||
+      pickBlock(
+        "Com interesse em financiar no BV",
+        "Acesse sua Área do lojista",
+      ) ||
+      null;
+
+    let entrada = null;
+    let parcelas = null;
+
+    if (financiamentoBlock) {
+      const entradaMatch = financiamentoBlock.match(/R\$\s*([\d\.\,]+)/i);
+      if (entradaMatch) {
+        entrada = entradaMatch[1].replace(/\./g, "").replace(",", ".");
+      }
+
+      const parcelasMatch = financiamentoBlock.match(
+        /(\d{1,3})x\s+de\s+R\$\s*([\d\.\,\u00A0]+)/i,
+      );
+      if (parcelasMatch) {
+        parcelas = {
+          qtd: parcelasMatch[1],
+          valor: parcelasMatch[2]
+            .replace(/\./g, "")
+            .replace(",", ".")
+            .replace(/\s/g, ""),
+        };
+      }
+    }
+
+    const precoVeiculo =
+      veiculoDetalhes
+        ?.match(/R\$\s*([\d\.\,]+)/i)?.[1]
+        ?.replace(/\./g, "")
+        .replace(",", ".") || null;
+
+    const ano = veiculoDetalhes?.match(/\b(19|20)\d{2}\b/)?.[0] || null;
+
+    const km =
+      veiculoDetalhes
+        ?.match(/([\d\.\,]+)\s*km/i)?.[1]
+        ?.replace(/\./g, "")
+        .replace(",", "") || null;
+
+    const placa =
+      veiculoDetalhes
+        ?.match(/\b[A-Z]{3}[0-9A-Z][A-Z0-9][0-9]{2}\b/i)?.[0]
+        ?.toUpperCase() || null;
+
+    const simulacaoAprovada = /Simula(?:ç|c)[aã]o aprovada no banco BV/i.test(
+      clean,
+    );
+    const mensagem =
+      clean.match(/Mensagem\s*\n+“?([^”\n]+(?:\n[^”\n]+)*)”?/i)?.[1]?.trim() ||
+      clean
+        .match(
+          /Lead BV: SIMULAÇÃO APROVADA[\s\S]*?Acesse agora:\s*(https?:\/\/\S+)/i,
+        )?.[0]
+        ?.trim() ||
+      subject ||
+      null;
+
+    return {
+      nome,
+      email,
+      telefone,
+      veiculo,
+      mensagem,
+      preco: precoVeiculo,
+      placa,
+      extras: {
+        fonte: "bv",
+        cpf,
+        ano,
+        km,
+        veiculoDetalhes,
+        simulacaoAprovada,
+        entrada,
+        parcelas,
+      },
+    };
   }
 
   parseMobiautoEmail(text, subject) {
