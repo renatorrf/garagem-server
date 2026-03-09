@@ -444,12 +444,13 @@ class Lead {
   static async getDashboardStats(dataInicio, dataFim) {
     const schema = process.env.SCHEMA_PADRAO || "teste";
 
-    // garante tabela qualificada
+    // tabela qualificada
     const leadTable =
       Lead.tableName && String(Lead.tableName).includes(".")
         ? Lead.tableName
         : `${schema}.${Lead.tableName || "leads"}`;
 
+    // whereClause com params dinâmicos (para stats e queries que usam o mesmo filtro)
     const whereConditions = ["deleted_at IS NULL"];
     const params = [];
     let paramCount = 1;
@@ -460,7 +461,6 @@ class Lead {
       params.push(dataInicio);
       paramCount++;
     }
-
     if (dataFim) {
       whereConditions.push(`data_recebimento < $${paramCount}`);
       params.push(dataFim);
@@ -470,7 +470,7 @@ class Lead {
     const whereClause = `WHERE ${whereConditions.join(" AND ")}`;
 
     // ---------- STATS ----------
-    const query = `
+    const statsQuery = `
     WITH stats AS (
       SELECT
         COUNT(*)::int AS total_leads,
@@ -488,18 +488,14 @@ class Lead {
     SELECT * FROM stats;
   `;
 
-    const result = await db.getOne(query, params);
+    const result = await db.getOne(statsQuery, params);
 
-    // define intervalo para timeline e análises por plataforma
-    const ini =  dataInicio || new Date(Date.now() - 30 * 86400000).toISOString();
+    // intervalo padrão para análises/gráficos (30 dias) caso não venha filtro
+    const ini =
+      dataInicio || new Date(Date.now() - 30 * 86400000).toISOString();
     const fim = dataFim || new Date().toISOString();
 
-    // ---------- TIMELINE (últimos 30 dias ou filtro do request) ----------
-    const tlStart =
-      dataInicio ||
-      new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-    const tlEnd = dataFim || new Date().toISOString();
-
+    // ---------- TIMELINE (por dia) ----------
     const timelineQuery = `
     SELECT
       (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date AS date,
@@ -512,53 +508,50 @@ class Lead {
     GROUP BY (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date
     ORDER BY date ASC;
   `;
+    const timeline = await db.query(timelineQuery, [ini, fim]);
 
-    const timeline = await db.query(timelineQuery, [tlStart, tlEnd]);
-
-    // ---------- LEADS POR PLATAFORMA ----------
-  //   const leadsPorPlataformaQuery = `
-  //   WITH base AS (
-  //     SELECT
-  //       COALESCE(
-  //         NULLIF((metadata::jsonb ->> 'plataforma'), ''),
-  //         NULLIF(origem, ''),
-  //         NULLIF((metadata::jsonb #>> '{extras,fonte}'), ''),
-  //         'Desconhecido'
-  //       ) AS plataforma,
-  //       status,
-  //       prioridade,
-  //       data_recebimento,
-  //       data_contato
-  //     FROM ${leadTable}
-  //     ${whereClause}
-  //   )
-  //   SELECT
-  //     plataforma,
-  //     COUNT(*)::int AS leads,
-  //     COUNT(*) FILTER (WHERE status = 'novo')::int AS novos,
-  //     COUNT(*) FILTER (WHERE status = 'contatado')::int AS contatados,
-  //     COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos,
-  //     COUNT(*) FILTER (WHERE prioridade = 'alta')::int AS alta_prioridade,
-  //     COUNT(*) FILTER (
-  //       WHERE (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date
-  //             = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
-  //     )::int AS leads_hoje,
-  //     ROUND(
-  //       (COUNT(*) FILTER (WHERE status = 'vendido')::numeric / NULLIF(COUNT(*),0)) * 100
-  //     , 2) AS taxa_conversao_pct
-  //   FROM base
-  //   GROUP BY plataforma
-  //   ORDER BY leads DESC;
-  // `;
-
-  //   const leadsPorPlataforma = await db.query(leadsPorPlataformaQuery, params);
+    // ---------- LEADS POR PLATAFORMA (contagem) ----------
+    const leadsPorPlataformaQuery = `
+    WITH base AS (
+      SELECT
+        COALESCE(
+          NULLIF((NULLIF(metadata,'')::jsonb ->> 'plataforma'), ''),
+          NULLIF(origem, ''),
+          NULLIF((NULLIF(metadata,'')::jsonb #>> '{extras,fonte}'), ''),
+          'Desconhecido'
+        ) AS plataforma,
+        status,
+        prioridade,
+        data_recebimento
+      FROM ${leadTable}
+      ${whereClause}
+    )
+    SELECT
+      plataforma,
+      COUNT(*)::int AS leads,
+      COUNT(*) FILTER (WHERE status = 'novo')::int AS novos,
+      COUNT(*) FILTER (WHERE status = 'contatado')::int AS contatados,
+      COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos,
+      COUNT(*) FILTER (WHERE prioridade = 'alta')::int AS alta_prioridade,
+      COUNT(*) FILTER (
+        WHERE (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date
+              = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
+      )::int AS leads_hoje,
+      ROUND(
+        (COUNT(*) FILTER (WHERE status = 'vendido')::numeric / NULLIF(COUNT(*),0)) * 100
+      , 2) AS taxa_conversao_pct
+    FROM base
+    GROUP BY plataforma
+    ORDER BY leads DESC;
+  `;
+    const leadsPorPlataforma = await db.query(leadsPorPlataformaQuery, params);
 
     // ---------- TIMELINE POR PLATAFORMA ----------
     const timeLinePlataformaQuery = `
     WITH base AS (
       SELECT
         COALESCE(
-          NULLIF((metadata::jsonb ->> 'plataforma'), ''),
+          NULLIF((NULLIF(metadata,'')::jsonb ->> 'plataforma'), ''),
           NULLIF(origem, ''),
           'Desconhecido'
         ) AS plataforma,
@@ -576,101 +569,68 @@ class Lead {
     GROUP BY plataforma, dia
     ORDER BY dia ASC, plataforma ASC;
   `;
-
     const timeLinePlataforma = await db.query(timeLinePlataformaQuery, params);
 
-    // ---------- CPL / CPA (requer ${schema}.marketing_spend_daily) ----------
-    const LeadCPLCPAQuery = `
-    WITH leads_plat AS (
+    // ---------- CUSTO RATEADO + CPL/CPA (custo_mensal / dias_no_mes) ----------
+    const custoPlataformaLeadQuery = `
+    WITH base_leads AS (
       SELECT
-        COALESCE(
-          NULLIF((metadata::jsonb ->> 'plataforma'), ''),
-          NULLIF(origem, ''),
-          'Desconhecido'
-        ) AS plataforma,
-        COUNT(*)::int AS leads,
-        COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos
+        CASE
+          WHEN lower(COALESCE(NULLIF((NULLIF(metadata,'')::jsonb->>'plataforma'), ''), origem, '')) IN ('bv','napista')
+            THEN 'BV/NaPista'
+          WHEN lower(COALESCE(NULLIF((NULLIF(metadata,'')::jsonb->>'plataforma'), ''), origem, '')) IN ('mobiauto')
+            THEN 'MobiAuto'
+          WHEN lower(COALESCE(NULLIF((NULLIF(metadata,'')::jsonb->>'plataforma'), ''), origem, '')) IN ('icarros','i carros','i-carros')
+            THEN 'iCarros'
+          WHEN lower(COALESCE(NULLIF((NULLIF(metadata,'')::jsonb->>'plataforma'), ''), origem, '')) IN ('olx')
+            THEN 'OLX'
+          WHEN lower(COALESCE(NULLIF((NULLIF(metadata,'')::jsonb->>'plataforma'), ''), origem, '')) IN ('mercado livre','mercadolivre','ml','mercado_livre')
+            THEN 'Mercado Livre'
+          ELSE COALESCE(NULLIF((NULLIF(metadata,'')::jsonb->>'plataforma'),''), NULLIF(origem,''), 'Desconhecido')
+        END AS plataforma,
+        status
       FROM ${leadTable}
       WHERE deleted_at IS NULL
         AND data_recebimento >= $1
         AND data_recebimento <  $2
+    ),
+    leads_plat AS (
+      SELECT
+        plataforma,
+        COUNT(*)::int AS leads,
+        COUNT(*) FILTER (WHERE status='vendido')::int AS vendidos
+      FROM base_leads
       GROUP BY 1
+    ),
+    dias AS (
+      SELECT
+        d::date AS dia,
+        EXTRACT(day FROM (date_trunc('month', d) + interval '1 month - 1 day'))::int AS dias_no_mes
+      FROM generate_series($1::date, ($2::date - interval '1 day')::date, interval '1 day') d
     ),
     spend_plat AS (
       SELECT
-        plataforma,
-        SUM(spend)::numeric(12,2) AS spend
-      FROM ${schema}.marketing_spend_daily
-      WHERE spend_date >= $1::date
-        AND spend_date <  $2::date
-      GROUP BY 1
+        c.plataforma,
+        ROUND(SUM(c.custo_mensal / dias.dias_no_mes), 2) AS spend_periodo
+      FROM ${schema}.marketing_costs_monthly c
+      CROSS JOIN dias
+      GROUP BY c.plataforma
     )
     SELECT
       COALESCE(l.plataforma, s.plataforma) AS plataforma,
       COALESCE(l.leads, 0) AS leads,
       COALESCE(l.vendidos, 0) AS vendidos,
-      COALESCE(s.spend, 0) AS spend,
-      ROUND(COALESCE(s.spend, 0) / NULLIF(COALESCE(l.leads, 0), 0), 2) AS cpl,
-      ROUND(COALESCE(s.spend, 0) / NULLIF(COALESCE(l.vendidos, 0), 0), 2) AS cpa
+      COALESCE(s.spend_periodo, 0) AS spend,
+      ROUND(COALESCE(s.spend_periodo, 0) / NULLIF(COALESCE(l.leads, 0), 0), 2) AS cpl,
+      ROUND(COALESCE(s.spend_periodo, 0) / NULLIF(COALESCE(l.vendidos, 0), 0), 2) AS cpa
     FROM leads_plat l
     FULL OUTER JOIN spend_plat s USING (plataforma)
     ORDER BY leads DESC, spend DESC;
   `;
-
-    const cplRows = await db.query(LeadCPLCPAQuery, [ini, fim]);
-
-    const custoPlataformaLead = await db.query(
-      `WITH base_leads AS (
-          SELECT
-            -- pega plataforma do metadata/origem e NORMALIZA para bater com a tabela de custos
-            CASE
-              WHEN lower(COALESCE(metadata::jsonb->>'plataforma', origem, '')) IN ('bv','napista') THEN 'BV/NaPista'
-              WHEN lower(COALESCE(metadata::jsonb->>'plataforma', origem, '')) IN ('mobiauto') THEN 'MobiAuto'
-              WHEN lower(COALESCE(metadata::jsonb->>'plataforma', origem, '')) IN ('icarros','i carros','i-carros') THEN 'iCarros'
-              WHEN lower(COALESCE(metadata::jsonb->>'plataforma', origem, '')) IN ('olx') THEN 'OLX'
-              WHEN lower(COALESCE(metadata::jsonb->>'plataforma', origem, '')) IN ('mercado livre','mercadolivre','ml','mercado_livre') THEN 'Mercado Livre'
-              ELSE COALESCE(NULLIF(metadata::jsonb->>'plataforma',''), NULLIF(origem,''), 'Desconhecido')
-            END AS plataforma,
-            status
-          FROM ${schema}.leads
-          WHERE deleted_at IS NULL
-            AND data_recebimento >= $1
-            AND data_recebimento <  $2
-        ),
-        leads_plat AS (
-          SELECT
-            plataforma,
-            COUNT(*)::int AS leads,
-            COUNT(*) FILTER (WHERE status='vendido')::int AS vendidos
-          FROM base_leads
-          GROUP BY 1
-        ),
-        dias AS (
-          SELECT
-            d::date AS dia,
-            EXTRACT(day FROM (date_trunc('month', d) + interval '1 month - 1 day'))::int AS dias_no_mes
-          FROM generate_series($1::date, ($2::date - interval '1 day')::date, interval '1 day') d
-        ),
-        spend_plat AS (
-          SELECT
-            c.plataforma,
-            ROUND(SUM(c.custo_mensal / dias.dias_no_mes), 2) AS spend_periodo
-          FROM ${schema}.marketing_costs_monthly c
-          CROSS JOIN dias
-          GROUP BY c.plataforma
-        )
-        SELECT
-          COALESCE(l.plataforma, s.plataforma) AS plataforma,
-          COALESCE(l.leads, 0) AS leads,
-          COALESCE(l.vendidos, 0) AS vendidos,
-          COALESCE(s.spend_periodo, 0) AS spend,
-          ROUND(COALESCE(s.spend_periodo, 0) / NULLIF(COALESCE(l.leads, 0), 0), 2) AS cpl,
-          ROUND(COALESCE(s.spend_periodo, 0) / NULLIF(COALESCE(l.vendidos, 0), 0), 2) AS cpa
-        FROM leads_plat l
-        FULL OUTER JOIN spend_plat s USING (plataforma)
-        ORDER BY leads DESC, spend DESC;`,
-    );
-    const leadsPorPlataforma = await db.query(custoPlataformaLead, [ini, fim]);
+    const custoPlataformaLead = await db.query(custoPlataformaLeadQuery, [
+      ini,
+      fim,
+    ]);
 
     // ---------- retorno ----------
     const total = Number(result?.total_leads ?? 0);
@@ -682,7 +642,7 @@ class Lead {
       timeline: timeline.rows,
       leadsPorPlataforma: leadsPorPlataforma.rows,
       timeLinePlataforma: timeLinePlataforma.rows,
-      leadCPLCPA: cplRows.rows,
+      custoPlataformaLead: custoPlataformaLead.rows,
     };
   }
 
