@@ -4,12 +4,18 @@
 // const { Pool } = require('pg');
 // const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
-const { Pool } = require('pg');
+const { Pool } = require("pg");
 
 // ⚠️ ajuste o config do pool ao seu projeto
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  // ssl: { rejectUnauthorized: false }, // se precisar
+  max: 20, // Número máximo de clientes no pool
+  min: 2, // Número mínimo de clientes no pool
+  idleTimeoutMillis: 30000, // Tempo que um cliente pode ficar ocioso
+  connectionTimeoutMillis: 20000, // Tempo máximo para tentar conectar
+  allowExitOnIdle: true, // Permite que o processo saia quando o pool estiver ocioso
+  ssl: true,
+  sslmode: "require",
 });
 
 /**
@@ -35,7 +41,12 @@ function maxPlaceholderIndex(sql) {
  */
 function normalizeArgs(params, options) {
   // caso: query(sql, { log: true })
-  if (params && !Array.isArray(params) && typeof params === 'object' && options == null) {
+  if (
+    params &&
+    !Array.isArray(params) &&
+    typeof params === "object" &&
+    options == null
+  ) {
     options = params;
     params = [];
   }
@@ -48,8 +59,8 @@ function normalizeArgs(params, options) {
 }
 
 function previewSql(sql, maxLen = 600) {
-  const s = String(sql).replace(/\s+/g, ' ').trim();
-  return s.length > maxLen ? s.slice(0, maxLen) + '…' : s;
+  const s = String(sql).replace(/\s+/g, " ").trim();
+  return s.length > maxLen ? s.slice(0, maxLen) + "…" : s;
 }
 
 /**
@@ -65,8 +76,8 @@ async function query(text, params, options) {
   params = norm.params;
   options = norm.options;
 
-  if (typeof text !== 'string' || !text.trim()) {
-    throw new Error('db.query: SQL (text) inválido.');
+  if (typeof text !== "string" || !text.trim()) {
+    throw new Error("db.query: SQL (text) inválido.");
   }
 
   // valida placeholders x params
@@ -74,7 +85,7 @@ async function query(text, params, options) {
   if (needed > params.length) {
     const err = new Error(
       `db.query: SQL exige $1..$${needed}, mas params.length=${params.length}. ` +
-      `Dica: passou params undefined?`
+        `Dica: passou params undefined?`,
     );
     err.query = text;
     err.params = params;
@@ -84,8 +95,8 @@ async function query(text, params, options) {
   const client = options.client || pool;
 
   if (options.log) {
-    console.log('[DB] SQL:', previewSql(text));
-    console.log('[DB] params:', params);
+    console.log("[DB] SQL:", previewSql(text));
+    console.log("[DB] params:", params);
   }
 
   try {
@@ -108,9 +119,9 @@ async function query(text, params, options) {
 
     // log simples opcional
     if (options.logErrors) {
-      console.error('[DB] ERRO:', e.message);
-      console.error('[DB] SQL:', e.sqlPreview);
-      console.error('[DB] params:', params);
+      console.error("[DB] ERRO:", e.message);
+      console.error("[DB] SQL:", e.sqlPreview);
+      console.error("[DB] params:", params);
     }
 
     throw e;
@@ -130,12 +141,14 @@ const db = {
   async transaction(callback) {
     const client = await pool.connect();
     try {
-      await client.query('BEGIN');
+      await client.query("BEGIN");
       const result = await callback(client);
-      await client.query('COMMIT');
+      await client.query("COMMIT");
       return result;
     } catch (err) {
-      try { await client.query('ROLLBACK'); } catch (_) {}
+      try {
+        await client.query("ROLLBACK");
+      } catch (_) {}
       throw err;
     } finally {
       client.release();
