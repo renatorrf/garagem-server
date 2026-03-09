@@ -550,7 +550,7 @@ class Lead {
                                     ORDER BY leads DESC;
                                   `;
 
-    const leadsPorPlataforma = await db.query(leadsPorPlataformaQuery, params);
+    const leadsPorPlataforma = await db.query(leadsPorPlataformaQuery, [ini, fim]);
 
     // ---------- TIMELINE POR PLATAFORMA ----------
     const timeLinePlataformaQuery = `
