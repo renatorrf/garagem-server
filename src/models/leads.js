@@ -512,38 +512,41 @@ class Lead {
 
     // ---------- LEADS POR PLATAFORMA (contagem) ----------
     const leadsPorPlataformaQuery = `
-    WITH base AS (
-      SELECT
-        COALESCE(
-          NULLIF((NULLIF(metadata,'')::jsonb ->> 'plataforma'), ''),
-          NULLIF(origem, ''),
-          NULLIF((NULLIF(metadata,'')::jsonb ->> '{extras,fonte}'), ''),
-          'Desconhecido'
-        ) AS plataforma,
-        status,
-        prioridade,
-        data_recebimento
-      FROM ${leadTable}
-      ${whereClause}
-    )
-    SELECT
-      plataforma,
-      COUNT(*)::int AS leads,
-      COUNT(*) FILTER (WHERE status = 'novo')::int AS novos,
-      COUNT(*) FILTER (WHERE status = 'contatado')::int AS contatados,
-      COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos,
-      COUNT(*) FILTER (WHERE prioridade = 'alta')::int AS alta_prioridade,
-      COUNT(*) FILTER (
-        WHERE (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date
-              = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
-      )::int AS leads_hoje,
-      ROUND(
-        (COUNT(*) FILTER (WHERE status = 'vendido')::numeric / NULLIF(COUNT(*),0)) * 100
-      , 2) AS taxa_conversao_pct
-    FROM base
-    GROUP BY plataforma
-    ORDER BY leads DESC;
-  `;
+                                    WITH base AS (
+                                  SELECT
+                                    CASE
+                                      WHEN metadata IS NOT NULL AND pg_input_is_valid(metadata, 'jsonb') THEN metadata::jsonb
+                                      ELSE NULL
+                                    END AS meta,
+                                    origem,
+                                    status,
+                                    prioridade,
+                                    data_recebimento
+                                  FROM teste.leads
+                                  WHERE deleted_at IS NULL
+                                )
+                                SELECT
+                                  COALESCE(
+                                    NULLIF(meta ->> 'plataforma', ''),
+                                    NULLIF(origem, ''),
+                                    NULLIF(meta #>> '{extras,fonte}', ''),
+                                    'Desconhecido'
+                                  ) AS plataforma,
+                                  COUNT(*)::int AS leads,
+                                  COUNT(*) FILTER (WHERE status = 'novo')::int AS novos,
+                                  COUNT(*) FILTER (WHERE status = 'contatado')::int AS contatados,
+                                  COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos,
+                                  COUNT(*) FILTER (WHERE prioridade = 'alta')::int AS alta_prioridade,
+                                  COUNT(*) FILTER (
+                                    WHERE (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date =
+                                          (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
+                                  )::int AS leads_hoje,
+                                  ROUND(
+                                    (COUNT(*) FILTER (WHERE status = 'vendido')::numeric / NULLIF(COUNT(*),0)) * 100
+                                  , 2) AS taxa_conversao_pct
+                                FROM base
+                                GROUP BY plataforma
+                                ORDER BY leads DESC`;
     const leadsPorPlataforma = await db.query(leadsPorPlataformaQuery, params);
 
     // ---------- TIMELINE POR PLATAFORMA ----------
