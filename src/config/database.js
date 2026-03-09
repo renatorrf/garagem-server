@@ -171,6 +171,27 @@ const db = {
   },
 };
 
+db.healthCheck = async () => {
+  try {
+    const res = await pool.query('SELECT NOW()');
+    return {
+      status: 'healthy',
+      timestamp: res.rows[0].now
+    };
+  } catch (err) {
+    return {
+      status: 'unhealthy',
+      error: err.message
+    };
+  }
+};
+
+db.close = async () => {
+  await pool.end();
+  console.log('Pool has been closed');
+};
+db.pool = pool;
+
 module.exports = db;        // default: require('./db') -> db com getOne/getMany/etc
 module.exports.db = db;     // named:   const { db } = require('./db')
 module.exports.pool = pool; // opcional
