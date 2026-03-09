@@ -49,6 +49,8 @@ if (process.env.NODE_ENV === "development") {
   app.use(morgan("dev"));
 }
 
+app.get("/healthz", (req, res) => res.status(200).send("ok"));
+
 /**
  * ✅ WhatsApp Webhook
  * Importante: mantenha antes do middleware 404
@@ -66,8 +68,6 @@ app.use("/garagemweb/webhooks/whatsapp", whatsappWebhookRoutes);
  * ✅ Iniciar workflow (crons)
  */
 LeadWorkflowService.start();
-
-app.get("/healthz", (req, res) => res.status(200).send("ok"));
 
 // Health Check aprimorado
 app.get("/health", async (req, res) => {
