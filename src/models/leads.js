@@ -545,9 +545,9 @@ class Lead {
                                      ROUND(
                                        (COUNT(*) FILTER (WHERE status = 'vendido')::numeric / NULLIF(COUNT(*),0)) * 100
                                      , 2) AS taxa_conversao_pct
-                                    ROM base
-                                    ROUP BY plataforma
-                                    RDER BY leads DESC;
+                                    FROM base
+                                    GROUP BY plataforma
+                                    ORDER BY leads DESC;
                                   `;
 
     const leadsPorPlataforma = await db.query(leadsPorPlataformaQuery, params);
@@ -574,9 +574,9 @@ class Lead {
                                    dia,
                                    COUNT(*)::int AS total,
                                    COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos
-                                  ROM base
-                                  ROUP BY plataforma, dia
-                                  RDER BY dia ASC, plataforma ASC;
+                                  FROM base
+                                  GROUP BY plataforma, dia
+                                  ORDER BY dia ASC, plataforma ASC;
   `;
     const timeLinePlataforma = await db.query(timeLinePlataformaQuery, [
       ini,
