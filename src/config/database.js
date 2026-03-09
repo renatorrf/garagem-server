@@ -80,6 +80,8 @@ async function query(text, params, options) {
     throw new Error("db.query: SQL (text) inválido.");
   }
 
+  
+
   // valida placeholders x params
   const needed = maxPlaceholderIndex(text);
   if (needed > params.length) {
@@ -126,6 +128,10 @@ async function query(text, params, options) {
 
     throw e;
   }
+}
+
+async function query(text, params = []) {
+  return pool.query(text, params);
 }
 
 const db = {

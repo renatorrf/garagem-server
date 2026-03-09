@@ -491,23 +491,26 @@ class Lead {
     const result = await db.getOne(statsQuery, params);
 
     // intervalo padrão para análises/gráficos (30 dias) caso não venha filtro
-    const ini = dataInicio || new Date(Date.now() - 30 * 86400000).toISOString();
+    const ini =
+      dataInicio || new Date(Date.now() - 30 * 86400000).toISOString();
     const fim = dataFim || new Date().toISOString();
 
+    const timelineWhere = [
+      "deleted_at IS NULL",
+      "data_recebimento >= CURRENT_DATE - INTERVAL '30 days'",
+    ];
     // ---------- TIMELINE (por dia) ----------
     const timelineQuery = `
-    SELECT
-      (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date AS date,
-      COUNT(*)::int AS total,
-      COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos
-    FROM ${leadTable}
-    WHERE deleted_at IS NULL
-      AND data_recebimento >= $1
-      AND data_recebimento <  $2
-    GROUP BY (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date
-    ORDER BY date ASC;
+    SELECT 
+      DATE(data_recebimento) as date,
+      COUNT(*) as total,
+      COUNT(CASE WHEN status = 'vendido' THEN 1 END) as vendidos
+    FROM teste.leads
+    WHERE ${timelineWhere.join(" AND ")}
+    GROUP BY DATE(data_recebimento)
+    ORDER BY date ASC
   `;
-    const timeline = await db.query(timelineQuery, [ini, fim]);
+    const timeline = await db.query(timelineQuery, []);
 
     // ---------- LEADS POR PLATAFORMA (contagem) ----------
     const leadsPorPlataformaQuery = `
@@ -575,7 +578,10 @@ class Lead {
                                   ROUP BY plataforma, dia
                                   RDER BY dia ASC, plataforma ASC;
   `;
-    const timeLinePlataforma = await db.query(timeLinePlataformaQuery, [ini, fim]);
+    const timeLinePlataforma = await db.query(timeLinePlataformaQuery, [
+      ini,
+      fim,
+    ]);
 
     // ---------- CUSTO RATEADO + CPL/CPA (custo_mensal / dias_no_mes) ----------
     const custoPlataformaLeadQuery = `
@@ -640,7 +646,13 @@ class Lead {
 
     return {
       ...result,
-      taxaConversao: total > 0 ? ((vendidos / total) * 100).toFixed(2) : "0.00",
+      taxaConversao:
+        Number(result?.total_leads || 0) > 0
+          ? (
+              (Number(result.vendidos || 0) / Number(result.total_leads || 0)) *
+              100
+            ).toFixed(2)
+          : 0,
       timeline: timeline.rows,
       leadsPorPlataforma: leadsPorPlataforma.rows,
       timeLinePlataforma: timeLinePlataforma.rows,

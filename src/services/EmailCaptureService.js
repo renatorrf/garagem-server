@@ -520,8 +520,10 @@ class EmailCaptureService {
       senderEmail.includes("napista.com.br") ||
       senderEmail.includes("mandrillapp.com") ||
       subject?.toLowerCase().includes("lead bv") ||
+      subject?.toLowerCase().includes("banco bv") ||
       fullText.toLowerCase().includes("simulação aprovada no banco bv") ||
       fullText.toLowerCase().includes("simulacao aprovada no banco bv") ||
+      fullText.toLowerCase().includes("pode ser aprovado no banco bv") ||
       fullText.toLowerCase().includes("dados do cliente")
     ) {
       console.log("🎯 Detectado: BV");
@@ -592,13 +594,38 @@ class EmailCaptureService {
       .replace(/=09/g, " ")
       .replace(/=3D/g, "=")
       .replace(/\u00A0/g, " ")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&ccedil;/gi, "ç")
+      .replace(/&atilde;/gi, "ã")
+      .replace(/&aacute;/gi, "á")
+      .replace(/&eacute;/gi, "é")
+      .replace(/&iacute;/gi, "í")
+      .replace(/&oacute;/gi, "ó")
+      .replace(/&uacute;/gi, "ú")
+      .replace(/&ecirc;/gi, "ê")
+      .replace(/&ocirc;/gi, "ô")
+      .replace(/&agrave;/gi, "à")
+      .replace(/&bull;/gi, " • ")
+      .replace(/&quot;/gi, '"')
+      .replace(/&#039;/g, "'")
+      .replace(/&#8203;/g, " ")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/p>/gi, "\n")
+      .replace(/<\/div>/gi, "\n")
+      .replace(/<[^>]*>/g, " ")
       .replace(/[ \t]+/g, " ")
       .replace(/\n\s+/g, "\n")
       .replace(/\n{2,}/g, "\n")
       .trim();
 
+    const normalizeMoney = (value) => {
+      if (!value) return null;
+      return value.replace(/\./g, "").replace(",", ".").replace(/\s/g, "");
+    };
+
     const pickBlock = (startLabel, endLabel = null) => {
       if (!startLabel) return null;
+
       const pattern = endLabel
         ? new RegExp(`${startLabel}\\s*\\n([\\s\\S]*?)\\n${endLabel}`, "i")
         : new RegExp(`${startLabel}\\s*\\n([\\s\\S]*?)$`, "i");
@@ -606,115 +633,116 @@ class EmailCaptureService {
       return clean.match(pattern)?.[1]?.trim() || null;
     };
 
-    const dadosClienteBlock =
-      pickBlock("Dados do cliente", "Mensagem") ||
-      pickBlock("Dados do cliente", "Veículo de interesse") ||
-      null;
+    // =========================================================
+    // 1) Nome
+    // =========================================================
 
-    let nome = null;
-    let telefone = null;
-    let email = null;
-    let cpf = null;
-
-    if (dadosClienteBlock) {
-      const lines = dadosClienteBlock
-        .split("\n")
-        .map((l) => l.trim())
-        .filter(Boolean);
-
-      nome =
-        lines.find(
+    let nome =
+      // layout antigo
+      pickBlock("Dados do cliente", "Mensagem")
+        ?.split("\n")
+        ?.map((l) => l.trim())
+        ?.find(
           (l) => /^[A-ZÀ-Ú][A-ZÀ-Ú\s]{8,}$/.test(l) && !l.includes("CPF"),
-        ) || null;
-
-      telefone =
-        lines.find((l) => /\(?\d{2}\)?\s*9?\d{4,5}-?\d{4}/.test(l)) || null;
-
-      email =
-        lines.find((l) => /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(l)) ||
-        null;
-
-      cpf =
-        lines.find((l) => /CPF:\s*\d{3}\.\d{3}\.\d{3}-\d{2}/i.test(l)) || null;
-    }
-
-    nome =
-      nome?.trim() ||
+        ) ||
+      // layout reminder: CPF linha acima e nome completo logo abaixo
       clean
-        .match(/Dados do cliente[\s\S]*?\n([A-ZÀ-Ú][A-ZÀ-Ú\s]{8,})\n/i)?.[1]
+        .match(
+          /CPF:\s*\d{3}\.\d{3}\.\d{3}-\d{2}\s*\n([A-ZÀ-Ú][A-Za-zÀ-ÿ\s]+)$/im,
+        )?.[1]
         ?.trim() ||
-      clean.match(/Lead BV:\s*([A-ZÀ-Ú]+)\s+tem interesse/i)?.[1]?.trim() ||
+      clean
+        .match(
+          /CPF:\s*\d{3}\.\d{3}\.\d{3}-\d{2}\s*\n([A-ZÀ-Ú][A-Za-zÀ-ÿ\s]+)/i,
+        )?.[1]
+        ?.trim() ||
+      // nome curto no subject
+      subject?.match(/com\s+([A-Za-zÀ-ÿ]+)\??/i)?.[1]?.trim() ||
+      // nome curto em headline
+      clean
+        .match(/^([A-Za-zÀ-ÿ]+)\s+pode ser aprovado no banco BV/i)?.[1]
+        ?.trim() ||
       null;
 
-    const telefoneRaw =
-      telefone || clean.match(/(\(?\d{2}\)?\s*9?\d{4,5}-?\d{4})/)?.[1] || null;
+    // =========================================================
+    // 2) CPF
+    // =========================================================
 
-    telefone = telefoneRaw ? telefoneRaw.replace(/\D/g, "") : null;
+    const cpf = clean.match(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/)?.[0] || null;
 
-    email =
-      email?.trim() ||
-      clean.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] ||
+    // =========================================================
+    // 3) Telefone
+    // =========================================================
+    // No reminder geralmente vem no link api.whatsapp.com?phone=55...
+    let telefone =
+      clean.match(/api\.whatsapp\.com\/send\?phone=55(\d{10,11})/i)?.[1] ||
+      clean.match(/wa\.me\/55(\d{10,11})/i)?.[1] ||
+      clean.match(/\(?\d{2}\)?\s*9?\d{4,5}-?\d{4}/)?.[0]?.replace(/\D/g, "") ||
       null;
 
-    cpf =
-      cpf?.replace(/^CPF:\s*/i, "").trim() ||
-      clean.match(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/)?.[0] ||
-      null;
+    // =========================================================
+    // 4) Email
+    // =========================================================
+    const email =
+      clean.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || null;
 
-    const veiculoBlock =
-      pickBlock("Veículo de interesse", "Com interesse em financiar no BV") ||
-      pickBlock("Veículo de interesse", "Seguros selecionados") ||
-      null;
-
-    let veiculo = null;
-    let veiculoDetalhes = null;
-
-    if (veiculoBlock) {
-      const lines = veiculoBlock
-        .split("\n")
-        .map((l) => l.trim())
-        .filter(Boolean);
-
-      veiculo = lines[0] || null;
-      veiculoDetalhes = lines[1] || null;
-    }
-
-    const financiamentoBlock =
-      pickBlock("Com interesse em financiar no BV", "Seguros selecionados") ||
-      pickBlock(
-        "Com interesse em financiar no BV",
-        "Acesse sua Área do lojista",
-      ) ||
-      null;
+    // =========================================================
+    // 5) Simulação
+    // Ex.: R$20.000 + 60x de R$ 573,09
+    // Ex.: R$69.630 + 60x de R$ 2.658,68
+    // =========================================================
 
     let entrada = null;
     let parcelas = null;
 
-    if (financiamentoBlock) {
-      const entradaMatch = financiamentoBlock.match(/R\$\s*([\d\.\,]+)/i);
-      if (entradaMatch) {
-        entrada = entradaMatch[1].replace(/\./g, "").replace(",", ".");
-      }
+    const financiamentoMatch = clean.match(
+      /R\$\s*([\d\.\,]+)\s*\+\s*(\d{1,3})x\s+de\s+R\$\s*([\d\.\,]+)/i,
+    );
 
-      const parcelasMatch = financiamentoBlock.match(
-        /(\d{1,3})x\s+de\s+R\$\s*([\d\.\,\u00A0]+)/i,
-      );
-      if (parcelasMatch) {
-        parcelas = {
-          qtd: parcelasMatch[1],
-          valor: parcelasMatch[2]
-            .replace(/\./g, "")
-            .replace(",", ".")
-            .replace(/\s/g, ""),
-        };
-      }
+    if (financiamentoMatch) {
+      entrada = normalizeMoney(financiamentoMatch[1]);
+      parcelas = {
+        qtd: financiamentoMatch[2],
+        valor: normalizeMoney(financiamentoMatch[3]),
+      };
     }
 
-    const precoVeiculo =
-      veiculoDetalhes
-        ?.match(/R\$\s*([\d\.\,]+)/i)?.[1]
-        ?.replace(/\./g, "")
-        .replace(",", ".") || null;
+    const simulacaoAprovada =
+      /simula(?:ç|c)[aã]o aprovada no banco bv/i.test(clean) ||
+      /pode ser aprovado no banco bv/i.test(clean) ||
+      /pode ser aprovado/i.test(clean);
+
+    // =========================================================
+    // 6) Veículo
+    // layout 1: bloco "Veículo de interesse"
+    // layout 2: nome do carro + linha seguinte "2014 • 135.000 km • R$ 31.900"
+    // =========================================================
+
+    let veiculo =
+      pickBlock("Veículo de interesse", "Com interesse em financiar no BV")
+        ?.split("\n")
+        ?.map((l) => l.trim())
+        ?.filter(Boolean)?.[0] ||
+      clean
+        .match(
+          /([A-Z0-9\s]+(?:UNO|FIAT|CHERY|FORD|CHEVROLET|VOLKSWAGEN|VW|HONDA|TOYOTA|HYUNDAI|RENAULT|JEEP|NISSAN)[A-Z0-9\s\.\/-]*)\n/i,
+        )?.[1]
+        ?.trim() ||
+      null;
+
+    let veiculoDetalhes =
+      pickBlock("Veículo de interesse", "Com interesse em financiar no BV")
+        ?.split("\n")
+        ?.map((l) => l.trim())
+        ?.filter(Boolean)?.[1] ||
+      clean.match(
+        /\b(19|20)\d{2}\s*•\s*[\d\.\,]+\s*km\s*•\s*R\$\s*[\d\.\,]+/i,
+      )?.[0] ||
+      null;
+
+    const preco = veiculoDetalhes?.match(/R\$\s*([\d\.\,]+)/i)?.[1]
+      ? normalizeMoney(veiculoDetalhes.match(/R\$\s*([\d\.\,]+)/i)[1])
+      : null;
 
     const ano = veiculoDetalhes?.match(/\b(19|20)\d{2}\b/)?.[0] || null;
 
@@ -726,19 +754,20 @@ class EmailCaptureService {
 
     const placa =
       veiculoDetalhes
-        ?.match(/\b[A-Z]{3}[0-9A-Z][A-Z0-9][0-9]{2}\b/i)?.[0]
-        ?.toUpperCase() || null;
-
-    const simulacaoAprovada = /Simula(?:ç|c)[aã]o aprovada no banco BV/i.test(
-      clean,
-    );
-    const mensagem =
-      clean.match(/Mensagem\s*\n+“?([^”\n]+(?:\n[^”\n]+)*)”?/i)?.[1]?.trim() ||
+        ?.match(/\b[A-Z]{3}-?[0-9A-Z][A-Z0-9][0-9]{2}\b/i)?.[0]
+        ?.toUpperCase() ||
       clean
-        .match(
-          /Lead BV: SIMULAÇÃO APROVADA[\s\S]*?Acesse agora:\s*(https?:\/\/\S+)/i,
-        )?.[0]
-        ?.trim() ||
+        .match(/\b[A-Z]{3}-?[0-9A-Z][A-Z0-9][0-9]{2}\b/i)?.[0]
+        ?.toUpperCase() ||
+      null;
+
+    // =========================================================
+    // 7) Mensagem
+    // =========================================================
+
+    const mensagem =
+      pickBlock("Mensagem", "Veículo de interesse") ||
+      clean.match(/Lead BV:[^\n]+/i)?.[0] ||
       subject ||
       null;
 
@@ -748,7 +777,7 @@ class EmailCaptureService {
       telefone,
       veiculo,
       mensagem,
-      preco: precoVeiculo,
+      preco,
       placa,
       extras: {
         fonte: "bv",
@@ -759,6 +788,11 @@ class EmailCaptureService {
         simulacaoAprovada,
         entrada,
         parcelas,
+        tipoEmail:
+          /você já falou com/i.test(subject || "") ||
+          /voce ja falou com/i.test(subject || "")
+            ? "reminder"
+            : "lead",
       },
     };
   }
