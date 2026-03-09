@@ -615,10 +615,6 @@ class Lead {
 
     const leadCPLCPA = await db.query(LeadCPLCPAQuery, [tlStart, tlEnd]);
 
-    const ini =
-      dataInicio ||
-      new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-    const fim = dataFim || new Date().toISOString();
     const custoPlataformaLead = await db.query(
               `WITH base_leads AS (
           SELECT
@@ -670,7 +666,7 @@ class Lead {
         FULL OUTER JOIN spend_plat s USING (plataforma)
         ORDER BY leads DESC, spend DESC;`
     );
-    const cplRows = await db.query(custoPlataformaLead, [ini, fim]);
+    const cplRows = await db.query(custoPlataformaLead, [tlStart, tlEnd]);
 
     // ---------- retorno ----------
     const total = Number(result?.total_leads ?? 0);
@@ -683,7 +679,7 @@ class Lead {
       leadsPorPlataforma: leadsPorPlataforma.rows,
       timeLinePlataforma: timeLinePlataforma.rows,
       leadCPLCPA: leadCPLCPA.rows,
-      custoPlataformaLead: cplRows.rows
+      cplRows: cplRows.rows
     };
   }
 
