@@ -510,7 +510,7 @@ class Lead {
     GROUP BY DATE(data_recebimento)
     ORDER BY date ASC
   `;
-    const timeline = await db.query(timelineQuery, params);
+    const timeline = await db.query(timelineQuery, []);
 
     // ---------- LEADS POR PLATAFORMA (contagem) ----------
     const leadsPorPlataformaQuery = `
@@ -550,7 +550,7 @@ class Lead {
                                     ORDER BY leads DESC;
                                   `;
 
-    const leadsPorPlataforma = await db.query(leadsPorPlataformaQuery, [ini, fim]);
+    const leadsPorPlataforma = await db.query(leadsPorPlataformaQuery, params);
 
     // ---------- TIMELINE POR PLATAFORMA ----------
     const timeLinePlataformaQuery = `
