@@ -491,8 +491,7 @@ class Lead {
     const result = await db.getOne(statsQuery, params);
 
     // intervalo padrão para análises/gráficos (30 dias) caso não venha filtro
-    const ini =
-      dataInicio || new Date(Date.now() - 30 * 86400000).toISOString();
+    const ini = dataInicio || new Date(Date.now() - 30 * 86400000).toISOString();
     const fim = dataFim || new Date().toISOString();
 
     // ---------- TIMELINE (por dia) ----------
@@ -513,122 +512,122 @@ class Lead {
     // ---------- LEADS POR PLATAFORMA (contagem) ----------
     const leadsPorPlataformaQuery = `
                                     WITH base AS (
-                                  SELECT
-                                    CASE
-                                      WHEN metadata IS NOT NULL AND pg_input_is_valid(metadata, 'jsonb') THEN metadata::jsonb
-                                      ELSE NULL
-                                    END AS meta,
-                                    origem,
-                                    status,
-                                    prioridade,
-                                    data_recebimento
-                                  FROM teste.leads
-                                  WHERE deleted_at IS NULL
-                                )
-                                SELECT
-                                  COALESCE(
-                                    NULLIF(meta ->> 'plataforma', ''),
-                                    NULLIF(origem, ''),
-                                    NULLIF(meta #>> '{extras,fonte}', ''),
-                                    'Desconhecido'
-                                  ) AS plataforma,
-                                  COUNT(*)::int AS leads,
-                                  COUNT(*) FILTER (WHERE status = 'novo')::int AS novos,
-                                  COUNT(*) FILTER (WHERE status = 'contatado')::int AS contatados,
-                                  COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos,
-                                  COUNT(*) FILTER (WHERE prioridade = 'alta')::int AS alta_prioridade,
-                                  COUNT(*) FILTER (
-                                    WHERE (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date =
-                                          (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
-                                  )::int AS leads_hoje,
-                                  ROUND(
-                                    (COUNT(*) FILTER (WHERE status = 'vendido')::numeric / NULLIF(COUNT(*),0)) * 100
-                                  , 2) AS taxa_conversao_pct
-                                FROM base
-                                GROUP BY plataforma
-                                ORDER BY leads DESC`;
+                                     SELECT
+                                       public.try_jsonb(metadata::text) AS meta,
+                                       origem,
+                                       status,
+                                       prioridade,
+                                       data_recebimento
+                                     FROM teste.leads
+                                     WHERE deleted_at IS NULL
+                                       AND data_recebimento >= $1
+                                       AND data_recebimento <  $2
+                                    )
+                                    ELECT
+                                     COALESCE(
+                                       NULLIF(meta ->> 'plataforma', ''),
+                                       NULLIF(origem, ''),
+                                       NULLIF(meta #>> '{extras,fonte}', ''),
+                                       'Desconhecido'
+                                     ) AS plataforma,
+                                     COUNT(*)::int AS leads,
+                                     COUNT(*) FILTER (WHERE status = 'novo')::int AS novos,
+                                     COUNT(*) FILTER (WHERE status = 'contatado')::int AS contatados,
+                                     COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos,
+                                     COUNT(*) FILTER (WHERE prioridade = 'alta')::int AS alta_prioridade,
+                                     COUNT(*) FILTER (
+                                       WHERE (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date =
+                                             (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
+                                     )::int AS leads_hoje,
+                                     ROUND(
+                                       (COUNT(*) FILTER (WHERE status = 'vendido')::numeric / NULLIF(COUNT(*),0)) * 100
+                                     , 2) AS taxa_conversao_pct
+                                    ROM base
+                                    ROUP BY plataforma
+                                    RDER BY leads DESC;
+                                  `;
+
     const leadsPorPlataforma = await db.query(leadsPorPlataformaQuery, params);
 
     // ---------- TIMELINE POR PLATAFORMA ----------
     const timeLinePlataformaQuery = `
-    WITH base AS (
-      SELECT
-        COALESCE(
-          NULLIF((NULLIF(metadata,'')::jsonb ->> 'plataforma'), ''),
-          NULLIF(origem, ''),
-          'Desconhecido'
-        ) AS plataforma,
-        (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date AS dia,
-        status
-      FROM ${leadTable}
-      ${whereClause}
-    )
-    SELECT
-      plataforma,
-      dia,
-      COUNT(*)::int AS total,
-      COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos
-    FROM base
-    GROUP BY plataforma, dia
-    ORDER BY dia ASC, plataforma ASC;
+                                     WITH base AS (
+                                   SELECT
+                                     public.try_jsonb(metadata::text) AS meta,
+                                     origem,
+                                     (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date AS dia,
+                                     status
+                                   FROM teste.leads
+                                   WHERE deleted_at IS NULL
+                                     AND data_recebimento >= $1
+                                     AND data_recebimento <  $2
+                                  )
+                                  ELECT
+                                   COALESCE(
+                                     NULLIF(meta ->> 'plataforma', ''),
+                                     NULLIF(origem, ''),
+                                     'Desconhecido'
+                                   ) AS plataforma,
+                                   dia,
+                                   COUNT(*)::int AS total,
+                                   COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos
+                                  ROM base
+                                  ROUP BY plataforma, dia
+                                  RDER BY dia ASC, plataforma ASC;
   `;
-    const timeLinePlataforma = await db.query(timeLinePlataformaQuery, params);
+    const timeLinePlataforma = await db.query(timeLinePlataformaQuery, [ini, fim]);
 
     // ---------- CUSTO RATEADO + CPL/CPA (custo_mensal / dias_no_mes) ----------
     const custoPlataformaLeadQuery = `
-    WITH base_leads AS (
-      SELECT
-        CASE
-          WHEN lower(COALESCE(NULLIF((NULLIF(metadata,'')::jsonb->>'plataforma'), ''), origem, '')) IN ('bv','napista')
-            THEN 'BV/NaPista'
-          WHEN lower(COALESCE(NULLIF((NULLIF(metadata,'')::jsonb->>'plataforma'), ''), origem, '')) IN ('mobiauto')
-            THEN 'MobiAuto'
-          WHEN lower(COALESCE(NULLIF((NULLIF(metadata,'')::jsonb->>'plataforma'), ''), origem, '')) IN ('icarros','i carros','i-carros')
-            THEN 'iCarros'
-          WHEN lower(COALESCE(NULLIF((NULLIF(metadata,'')::jsonb->>'plataforma'), ''), origem, '')) IN ('olx')
-            THEN 'OLX'
-          WHEN lower(COALESCE(NULLIF((NULLIF(metadata,'')::jsonb->>'plataforma'), ''), origem, '')) IN ('mercado livre','mercadolivre','ml','mercado_livre')
-            THEN 'Mercado Livre'
-          ELSE COALESCE(NULLIF((NULLIF(metadata,'')::jsonb->>'plataforma'),''), NULLIF(origem,''), 'Desconhecido')
-        END AS plataforma,
-        status
-      FROM ${leadTable}
-      WHERE deleted_at IS NULL
-        AND data_recebimento >= $1
-        AND data_recebimento <  $2
-    ),
-    leads_plat AS (
-      SELECT
-        plataforma,
-        COUNT(*)::int AS leads,
-        COUNT(*) FILTER (WHERE status='vendido')::int AS vendidos
-      FROM base_leads
-      GROUP BY 1
-    ),
-    dias AS (
-      SELECT
-        d::date AS dia,
-        EXTRACT(day FROM (date_trunc('month', d) + interval '1 month - 1 day'))::int AS dias_no_mes
-      FROM generate_series($1::date, ($2::date - interval '1 day')::date, interval '1 day') d
-    ),
-    spend_plat AS (
-      SELECT
-        c.plataforma,
-        ROUND(SUM(c.custo_mensal / dias.dias_no_mes), 2) AS spend_periodo
-      FROM ${schema}.marketing_costs_monthly c
-      CROSS JOIN dias
-      GROUP BY c.plataforma
-    )
-    SELECT
-      COALESCE(l.plataforma, s.plataforma) AS plataforma,
-      COALESCE(l.leads, 0) AS leads,
-      COALESCE(l.vendidos, 0) AS vendidos,
-      COALESCE(s.spend_periodo, 0) AS spend,
-      ROUND(COALESCE(s.spend_periodo, 0) / NULLIF(COALESCE(l.leads, 0), 0), 2) AS cpl,
-      ROUND(COALESCE(s.spend_periodo, 0) / NULLIF(COALESCE(l.vendidos, 0), 0), 2) AS cpa
-    FROM leads_plat l
-    FULL OUTER JOIN spend_plat s USING (plataforma)
-    ORDER BY leads DESC, spend DESC;
+                                      WITH base_leads AS (
+                                    SELECT
+                                      public.try_jsonb(metadata::text) AS meta,
+                                      origem,
+                                      status
+                                    FROM teste.leads
+                                    WHERE deleted_at IS NULL
+                                      AND data_recebimento >= $1
+                                      AND data_recebimento <  $2
+                                  ),
+                                  leads_plat AS (
+                                    SELECT
+                                      CASE
+                                        WHEN lower(COALESCE(NULLIF(meta->>'plataforma',''), origem, '')) IN ('bv','napista') THEN 'BV/NaPista'
+                                        WHEN lower(COALESCE(NULLIF(meta->>'plataforma',''), origem, '')) IN ('mobiauto') THEN 'MobiAuto'
+                                        WHEN lower(COALESCE(NULLIF(meta->>'plataforma',''), origem, '')) IN ('icarros','i carros','i-carros') THEN 'iCarros'
+                                        WHEN lower(COALESCE(NULLIF(meta->>'plataforma',''), origem, '')) IN ('olx') THEN 'OLX'
+                                        WHEN lower(COALESCE(NULLIF(meta->>'plataforma',''), origem, '')) IN ('mercado livre','mercadolivre','ml','mercado_livre') THEN 'Mercado Livre'
+                                        ELSE COALESCE(NULLIF(meta->>'plataforma',''), NULLIF(origem,''), 'Desconhecido')
+                                      END AS plataforma,
+                                      COUNT(*)::int AS leads,
+                                      COUNT(*) FILTER (WHERE status='vendido')::int AS vendidos
+                                    FROM base_leads
+                                    GROUP BY 1
+                                  ),
+                                  dias AS (
+                                    SELECT
+                                      d::date AS dia,
+                                      EXTRACT(day FROM (date_trunc('month', d) + interval '1 month - 1 day'))::int AS dias_no_mes
+                                    FROM generate_series($1::date, ($2::date - interval '1 day')::date, interval '1 day') d
+                                  ),
+                                  spend_plat AS (
+                                    SELECT
+                                      c.plataforma,
+                                      ROUND(SUM(c.custo_mensal / dias.dias_no_mes), 2) AS spend_periodo
+                                    FROM teste.marketing_costs_monthly c
+                                    CROSS JOIN dias
+                                    GROUP BY c.plataforma
+                                  )
+                                  SELECT
+                                    COALESCE(l.plataforma, s.plataforma) AS plataforma,
+                                    COALESCE(l.leads, 0) AS leads,
+                                    COALESCE(l.vendidos, 0) AS vendidos,
+                                    COALESCE(s.spend_periodo, 0) AS spend,
+                                    ROUND(COALESCE(s.spend_periodo, 0) / NULLIF(COALESCE(l.leads, 0), 0), 2) AS cpl,
+                                    ROUND(COALESCE(s.spend_periodo, 0) / NULLIF(COALESCE(l.vendidos, 0), 0), 2) AS cpa
+                                  FROM leads_plat l
+                                  FULL OUTER JOIN spend_plat s USING (plataforma)
+                                  ORDER BY leads DESC, spend DESC;
   `;
     const custoPlataformaLead = await db.query(custoPlataformaLeadQuery, [
       ini,

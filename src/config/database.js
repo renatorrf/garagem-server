@@ -1,134 +1,131 @@
-/**
- * arquivo: config/database.js
- * descriçao: arquivo responsavel pelas requisiçoes no banco de dados (connection strings)
- * data: 14/03/2022
- * autor: Renato Filho
-*/
+// db.js
+// Ajuste o import do pool conforme seu projeto.
+// Exemplo:
+// const { Pool } = require('pg');
+// const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
-const { Pool } = require("pg");
-const dotenv = require("dotenv");
+const { Pool } = require('pg');
 
-dotenv.config();
-
-// Configurações avançadas do pool de conexões
+// ⚠️ ajuste o config do pool ao seu projeto
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: true }, // se der erro de certificado, mude p/ false
-  max: 5,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 30000,
-});
-
-// Tratamento de erros centralizado
-pool.on("error", (err) => {
-  console.error("Unexpected error on idle client", err);
-  // Não encerramos o processo imediatamente para evitar reinícios abruptos
-});
-
-// Adicionamos um listener para eventos de conexão
-pool.on("connect", (client) => {
-  console.log("New client connected to the pool");
-});
-
-// Adicionamos um listener para remoção de clientes
-pool.on("remove", (client) => {
-  console.log("Client removed from the pool");
+  // ssl: { rejectUnauthorized: false }, // se precisar
 });
 
 /**
- * Executa uma query no banco de dados com opção de transação
- * @param {string} text - Query SQL ou nome de uma query nomeada
- * @param {Array} [params] - Parâmetros para a query
- * @param {Object} [options] - Opções adicionais
- * @param {boolean} [options.transaction=false] - Se deve ser executado em transação
- * @param {string} [options.queryName] - Nome para identificação da query nos logs
- * @param {number} [options.timeout] - Timeout em milissegundos para a query
- * @returns {Promise<QueryResult>} - Resultado da query
+ * Extrai o maior placeholder $N presente no SQL.
+ * Ex.: "WHERE a=$1 AND b=$3" => 3
  */
-const query = async (text, params, options = {}) => {
-  const { transaction = false, queryName, timeout } = options;
-  const start = Date.now();
-  const client = await pool.connect();
-  
-  try {
-    // Configura o nome da query para identificação nos logs do PostgreSQL
-    if (queryName) {
-      await client.query(`SET application_name TO '${queryName}'`);
-    }
+function maxPlaceholderIndex(sql) {
+  const re = /\$([1-9]\d*)/g;
+  let m;
+  let max = 0;
+  while ((m = re.exec(sql)) !== null) {
+    const n = Number(m[1]);
+    if (n > max) max = n;
+  }
+  return max;
+}
 
-    // Configura timeout se especificado
-    if (timeout) {
-      await client.query(`SET statement_timeout TO ${timeout}`);
-    }
+/**
+ * Normaliza (params, options)
+ * - Se params for objeto e options não vier, assume que params é options.
+ * - Se params vier undefined/null, vira [].
+ * - Se params não for array, tenta wrap em array (último recurso).
+ */
+function normalizeArgs(params, options) {
+  // caso: query(sql, { log: true })
+  if (params && !Array.isArray(params) && typeof params === 'object' && options == null) {
+    options = params;
+    params = [];
+  }
 
-    // Inicia transação se necessário
-    if (transaction) {
-      await client.query('BEGIN');
-    }
+  if (params == null) params = [];
+  if (!Array.isArray(params)) params = [params];
+  if (options == null) options = {};
 
-    // Executa a query principal
-    const res = await client.query(text, params);
-    
-    // Finaliza transação se necessário
-    if (transaction) {
-      await client.query('COMMIT');
-    }
+  return { params, options };
+}
 
-    // Log de desempenho
-    const duration = Date.now() - start;
-    console.log(`Query executed in ${duration}ms`, { 
-      query: text, 
-      params, 
-      duration,
-      rows: res.rowCount 
-    });
+function previewSql(sql, maxLen = 600) {
+  const s = String(sql).replace(/\s+/g, ' ').trim();
+  return s.length > maxLen ? s.slice(0, maxLen) + '…' : s;
+}
 
-    return res;
-  } catch (err) {
-    // Rollback em caso de erro em transação
-    if (transaction) {
-      try {
-        await client.query('ROLLBACK');
-      } catch (rollbackErr) {
-        console.error('Error during rollback:', rollbackErr);
-      }
-    }
+/**
+ * query(text, params?, options?)
+ * options:
+ *  - client: PoolClient (para usar dentro de transaction)
+ *  - log: boolean (logar query+params)
+ *  - name: string (prepared statement name)
+ *  - rowMode: 'array' | undefined
+ */
+async function query(text, params, options) {
+  const norm = normalizeArgs(params, options);
+  params = norm.params;
+  options = norm.options;
 
-    // Log detalhado do erro
-    console.error('Query execution failed:', {
-      query: text,
-      params,
-      error: err.message,
-      stack: err.stack
-    });
+  if (typeof text !== 'string' || !text.trim()) {
+    throw new Error('db.query: SQL (text) inválido.');
+  }
 
-    // Adiciona informações extras ao erro
+  // valida placeholders x params
+  const needed = maxPlaceholderIndex(text);
+  if (needed > params.length) {
+    const err = new Error(
+      `db.query: SQL exige $1..$${needed}, mas params.length=${params.length}. ` +
+      `Dica: passou params undefined?`
+    );
     err.query = text;
     err.params = params;
     throw err;
-  } finally {
-    // Libera o cliente de volta para o pool
-    try {
-      // Reseta configurações temporárias
-      if (timeout) {
-        await client.query('RESET statement_timeout').catch(() => {});
-      }
-      client.release();
-    } catch (releaseErr) {
-      console.error('Error releasing client:', releaseErr);
-    }
   }
-};
 
-// Métodos auxiliares para operações comuns
+  const client = options.client || pool;
+
+  if (options.log) {
+    console.log('[DB] SQL:', previewSql(text));
+    console.log('[DB] params:', params);
+  }
+
+  try {
+    // suporta prepared statements se você quiser
+    if (options.name || options.rowMode) {
+      return await client.query({
+        text,
+        values: params,
+        name: options.name,
+        rowMode: options.rowMode,
+      });
+    }
+
+    return await client.query(text, params);
+  } catch (e) {
+    // anexa contexto útil
+    e.query = text;
+    e.params = params;
+    e.sqlPreview = previewSql(text);
+
+    // log simples opcional
+    if (options.logErrors) {
+      console.error('[DB] ERRO:', e.message);
+      console.error('[DB] SQL:', e.sqlPreview);
+      console.error('[DB] params:', params);
+    }
+
+    throw e;
+  }
+}
+
 const db = {
-  /**
-   * Executa uma query simples
-   */
   query,
 
   /**
    * Executa uma query em transação
+   * Uso:
+   * await db.transaction(async (client) => {
+   *   await db.query('...', [..], { client });
+   * })
    */
   async transaction(callback) {
     const client = await pool.connect();
@@ -138,66 +135,27 @@ const db = {
       await client.query('COMMIT');
       return result;
     } catch (err) {
-      await client.query('ROLLBACK').catch(() => {});
+      try { await client.query('ROLLBACK'); } catch (_) {}
       throw err;
     } finally {
       client.release();
     }
   },
 
-  /**
-   * Obtém um único registro
-   */
   async getOne(text, params, options) {
     const result = await query(text, params, options);
     return result.rows[0] || null;
   },
 
-  /**
-   * Obtém múltiplos registros
-   */
   async getMany(text, params, options) {
     const result = await query(text, params, options);
     return result.rows;
   },
 
-  /**
-   * Executa uma query e retorna o número de linhas afetadas
-   */
   async execute(text, params, options) {
     const result = await query(text, params, options);
     return result.rowCount;
-  }
+  },
 };
 
-// Health check do pool
-db.healthCheck = async () => {
-  try {
-    const res = await pool.query('SELECT NOW()');
-    return {
-      status: 'healthy',
-      timestamp: res.rows[0].now
-    };
-  } catch (err) {
-    return {
-      status: 'unhealthy',
-      error: err.message
-    };
-  }
-};
-
-// Fecha o pool de conexões adequadamente
-db.close = async () => {
-  await pool.end();
-  console.log('Pool has been closed');
-};
-db.pool = pool;
-module.exports = db;
-
-
-
-
-
-
-
-
+module.exports = { db, query, pool };
