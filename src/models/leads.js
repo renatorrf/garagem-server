@@ -490,6 +490,10 @@ class Lead {
 
     const result = await db.getOne(query, params);
 
+    // define intervalo para timeline e análises por plataforma
+    const ini =  dataInicio || new Date(Date.now() - 30 * 86400000).toISOString();
+    const fim = dataFim || new Date().toISOString();
+
     // ---------- TIMELINE (últimos 30 dias ou filtro do request) ----------
     const tlStart =
       dataInicio ||
@@ -512,42 +516,42 @@ class Lead {
     const timeline = await db.query(timelineQuery, [tlStart, tlEnd]);
 
     // ---------- LEADS POR PLATAFORMA ----------
-    const leadsPorPlataformaQuery = `
-    WITH base AS (
-      SELECT
-        COALESCE(
-          NULLIF((metadata::jsonb ->> 'plataforma'), ''),
-          NULLIF(origem, ''),
-          NULLIF((metadata::jsonb #>> '{extras,fonte}'), ''),
-          'Desconhecido'
-        ) AS plataforma,
-        status,
-        prioridade,
-        data_recebimento,
-        data_contato
-      FROM ${leadTable}
-      ${whereClause}
-    )
-    SELECT
-      plataforma,
-      COUNT(*)::int AS leads,
-      COUNT(*) FILTER (WHERE status = 'novo')::int AS novos,
-      COUNT(*) FILTER (WHERE status = 'contatado')::int AS contatados,
-      COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos,
-      COUNT(*) FILTER (WHERE prioridade = 'alta')::int AS alta_prioridade,
-      COUNT(*) FILTER (
-        WHERE (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date
-              = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
-      )::int AS leads_hoje,
-      ROUND(
-        (COUNT(*) FILTER (WHERE status = 'vendido')::numeric / NULLIF(COUNT(*),0)) * 100
-      , 2) AS taxa_conversao_pct
-    FROM base
-    GROUP BY plataforma
-    ORDER BY leads DESC;
-  `;
+  //   const leadsPorPlataformaQuery = `
+  //   WITH base AS (
+  //     SELECT
+  //       COALESCE(
+  //         NULLIF((metadata::jsonb ->> 'plataforma'), ''),
+  //         NULLIF(origem, ''),
+  //         NULLIF((metadata::jsonb #>> '{extras,fonte}'), ''),
+  //         'Desconhecido'
+  //       ) AS plataforma,
+  //       status,
+  //       prioridade,
+  //       data_recebimento,
+  //       data_contato
+  //     FROM ${leadTable}
+  //     ${whereClause}
+  //   )
+  //   SELECT
+  //     plataforma,
+  //     COUNT(*)::int AS leads,
+  //     COUNT(*) FILTER (WHERE status = 'novo')::int AS novos,
+  //     COUNT(*) FILTER (WHERE status = 'contatado')::int AS contatados,
+  //     COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos,
+  //     COUNT(*) FILTER (WHERE prioridade = 'alta')::int AS alta_prioridade,
+  //     COUNT(*) FILTER (
+  //       WHERE (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date
+  //             = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
+  //     )::int AS leads_hoje,
+  //     ROUND(
+  //       (COUNT(*) FILTER (WHERE status = 'vendido')::numeric / NULLIF(COUNT(*),0)) * 100
+  //     , 2) AS taxa_conversao_pct
+  //   FROM base
+  //   GROUP BY plataforma
+  //   ORDER BY leads DESC;
+  // `;
 
-    const leadsPorPlataforma = await db.query(leadsPorPlataformaQuery, params);
+  //   const leadsPorPlataforma = await db.query(leadsPorPlataformaQuery, params);
 
     // ---------- TIMELINE POR PLATAFORMA ----------
     const timeLinePlataformaQuery = `
@@ -613,10 +617,10 @@ class Lead {
     ORDER BY leads DESC, spend DESC;
   `;
 
-    const leadCPLCPA = await db.query(LeadCPLCPAQuery, [tlStart, tlEnd]);
+    const cplRows = await db.query(LeadCPLCPAQuery, [ini, fim]);
 
     const custoPlataformaLead = await db.query(
-              `WITH base_leads AS (
+      `WITH base_leads AS (
           SELECT
             -- pega plataforma do metadata/origem e NORMALIZA para bater com a tabela de custos
             CASE
@@ -664,9 +668,9 @@ class Lead {
           ROUND(COALESCE(s.spend_periodo, 0) / NULLIF(COALESCE(l.vendidos, 0), 0), 2) AS cpa
         FROM leads_plat l
         FULL OUTER JOIN spend_plat s USING (plataforma)
-        ORDER BY leads DESC, spend DESC;`
+        ORDER BY leads DESC, spend DESC;`,
     );
-    const cplRows = await db.query(custoPlataformaLead, [tlStart, tlEnd]);
+    const leadsPorPlataforma = await db.query(custoPlataformaLead, [ini, fim]);
 
     // ---------- retorno ----------
     const total = Number(result?.total_leads ?? 0);
@@ -678,8 +682,7 @@ class Lead {
       timeline: timeline.rows,
       leadsPorPlataforma: leadsPorPlataforma.rows,
       timeLinePlataforma: timeLinePlataforma.rows,
-      leadCPLCPA: leadCPLCPA.rows,
-      cplRows: cplRows.rows
+      leadCPLCPA: cplRows.rows,
     };
   }
 
