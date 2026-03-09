@@ -1,25 +1,18 @@
 // db.js
-// Ajuste o import do pool conforme seu projeto.
-// Exemplo:
-// const { Pool } = require('pg');
-// const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-
 const { Pool } = require("pg");
 
-// ⚠️ ajuste o config do pool ao seu projeto
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   max: parseInt(process.env.DB_POOL_MAX || "10", 10),
   idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT_MS || "30000", 10),
-  connectionTimeoutMillis: parseInt(process.env.DB_CONNECTION_TIMEOUT_MS || "15000", 10),
+  connectionTimeoutMillis: parseInt(
+    process.env.DB_CONNECTION_TIMEOUT_MS || "15000",
+    10
+  ),
   ssl: {
     rejectUnauthorized: false,
   },
 });
-
-const query = async (text, params = []) => {
-  return pool.query(text, params);
-};
 
 /**
  * Extrai o maior placeholder $N presente no SQL.
@@ -29,10 +22,12 @@ function maxPlaceholderIndex(sql) {
   const re = /\$([1-9]\d*)/g;
   let m;
   let max = 0;
+
   while ((m = re.exec(sql)) !== null) {
     const n = Number(m[1]);
     if (n > max) max = n;
   }
+
   return max;
 }
 
@@ -40,10 +35,9 @@ function maxPlaceholderIndex(sql) {
  * Normaliza (params, options)
  * - Se params for objeto e options não vier, assume que params é options.
  * - Se params vier undefined/null, vira [].
- * - Se params não for array, tenta wrap em array (último recurso).
+ * - Se params não for array, encapsula em array.
  */
 function normalizeArgs(params, options) {
-  // caso: query(sql, { log: true })
   if (
     params &&
     !Array.isArray(params) &&
@@ -69,10 +63,11 @@ function previewSql(sql, maxLen = 600) {
 /**
  * query(text, params?, options?)
  * options:
- *  - client: PoolClient (para usar dentro de transaction)
- *  - log: boolean (logar query+params)
- *  - name: string (prepared statement name)
- *  - rowMode: 'array' | undefined
+ *  - client: PoolClient
+ *  - log: boolean
+ *  - logErrors: boolean
+ *  - name: string
+ *  - rowMode: 'array'
  */
 async function query(text, params, options) {
   const norm = normalizeArgs(params, options);
@@ -83,14 +78,10 @@ async function query(text, params, options) {
     throw new Error("db.query: SQL (text) inválido.");
   }
 
-  
-
-  // valida placeholders x params
   const needed = maxPlaceholderIndex(text);
   if (needed > params.length) {
     const err = new Error(
-      `db.query: SQL exige $1..$${needed}, mas params.length=${params.length}. ` +
-        `Dica: passou params undefined?`,
+      `db.query: SQL exige $1..$${needed}, mas params.length=${params.length}. Dica: passou params undefined?`
     );
     err.query = text;
     err.params = params;
@@ -105,7 +96,6 @@ async function query(text, params, options) {
   }
 
   try {
-    // suporta prepared statements se você quiser
     if (options.name || options.rowMode) {
       return await client.query({
         text,
@@ -117,12 +107,10 @@ async function query(text, params, options) {
 
     return await client.query(text, params);
   } catch (e) {
-    // anexa contexto útil
     e.query = text;
     e.params = params;
     e.sqlPreview = previewSql(text);
 
-    // log simples opcional
     if (options.logErrors) {
       console.error("[DB] ERRO:", e.message);
       console.error("[DB] SQL:", e.sqlPreview);
@@ -136,15 +124,9 @@ async function query(text, params, options) {
 const db = {
   query,
 
-  /**
-   * Executa uma query em transação
-   * Uso:
-   * await db.transaction(async (client) => {
-   *   await db.query('...', [..], { client });
-   * })
-   */
   async transaction(callback) {
     const client = await pool.connect();
+
     try {
       await client.query("BEGIN");
       const result = await callback(client);
@@ -174,30 +156,31 @@ const db = {
     const result = await query(text, params, options);
     return result.rowCount;
   },
+
+  async healthCheck() {
+    try {
+      const res = await pool.query("SELECT NOW()");
+      return {
+        status: "healthy",
+        timestamp: res.rows[0].now,
+      };
+    } catch (err) {
+      return {
+        status: "unhealthy",
+        error: err.message,
+      };
+    }
+  },
+
+  async close() {
+    await pool.end();
+    console.log("Pool has been closed");
+  },
+
+  pool,
 };
 
-db.healthCheck = async () => {
-  try {
-    const res = await pool.query('SELECT NOW()');
-    return {
-      status: 'healthy',
-      timestamp: res.rows[0].now
-    };
-  } catch (err) {
-    return {
-      status: 'unhealthy',
-      error: err.message
-    };
-  }
-};
-
-db.close = async () => {
-  await pool.end();
-  console.log('Pool has been closed');
-};
-db.pool = pool;
-
-module.exports = db;        // default: require('./db') -> db com getOne/getMany/etc
-module.exports.db = db;     // named:   const { db } = require('./db')
-module.exports.pool = pool; // opcional
-module.exports.queryRaw = query; // opcional (pra acessar a função "query" pura)
+module.exports = db;
+module.exports.db = db;
+module.exports.pool = pool;
+module.exports.queryRaw = query;
