@@ -1,7 +1,6 @@
 /**
  * arquivo: app.js
- * descrição: arquivo responsável por fazer a configuração do servidor Express
- * ATUALIZADO: Mantém apenas configuração do Express
+ * descrição: configuração do servidor Express
  */
 
 const express = require("express");
@@ -10,7 +9,9 @@ require("dotenv").config();
 
 const app = express();
 
-// Configuração CORS
+/**
+ * CORS
+ */
 const corsOptions = {
   origin: [
     "https://localhost:8100",
@@ -21,14 +22,12 @@ const corsOptions = {
     "http://localhost:8080",
     "https://primecarapp-465cd.web.app",
     "https://primecarapp-465cd.firebaseapp.com",
-    "http://localhost:3000",
   ].filter(Boolean),
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: [
     "Content-Type",
     "Authorization",
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization, schema",
+    "schema",
     "X-Requested-With",
     "Accept",
     "Origin",
@@ -37,39 +36,27 @@ const corsOptions = {
   optionsSuccessStatus: 200,
 };
 
-// Middlewares
+/**
+ * Middlewares
+ */
 app.use(cors(corsOptions));
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.use(express.json({ type: "application/vnd.api+json" }));
 
-// Log de requisições (opcional para desenvolvimento)
 if (process.env.NODE_ENV === "development") {
   const morgan = require("morgan");
   app.use(morgan("dev"));
 }
 
-app.get("/healthz", (req, res) => res.status(200).send("ok"));
-
 /**
- * ✅ WhatsApp Webhook
- * Importante: mantenha antes do middleware 404
+ * Health endpoints
+ * Devem ficar no topo para responder mesmo se algo mais falhar depois.
  */
-const whatsappWebhookRoutes = require('./src/routes/whatsappWebhookRoutes');
-const LeadWorkflowService = require('./src/services/LeadWorkflowService');
+app.get("/healthz", (req, res) => {
+  return res.status(200).send("ok");
+});
 
-// expõe sem prefixo
-app.use("/webhooks/whatsapp", whatsappWebhookRoutes);
-
-// expõe com prefixo (caso seu deploy use /garagemweb como base path)
-app.use("/garagemweb/webhooks/whatsapp", whatsappWebhookRoutes);
-
-/**
- * ✅ Iniciar workflow (crons)
- */
-LeadWorkflowService.start();
-
-// Health Check aprimorado
 app.get("/health", async (req, res) => {
   try {
     const db = require("./src/config/database");
@@ -80,7 +67,7 @@ app.get("/health", async (req, res) => {
       ? "connected"
       : "disconnected";
 
-    res.status(200).json({
+    return res.status(200).json({
       status: "OK",
       timestamp: new Date().toISOString(),
       service: "NextCar Leads API",
@@ -91,7 +78,7 @@ app.get("/health", async (req, res) => {
       uptime: process.uptime(),
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       status: "ERROR",
       timestamp: new Date().toISOString(),
       error: error.message,
@@ -99,57 +86,77 @@ app.get("/health", async (req, res) => {
   }
 });
 
-/**
- * ✅ Corrigido: /ready (db era undefined)
- */
 app.get("/ready", async (req, res) => {
   try {
-    const db = require('./src/config/database');
-    await db.query("SELECT 1");
-    res.status(200).send("ready");
-  } catch {
-    res.status(503).send("db not ready");
+    const db = require("./src/config/database");
+    await db.query("SELECT 1", []);
+    return res.status(200).send("ready");
+  } catch (error) {
+    return res.status(503).send("db not ready");
   }
 });
 
-app.get("/healthz", (req, res) => res.status(200).send("ok"));
-
-// Status da captura de email
 app.get("/api/email/status", (req, res) => {
   const EmailCaptureService = require("./src/services/EmailCaptureService");
 
-  res.json({
+  return res.json({
     connected: EmailCaptureService.isConnected,
     lastCheck: new Date().toISOString(),
     emailAccount: process.env.EMAIL_USER || "not configured",
   });
 });
 
-// Importar rotas existentes
+/**
+ * Rotas
+ */
 const index = require("./src/routes/index");
 const garagemWeb = require("./src/routes/garagemweb.router");
 const integrador = require("./src/routes/integradores.router");
+const emailCaptureRoutes = require("./src/routes/lead.router");
+const whatsappWebhookRoutes = require("./src/routes/whatsappWebhookRoutes");
 const importadorGaraje = require("./src/controllers/importadorGaraje.controller");
 
-// Importar rotas de leads
-const emailCaptureRoutes = require("./src/routes/lead.router");
-
-// Usar rotas
 app.use(index);
-app.use("/garagemweb/", garagemWeb);
+app.use("/garagemweb", garagemWeb);
 app.use("/garagemweb/integradores", integrador);
-app.use("/garagemweb/leads", emailCaptureRoutes); // Rotas de leads em /garagemweb/api/leads
+
+// Mantém compatibilidade com rotas antigas e novas
+app.use("/garagemweb/api", emailCaptureRoutes);
+app.use("/garagemweb/leads", emailCaptureRoutes);
+
+// WhatsApp webhook
+app.use("/webhooks/whatsapp", whatsappWebhookRoutes);
+app.use("/garagemweb/webhooks/whatsapp", whatsappWebhookRoutes);
+
+// Importação manual
 app.post("/importar-garaje", importadorGaraje.importarGarajeManual);
 
-//inicia o cron ao subir o servidor
-importadorGaraje.startGarajeCron({
-  schema: process.env.SCHEMA_PADRAO, // obrigatório
-  url: process.env.GARAJE_URL
-});
+/**
+ * Inicializações que não devem matar o app
+ */
+try {
+  const LeadWorkflowService = require("./src/services/LeadWorkflowService");
+  LeadWorkflowService.start();
+  console.log("✅ LeadWorkflowService iniciado");
+} catch (error) {
+  console.error("❌ Falha ao iniciar LeadWorkflowService:", error.message);
+}
 
-// Middleware para 404
-app.use((req, res, next) => {
-  res.status(404).json({
+try {
+  importadorGaraje.startGarajeCron({
+    schema: process.env.SCHEMA_PADRAO,
+    url: process.env.GARAJE_URL,
+  });
+  console.log("✅ Cron do Garaje iniciado");
+} catch (error) {
+  console.error("❌ Falha ao iniciar cron do Garaje:", error.message);
+}
+
+/**
+ * 404
+ */
+app.use((req, res) => {
+  return res.status(404).json({
     success: false,
     error: "Rota não encontrada",
     path: req.path,
@@ -157,7 +164,9 @@ app.use((req, res, next) => {
   });
 });
 
-// Middleware para erros globais
+/**
+ * Tratamento global de erros
+ */
 app.use((err, req, res, next) => {
   console.error("Erro:", err.stack);
 
@@ -175,7 +184,7 @@ app.use((err, req, res, next) => {
     errorResponse.details = err.details;
   }
 
-  res.status(err.status || 500).json(errorResponse);
+  return res.status(err.status || 500).json(errorResponse);
 });
 
 module.exports = app;
