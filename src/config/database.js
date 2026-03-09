@@ -9,14 +9,17 @@ const { Pool } = require("pg");
 // ⚠️ ajuste o config do pool ao seu projeto
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  max: 20, // Número máximo de clientes no pool
-  min: 2, // Número mínimo de clientes no pool
-  idleTimeoutMillis: 30000, // Tempo que um cliente pode ficar ocioso
-  connectionTimeoutMillis: 20000, // Tempo máximo para tentar conectar
-  allowExitOnIdle: true, // Permite que o processo saia quando o pool estiver ocioso
-  ssl: true,
-  sslmode: "require",
+  max: parseInt(process.env.DB_POOL_MAX || "10", 10),
+  idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT_MS || "30000", 10),
+  connectionTimeoutMillis: parseInt(process.env.DB_CONNECTION_TIMEOUT_MS || "15000", 10),
+  ssl: {
+    rejectUnauthorized: false,
+  },
 });
+
+const query = async (text, params = []) => {
+  return pool.query(text, params);
+};
 
 /**
  * Extrai o maior placeholder $N presente no SQL.
@@ -128,10 +131,6 @@ async function query(text, params, options) {
 
     throw e;
   }
-}
-
-async function query(text, params = []) {
-  return pool.query(text, params);
 }
 
 const db = {
