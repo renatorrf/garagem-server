@@ -15,7 +15,8 @@ class Lead {
     this.origem = data.origem || "Email";
     this.status = data.status || "novo";
     this.prioridade = data.prioridade || "media";
-    this.dataRecebimento = data.data_recebimento || data.dataRecebimento || new Date();
+    this.dataRecebimento =
+      data.data_recebimento || data.dataRecebimento || new Date();
     this.dataContato = data.data_contato || data.dataContato;
     this.observacoes = data.observacoes;
     this.vendedorId = data.vendedor_id || data.vendedorId;
@@ -57,12 +58,19 @@ class Lead {
 
   extractTags() {
     const tags = [];
-    const text = `${this.assunto || ""} ${this.mensagem || ""} ${this.veiculoInteresse || ""}`.toLowerCase();
+    const text =
+      `${this.assunto || ""} ${this.mensagem || ""} ${this.veiculoInteresse || ""}`.toLowerCase();
 
     if (this.origem) tags.push(this.origem.toLowerCase());
 
     const interests = {
-      financiamento: ["financiamento", "parcelamento", "entrada", "crédito", "pre-analisado"],
+      financiamento: [
+        "financiamento",
+        "parcelamento",
+        "entrada",
+        "crédito",
+        "pre-analisado",
+      ],
       troca: ["troca", "permuta", "meu carro"],
       consorcio: ["consórcio", "consorcio", "carta"],
       "teste-drive": ["test drive", "teste drive", "experimentar", "dirigir"],
@@ -98,11 +106,19 @@ class Lead {
       errors.push("emailRemetente inválido");
     }
 
-    if (this.status && !["novo", "contatado", "agendado", "vendido", "perdido"].includes(this.status)) {
+    if (
+      this.status &&
+      !["novo", "contatado", "agendado", "vendido", "perdido"].includes(
+        this.status,
+      )
+    ) {
       errors.push("status inválido");
     }
 
-    if (this.prioridade && !["alta", "media", "baixa"].includes(this.prioridade)) {
+    if (
+      this.prioridade &&
+      !["alta", "media", "baixa"].includes(this.prioridade)
+    ) {
       errors.push("prioridade inválida");
     }
 
@@ -190,7 +206,12 @@ class Lead {
     Object.assign(this, updates);
     this.updatedAt = new Date();
 
-    if (updates.assunto || updates.mensagem || updates.status || updates.prioridade) {
+    if (
+      updates.assunto ||
+      updates.mensagem ||
+      updates.status ||
+      updates.prioridade
+    ) {
       this.score = this.calculateScore();
       this.tags = this.extractTags();
     }
@@ -371,7 +392,8 @@ class Lead {
     const result = await db.query(query, params);
 
     const leads = result.rows.map((row) => new Lead(row));
-    const totalCount = result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0;
+    const totalCount =
+      result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0;
 
     return {
       leads,
@@ -444,7 +466,12 @@ class Lead {
           COUNT(*) as total_leads,
           COUNT(CASE WHEN status = 'novo' THEN 1 END) as novos_leads,
           COUNT(CASE WHEN status = 'vendido' THEN 1 END) as vendidos,
-          COUNT(CASE WHEN data_recebimento >= CURRENT_DATE THEN 1 END) as leads_hoje,
+          COUNT(
+            CASE
+              WHEN (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
+              THEN 1
+            END
+          ) AS leads_hoje
           COUNT(CASE WHEN prioridade = 'alta' THEN 1 END) as alta_prioridade,
           COUNT(CASE WHEN status = 'contatado' THEN 1 END) as contatados
         FROM ${Lead.tableName}
@@ -538,7 +565,11 @@ class Lead {
       paramCount += 2;
     }
 
-    if (filters.tags && Array.isArray(filters.tags) && filters.tags.length > 0) {
+    if (
+      filters.tags &&
+      Array.isArray(filters.tags) &&
+      filters.tags.length > 0
+    ) {
       const tagConditions = filters.tags.map((tag, index) => {
         params.push(tag);
         return `$${paramCount + index} = ANY(tags)`;
@@ -565,7 +596,8 @@ class Lead {
     const result = await db.query(query, params);
 
     const leads = result.rows.map((row) => new Lead(row));
-    const totalCount = result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0;
+    const totalCount =
+      result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0;
 
     return {
       leads,
@@ -702,14 +734,20 @@ class Lead {
       lead.status || "",
       lead.prioridade || "",
       lead.score ?? 0,
-      lead.dataRecebimento ? new Date(lead.dataRecebimento).toLocaleString("pt-BR") : "",
-      lead.dataContato ? new Date(lead.dataContato).toLocaleString("pt-BR") : "",
+      lead.dataRecebimento
+        ? new Date(lead.dataRecebimento).toLocaleString("pt-BR")
+        : "",
+      lead.dataContato
+        ? new Date(lead.dataContato).toLocaleString("pt-BR")
+        : "",
       lead.vendedorId || "",
       lead.tags?.join(", ") || "",
     ]);
 
     return [headers, ...rows]
-      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .map((row) =>
+        row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","),
+      )
       .join("\n");
   }
 
