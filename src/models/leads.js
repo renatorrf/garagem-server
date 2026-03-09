@@ -526,7 +526,7 @@ class Lead {
                                        AND data_recebimento >= $1
                                        AND data_recebimento <  $2
                                     )
-                                    ELECT
+                                    SELECT
                                      COALESCE(
                                        NULLIF(meta ->> 'plataforma', ''),
                                        NULLIF(origem, ''),
@@ -565,7 +565,7 @@ class Lead {
                                      AND data_recebimento >= $1
                                      AND data_recebimento <  $2
                                   )
-                                  ELECT
+                                  SELECT
                                    COALESCE(
                                      NULLIF(meta ->> 'plataforma', ''),
                                      NULLIF(origem, ''),
