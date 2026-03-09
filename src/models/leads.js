@@ -442,10 +442,19 @@ class Lead {
   }
 
   static async getDashboardStats(dataInicio, dataFim) {
-    const whereConditions = ["deleted_at IS NULL"];
+    const schema = process.env.SCHEMA_PADRAO || 'teste';
+
+    // garante tabela qualificada
+    const leadTable =
+      Lead.tableName && String(Lead.tableName).includes('.')
+        ? Lead.tableName
+        : `${schema}.${Lead.tableName || 'leads'}`;
+
+    const whereConditions = ['deleted_at IS NULL'];
     const params = [];
     let paramCount = 1;
 
+    // intervalo: [inicio, fim)
     if (dataInicio) {
       whereConditions.push(`data_recebimento >= $${paramCount}`);
       params.push(dataInicio);
@@ -453,56 +462,168 @@ class Lead {
     }
 
     if (dataFim) {
-      whereConditions.push(`data_recebimento <= $${paramCount}`);
+      whereConditions.push(`data_recebimento < $${paramCount}`);
       params.push(dataFim);
       paramCount++;
     }
 
-    const whereClause = `WHERE ${whereConditions.join(" AND ")}`;
+    const whereClause = `WHERE ${whereConditions.join(' AND ')}`;
 
+    // ---------- STATS ----------
     const query = `
-      WITH stats AS (
-        SELECT
-          COUNT(*) as total_leads,
-          COUNT(CASE WHEN status = 'novo' THEN 1 END) as novos_leads,
-          COUNT(CASE WHEN status = 'vendido' THEN 1 END) as vendidos,
-          COUNT(
-            CASE
-              WHEN (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
-              THEN 1
-            END
-          ) AS leads_hoje
-          COUNT(CASE WHEN prioridade = 'alta' THEN 1 END) as alta_prioridade,
-          COUNT(CASE WHEN status = 'contatado' THEN 1 END) as contatados
-        FROM ${Lead.tableName}
-        ${whereClause}
-      )
-      SELECT * FROM stats
-    `;
+    WITH stats AS (
+      SELECT
+        COUNT(*)::int AS total_leads,
+        COUNT(*) FILTER (WHERE status = 'novo')::int AS novos_leads,
+        COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos,
+        COUNT(*) FILTER (
+          WHERE (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date
+                = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
+        )::int AS leads_hoje,
+        COUNT(*) FILTER (WHERE prioridade = 'alta')::int AS alta_prioridade,
+        COUNT(*) FILTER (WHERE status = 'contatado')::int AS contatados
+      FROM ${leadTable}
+      ${whereClause}
+    )
+    SELECT * FROM stats;
+  `;
 
     const result = await db.getOne(query, params);
 
-    const timelineQuery = `
-      SELECT
-        DATE(data_recebimento) as date,
-        COUNT(*) as total,
-        COUNT(CASE WHEN status = 'vendido' THEN 1 END) as vendidos
-      FROM ${Lead.tableName}
-      WHERE deleted_at IS NULL
-        AND data_recebimento >= CURRENT_DATE - INTERVAL '30 days'
-      GROUP BY DATE(data_recebimento)
-      ORDER BY date ASC
-    `;
+    // ---------- TIMELINE (últimos 30 dias ou filtro do request) ----------
+    const tlStart = dataInicio || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const tlEnd = dataFim || new Date().toISOString();
 
-    const timeline = await db.query(timelineQuery);
+    const timelineQuery = `
+    SELECT
+      (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date AS date,
+      COUNT(*)::int AS total,
+      COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos
+    FROM ${leadTable}
+    WHERE deleted_at IS NULL
+      AND data_recebimento >= $1
+      AND data_recebimento <  $2
+    GROUP BY (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date
+    ORDER BY date ASC;
+  `;
+
+    const timeline = await db.query(timelineQuery, [tlStart, tlEnd]);
+
+    // ---------- LEADS POR PLATAFORMA ----------
+    const leadsPorPlataformaQuery = `
+    WITH base AS (
+      SELECT
+        COALESCE(
+          NULLIF((metadata::jsonb ->> 'plataforma'), ''),
+          NULLIF(origem, ''),
+          NULLIF((metadata::jsonb #>> '{extras,fonte}'), ''),
+          'Desconhecido'
+        ) AS plataforma,
+        status,
+        prioridade,
+        data_recebimento,
+        data_contato
+      FROM ${leadTable}
+      ${whereClause}
+    )
+    SELECT
+      plataforma,
+      COUNT(*)::int AS leads,
+      COUNT(*) FILTER (WHERE status = 'novo')::int AS novos,
+      COUNT(*) FILTER (WHERE status = 'contatado')::int AS contatados,
+      COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos,
+      COUNT(*) FILTER (WHERE prioridade = 'alta')::int AS alta_prioridade,
+      COUNT(*) FILTER (
+        WHERE (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date
+              = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
+      )::int AS leads_hoje,
+      ROUND(
+        (COUNT(*) FILTER (WHERE status = 'vendido')::numeric / NULLIF(COUNT(*),0)) * 100
+      , 2) AS taxa_conversao_pct
+    FROM base
+    GROUP BY plataforma
+    ORDER BY leads DESC;
+  `;
+
+    const leadsPorPlataforma = await db.query(leadsPorPlataformaQuery, params);
+
+    // ---------- TIMELINE POR PLATAFORMA ----------
+    const timeLinePlataformaQuery = `
+    WITH base AS (
+      SELECT
+        COALESCE(
+          NULLIF((metadata::jsonb ->> 'plataforma'), ''),
+          NULLIF(origem, ''),
+          'Desconhecido'
+        ) AS plataforma,
+        (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date AS dia,
+        status
+      FROM ${leadTable}
+      ${whereClause}
+    )
+    SELECT
+      plataforma,
+      dia,
+      COUNT(*)::int AS total,
+      COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos
+    FROM base
+    GROUP BY plataforma, dia
+    ORDER BY dia ASC, plataforma ASC;
+  `;
+
+    const timeLinePlataforma = await db.query(timeLinePlataformaQuery, params);
+
+    // ---------- CPL / CPA (requer ${schema}.marketing_spend_daily) ----------
+    const LeadCPLCPAQuery = `
+    WITH leads_plat AS (
+      SELECT
+        COALESCE(
+          NULLIF((metadata::jsonb ->> 'plataforma'), ''),
+          NULLIF(origem, ''),
+          'Desconhecido'
+        ) AS plataforma,
+        COUNT(*)::int AS leads,
+        COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos
+      FROM ${leadTable}
+      WHERE deleted_at IS NULL
+        AND data_recebimento >= $1
+        AND data_recebimento <  $2
+      GROUP BY 1
+    ),
+    spend_plat AS (
+      SELECT
+        plataforma,
+        SUM(spend)::numeric(12,2) AS spend
+      FROM ${schema}.marketing_spend_daily
+      WHERE spend_date >= $1::date
+        AND spend_date <  $2::date
+      GROUP BY 1
+    )
+    SELECT
+      COALESCE(l.plataforma, s.plataforma) AS plataforma,
+      COALESCE(l.leads, 0) AS leads,
+      COALESCE(l.vendidos, 0) AS vendidos,
+      COALESCE(s.spend, 0) AS spend,
+      ROUND(COALESCE(s.spend, 0) / NULLIF(COALESCE(l.leads, 0), 0), 2) AS cpl,
+      ROUND(COALESCE(s.spend, 0) / NULLIF(COALESCE(l.vendidos, 0), 0), 2) AS cpa
+    FROM leads_plat l
+    FULL OUTER JOIN spend_plat s USING (plataforma)
+    ORDER BY leads DESC, spend DESC;
+  `;
+
+    const leadCPLCPA = await db.query(LeadCPLCPAQuery, [tlStart, tlEnd]);
+
+    // ---------- retorno ----------
+    const total = Number(result?.total_leads ?? 0);
+    const vendidos = Number(result?.vendidos ?? 0);
 
     return {
       ...result,
-      taxaConversao:
-        result.total_leads > 0
-          ? ((result.vendidos / result.total_leads) * 100).toFixed(2)
-          : 0,
+      taxaConversao: total > 0 ? ((vendidos / total) * 100).toFixed(2) : '0.00',
       timeline: timeline.rows,
+      leadsPorPlataforma: leadsPorPlataforma.rows,
+      timeLinePlataforma: timeLinePlataforma.rows,
+      leadCPLCPA: leadCPLCPA.rows,
     };
   }
 
