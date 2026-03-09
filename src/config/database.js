@@ -171,4 +171,7 @@ const db = {
   },
 };
 
-module.exports = { db, query, pool };
+module.exports = db;        // default: require('./db') -> db com getOne/getMany/etc
+module.exports.db = db;     // named:   const { db } = require('./db')
+module.exports.pool = pool; // opcional
+module.exports.queryRaw = query; // opcional (pra acessar a função "query" pura)
