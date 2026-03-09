@@ -517,7 +517,7 @@ class Lead {
         COALESCE(
           NULLIF((NULLIF(metadata,'')::jsonb ->> 'plataforma'), ''),
           NULLIF(origem, ''),
-          NULLIF((NULLIF(metadata,'')::jsonb #>> '{extras,fonte}'), ''),
+          NULLIF((NULLIF(metadata,'')::jsonb ->> '{extras,fonte}'), ''),
           'Desconhecido'
         ) AS plataforma,
         status,
