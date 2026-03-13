@@ -284,7 +284,7 @@ async function importarGarajeJob({ schema, url }) {
      WHERE ind_importado = true
        AND (ind_excluido_garage IS NULL OR ind_excluido_garage = false)
        AND id_importacao IS NOT NULL
-       AND id_importacao <> ''
+       AND id_importacao <> 0
        AND NOT (id_importacao = ANY($1))
     `,
       [Array.from(idsXml)]
@@ -334,7 +334,7 @@ exports.importarGarajeManual = async (req, res) => {
   const schema = req.body?.schema || req.headers['schema'] || DEFAULT_SCHEMA;
   const url = req.body?.url || DEFAULT_GARAJE_URL;
 
-  if (!schema) {
+  if (!schema) {  
     return res.status(400).json({ success: false, message: 'schema obrigatório (header schema ou body.schema).' });
   }
 
