@@ -12,6 +12,7 @@ const cron = require('node-cron');
 const path = require('path');
 const { XMLParser } = require('fast-xml-parser');
 require("dotenv").config();
+const moment = require('moment')
 
 // ✅ ajuste o caminho do seu db/pool
 const db = require('../config/database'); // ex: ../db ou ../services/db
@@ -201,7 +202,7 @@ async function mapVeiculoToCadastroPayloadAsync(v) {
       cambio,
       km,
 
-      dta_compra: null,
+      dta_compra: moment().format(),
       val_venda_esperado,
 
       observacoes,

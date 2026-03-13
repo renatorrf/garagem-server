@@ -7,6 +7,7 @@
 
 const router = require("express-promise-router")();
 const garagemWeb = require("../controllers/garagemweb.controller");
+const importarGaraje = require('../controllers/importadorGaraje.controller')
 const leadController = require('../controllers/leadController');
 const drfGaragem = require("../controllers/drfWebGaragem.controller");
 
@@ -18,6 +19,7 @@ const drfGaragem = require("../controllers/drfWebGaragem.controller");
 router.post("/cadastraVeiculo", garagemWeb.cadastraVeiculo);
 
 router.post("/buscaVeiculo", garagemWeb.buscaVeiculo);  
+router.post("/importarGaraje", importarGaraje.importarGarajeManual); 
 router.post("/excluirVeiculo", garagemWeb.excluirVeiculo);  
 router.post("/buscaImgVeiculo", garagemWeb.buscaImgVeiculo);  
 router.post("/salvaVeiculo", garagemWeb.salvaVeiculo);  
