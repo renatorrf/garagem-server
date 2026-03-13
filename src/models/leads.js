@@ -1,5 +1,6 @@
 // models/Lead.js
 const db = require("../config/database");
+const moment = require("moment");
 
 class Lead {
   constructor(data = {}) {
@@ -458,12 +459,15 @@ class Lead {
     // intervalo: [inicio, fim)
     if (dataInicio) {
       whereConditions.push(`data_recebimento >= $${paramCount}`);
-      params.push(dataInicio);
+      params.push(moment(dataInicio, "YYYY-MM-DD").startOf("day").toDate());
       paramCount++;
     }
+
     if (dataFim) {
       whereConditions.push(`data_recebimento < $${paramCount}`);
-      params.push(dataFim);
+      params.push(
+        moment(dataFim, "YYYY-MM-DD").add(1, "day").startOf("day").toDate(),
+      );
       paramCount++;
     }
 
