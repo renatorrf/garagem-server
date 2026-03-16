@@ -11,6 +11,7 @@ class WhatsAppWebhookController {
     if (mode === "subscribe" && token === process.env.WA_WEBHOOK_VERIFY_TOKEN) {
       return res.status(200).send(challenge);
     }
+
     return res.sendStatus(403);
   }
 
@@ -19,70 +20,137 @@ class WhatsAppWebhookController {
     try {
       const body = req.body;
 
-      const entry = body?.entry?.[0];
-      const change = entry?.changes?.[0];
-      const value = change?.value;
-
-      // 1) mensagens recebidas (cliques / texto)
-      const msg = value?.messages?.[0];
-
-      if (msg) {
-        const from = msg.from || null;
-
-        // texto normal (opcional)
-        if (msg.type === "text") {
-          console.log(`📩 Mensagem recebida de ${from}: ${msg.text?.body}`);
-        }
-
-        // interativo
-        if (msg.type === "interactive") {
-          const interactive = msg.interactive;
-
-          // botão (ASSUMIR / IGNORAR)
-          if (interactive?.type === "button_reply") {
-            const id = interactive.button_reply?.id || "";
-
-            if (id.startsWith("claim:")) {
-              const leadId = id.split(":")[1];
-              await LeadWorkflowService.claimLead(leadId, from);
-            }
-
-            if (id.startsWith("ignore:")) {
-              const leadId = id.split(":")[1];
-              await LeadWorkflowService.ignoreLead(leadId);
-            }
-          }
-
-          // lista (OUTCOME)
-          if (interactive?.type === "list_reply") {
-            const id = interactive.list_reply?.id || ""; // outcome:WON:<leadId>
-
-            if (id.startsWith("outcome:")) {
-              const [, outcome, leadId] = id.split(":");
-              await LeadWorkflowService.setOutcome({ leadId, outcome });
-            }
-          }
-        }
+      if (body?.object !== "whatsapp_business_account") {
+        return res.sendStatus(200);
       }
 
-      // 2) status de mensagens (sent/delivered/read/failed)
-      if (value?.statuses?.length) {
-        for (const s of value.statuses) {
-          await LeadWorkflowService.recordMessageStatus({
-            wamid: s.id,
-            status: s.status,
-            timestamp: s.timestamp,
-            recipientId: s.recipient_id,
-            raw: s,
-          });
+      const entries = body?.entry || [];
 
-          console.log(`📩 WA status: ${s.status} ${s.id}`);
+      for (const entry of entries) {
+        const changes = entry?.changes || [];
+
+        for (const change of changes) {
+          if (change?.field !== "messages") continue;
+
+          const value = change?.value || {};
+
+          // 1) mensagens recebidas
+          const messages = value?.messages || [];
+
+          for (const msg of messages) {
+            const from = msg?.from || null;
+
+            // texto normal
+            if (msg?.type === "text") {
+              console.log(
+                `📩 Mensagem recebida de ${from}: ${msg?.text?.body || ""}`,
+              );
+            }
+
+            // interativo
+            if (msg?.type === "interactive") {
+              const interactive = msg?.interactive;
+
+              // botão (button_reply)
+              if (interactive?.type === "button_reply") {
+                const id = interactive?.button_reply?.id || "";
+
+                if (id.startsWith("claim:")) {
+                  const [, leadId] = id.split(":");
+
+                  if (leadId) {
+                    await LeadWorkflowService.claimLead(leadId, from);
+                    console.log(`✅ Lead assumido: ${leadId} por ${from}`);
+                  }
+                }
+
+                if (id.startsWith("ignore:")) {
+                  const [, leadId] = id.split(":");
+
+                  if (leadId) {
+                    await LeadWorkflowService.ignoreLead(leadId);
+                    console.log(`🚫 Lead ignorado: ${leadId}`);
+                  }
+                }
+              }
+
+              // lista (list_reply)
+              if (interactive?.type === "button_reply") {
+                const id = interactive?.button_reply?.id || "";
+
+                if (id.startsWith("claim:")) {
+                  const [, leadId] = id.split(":");
+                  if (leadId) {
+                    await LeadWorkflowService.claimLead(leadId, from);
+                    console.log(`✅ Lead assumido: ${leadId} por ${from}`);
+                  }
+                }
+
+                if (id.startsWith("ignore:")) {
+                  const [, leadId] = id.split(":");
+                  if (leadId) {
+                    await LeadWorkflowService.ignoreLead(leadId);
+                    console.log(`🚫 Lead ignorado: ${leadId}`);
+                  }
+                }
+
+                if (id.startsWith("seller:")) {
+                  const [, sellerRaw, leadId] = id.split(":");
+                  const seller = (sellerRaw || "").toLowerCase().trim();
+                  const allowedSellers = ["gustavo", "lucas", "luis"];
+
+                  if (leadId && allowedSellers.includes(seller)) {
+                    if (
+                      typeof LeadWorkflowService.assignSeller === "function"
+                    ) {
+                      await LeadWorkflowService.assignSeller({
+                        leadId,
+                        seller,
+                        from,
+                      });
+                    } else {
+                      console.log("👤 Seleção de vendedor recebida:", {
+                        leadId,
+                        seller,
+                        from,
+                      });
+                    }
+
+                    console.log(
+                      `👤 Vendedor selecionado: ${seller} para lead ${leadId}`,
+                    );
+                  } else {
+                    console.warn("⚠️ Seller inválido ou leadId ausente:", {
+                      seller,
+                      leadId,
+                      from,
+                    });
+                  }
+                }
+              }
+            }
+          }
+
+          // 2) status de mensagens (sent/delivered/read/failed)
+          const statuses = value?.statuses || [];
+
+          for (const s of statuses) {
+            await LeadWorkflowService.recordMessageStatus({
+              wamid: s?.id,
+              status: s?.status,
+              timestamp: s?.timestamp,
+              recipientId: s?.recipient_id,
+              raw: s,
+            });
+
+            console.log(`📩 WA status: ${s?.status} ${s?.id}`);
+          }
         }
       }
 
       return res.sendStatus(200);
     } catch (e) {
-      console.error("❌ WhatsApp webhook error:", e.message);
+      console.error("❌ WhatsApp webhook error:", e);
       return res.sendStatus(200); // evita retries agressivos da Meta
     }
   }
