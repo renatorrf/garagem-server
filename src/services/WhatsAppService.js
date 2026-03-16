@@ -16,7 +16,7 @@ class WhatsAppService {
     }
 
     return axios.create({
-      baseURL: `https://graph.facebook.com/v20.0/${this.phoneNumberId}`,
+      baseURL: `https://graph.facebook.com/v25.0/${this.phoneNumberId}`,
       headers: {
         Authorization: `Bearer ${this.token}`,
         "Content-Type": "application/json",

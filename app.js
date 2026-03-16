@@ -128,7 +128,7 @@ app.use("/garagemweb/leads", emailCaptureRoutes);
 app.use("/webhooks/whatsapp", whatsappWebhookRoutes);
 app.use("/garagemweb/webhooks/whatsapp", whatsappWebhookRoutes);
 
-// Importação manual
+// Importação manualf
 app.post("/importar-garaje", importadorGaraje.importarGarajeManual);
 
 /**
