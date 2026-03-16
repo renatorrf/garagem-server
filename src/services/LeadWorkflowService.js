@@ -1,115 +1,159 @@
-// services/LeadWorkflowService.js
-const cron = require("node-cron");
-const db = require("../config/database");
-const Lead = require("../models/leads");
-const WhatsAppService = require("./WhatsAppService");
+const cron = require('node-cron');
+const db = require('../config/database');
+const Lead = require('../models/leads');
+const WhatsAppService = require('./WhatsAppService');
 
 class LeadWorkflowService {
   static start() {
-    // lembretes: checa a cada 1 minuto
-    cron.schedule("*/1 * * * *", async () => {
+    cron.schedule('*/1 * * * *', async () => {
       try {
         await this.processRemindersTick();
       } catch (e) {
-        console.error("❌ ReminderTick:", e.message);
+        console.error('❌ ReminderTick:', e.message);
       }
     });
 
-    // feedback: checa a cada 5 minutos
-    cron.schedule("*/5 * * * *", async () => {
+    cron.schedule('*/5 * * * *', async () => {
       try {
         await this.processFeedbackTick();
       } catch (e) {
-        console.error("❌ FeedbackTick:", e.message);
+        console.error('❌ FeedbackTick:', e.message);
       }
     });
 
-    console.log("✅ LeadWorkflowService iniciado (reminders + feedback)");
+    console.log('✅ LeadWorkflowService iniciado (reminders + feedback)');
   }
 
   static cfg() {
     return {
-      sellerPhone: process.env.WA_SELLER_PHONE || "5534991023869",
+      sellerPhone: process.env.WA_SELLER_PHONE || '5534991023869',
       reminderIntervalSec: parseInt(
-        process.env.LEAD_REMINDER_INTERVAL_SEC || "120",
+        process.env.LEAD_REMINDER_INTERVAL_SEC || '120',
         10,
       ),
-      reminderMax: parseInt(process.env.LEAD_REMINDER_MAX || "5", 10),
+      reminderMax: parseInt(process.env.LEAD_REMINDER_MAX || '5', 10),
       feedbackDelaySec: parseInt(
-        process.env.LEAD_FEEDBACK_DELAY_SEC || "3600",
+        process.env.LEAD_FEEDBACK_DELAY_SEC || '3600',
+        10,
+      ),
+      attendanceEstimateSec: parseInt(
+        process.env.LEAD_ATTENDANCE_ESTIMATE_SEC || '1800',
         10,
       ),
     };
   }
 
+  static sellerCatalog() {
+    return {
+      gustavo: { id: 1, key: 'gustavo', name: 'Gustavo' },
+      lucas: { id: 2, key: 'lucas', name: 'Lucas' },
+      luis: { id: 3, key: 'luis', name: 'Luis' },
+    };
+  }
+
+  static outcomeMap(outcome) {
+    const map = {
+      WON: 'vendido',
+      CREDIT_DENIED: 'perdido',
+      NO_REPLY: 'perdido',
+      IMPOSSIBLE: 'perdido',
+    };
+
+    return map[outcome] || 'perdido';
+  }
+
+  static getWaMeta(lead) {
+    return lead?.metadata?.wa || {};
+  }
+
+  static async updateLeadWa(lead, waPatch, leadPatch = {}) {
+    const currentWa = this.getWaMeta(lead);
+
+    lead.metadata = {
+      ...(lead.metadata || {}),
+      wa: {
+        ...currentWa,
+        ...waPatch,
+      },
+    };
+
+    const payload = {
+      metadata: lead.metadata,
+      ...leadPatch,
+    };
+
+    return lead.update(payload);
+  }
+
   static async onNewLead(savedLead) {
     const cfg = this.cfg();
-
     const now = new Date();
     const nextReminderAt = new Date(
       now.getTime() + cfg.reminderIntervalSec * 1000,
     );
 
-    // Envia notificação pro vendedor
     const waResp = await WhatsAppService.sendLeadNotification({
       to: cfg.sellerPhone,
       lead: savedLead,
     });
 
     const notifyWamid = waResp?.messages?.[0]?.id || null;
-
-    // Carrega lead do banco pra garantir metadata atual e atualizar com merge
     const lead = await Lead.findById(savedLead.id);
-    if (!lead) return;
 
-    const waPrev = lead.metadata?.wa || {};
+    if (!lead) return null;
 
-    lead.metadata = {
-      ...(lead.metadata || {}),
-      wa: {
-        ...waPrev,
-        assignedTo: cfg.sellerPhone,
-        notifyWamid,
-        claimedAt: null,
-        reminderCount: 0,
-        nextReminderAt: nextReminderAt.toISOString(),
-        lastReminderAt: null,
-        feedbackRequestedAt: null,
-        outcome: null,
-        closedAt: null,
-        ignoredAt: null,
-      },
-    };
-
-    await lead.update({ metadata: lead.metadata });
+    await this.updateLeadWa(lead, {
+      dispatchPhone: cfg.sellerPhone,
+      notifyWamid,
+      sellerKey: null,
+      sellerId: null,
+      sellerName: null,
+      sellerSelectedBy: null,
+      sellerSelectedAt: null,
+      claimedAt: null,
+      attendanceStartedAt: null,
+      estimatedEndAt: null,
+      reminderCount: 0,
+      nextReminderAt: nextReminderAt.toISOString(),
+      lastReminderAt: null,
+      lastReminderWamid: null,
+      feedbackRequestedAt: null,
+      feedbackRequestWamid: null,
+      outcome: null,
+      closedAt: null,
+      lastStatus: null,
+      lastStatusAt: null,
+      messageStatuses: [],
+    });
 
     console.log(
       `📲 Lead ${savedLead.id} notificado no WhatsApp (${cfg.sellerPhone})`,
     );
+
+    return lead;
   }
 
   static async processRemindersTick() {
     const cfg = this.cfg();
 
-    // Pegamos apenas leads NOTIFICADOS (tem wa.nextReminderAt) e ainda não assumidos/ignorados
     const q = `
       SELECT *
       FROM teste.leads
-      WHERE status = 'novo'
-        AND (metadata->'wa'->>'nextReminderAt') IS NOT NULL
+      WHERE deleted_at IS NULL
+        AND status = 'novo'
         AND (metadata->'wa'->>'claimedAt') IS NULL
-        AND (metadata->'wa'->>'ignoredAt') IS NULL
         AND COALESCE((metadata->'wa'->>'reminderCount')::int, 0) < $1
+        AND (metadata->'wa'->>'nextReminderAt') IS NOT NULL
         AND (metadata->'wa'->>'nextReminderAt')::timestamptz <= now()
       ORDER BY data_recebimento ASC
-      LIMIT 50;
+      LIMIT 50
     `;
 
     const rs = await db.query(q, [cfg.reminderMax]);
 
     for (const row of rs.rows) {
       const lead = new Lead(row);
-      const wa = lead.metadata?.wa || {};
+      const wa = this.getWaMeta(lead);
       const reminderCount = (parseInt(wa.reminderCount || 0, 10) || 0) + 1;
 
       const waResp = await WhatsAppService.sendReminder({
@@ -123,18 +167,12 @@ class LeadWorkflowService {
         lastReminderAt.getTime() + cfg.reminderIntervalSec * 1000,
       );
 
-      lead.metadata = {
-        ...(lead.metadata || {}),
-        wa: {
-          ...wa,
-          lastReminderWamid: waResp?.messages?.[0]?.id || null,
-          reminderCount,
-          lastReminderAt: lastReminderAt.toISOString(),
-          nextReminderAt: nextReminderAt.toISOString(),
-        },
-      };
-
-      await lead.update({ metadata: lead.metadata });
+      await this.updateLeadWa(lead, {
+        lastReminderWamid: waResp?.messages?.[0]?.id || null,
+        reminderCount,
+        lastReminderAt: lastReminderAt.toISOString(),
+        nextReminderAt: nextReminderAt.toISOString(),
+      });
 
       console.log(`🔔 Reminder ${reminderCount} para lead ${lead.id}`);
     }
@@ -142,123 +180,148 @@ class LeadWorkflowService {
 
   static async processFeedbackTick() {
     const cfg = this.cfg();
+    const delayMs = cfg.feedbackDelaySec * 1000;
 
-    // ⚠️ Aqui o parâmetro é SEGUNDOS (não ms)
     const q = `
       SELECT *
       FROM teste.leads
-      WHERE status = 'contatado'
-        AND (metadata->'wa'->>'claimedAt') IS NOT NULL
+      WHERE deleted_at IS NULL
+        AND status IN ('contatado','novo')
+        AND COALESCE(
+          (metadata->'wa'->>'attendanceStartedAt')::timestamptz,
+          (metadata->'wa'->>'claimedAt')::timestamptz
+        ) IS NOT NULL
         AND (metadata->'wa'->>'feedbackRequestedAt') IS NULL
-        AND ((metadata->'wa'->>'claimedAt')::timestamptz + ($1::text || ' seconds')::interval) <= now()
+        AND (
+          COALESCE(
+            (metadata->'wa'->>'attendanceStartedAt')::timestamptz,
+            (metadata->'wa'->>'claimedAt')::timestamptz
+          ) + ($1::text || ' milliseconds')::interval
+        ) <= now()
       ORDER BY data_recebimento ASC
-      LIMIT 50;
+      LIMIT 50
     `;
 
-    const rs = await db.query(q, [cfg.feedbackDelaySec.toString()]);
+    const rs = await db.query(q, [String(delayMs)]);
 
     for (const row of rs.rows) {
       const lead = new Lead(row);
-      const wa = lead.metadata?.wa || {};
-
       const waResp = await WhatsAppService.sendFeedbackRequest({
         to: cfg.sellerPhone,
         lead,
       });
 
-      const feedbackWamid = waResp?.messages?.[0]?.id || null;
-
-      lead.metadata = {
-        ...(lead.metadata || {}),
-        wa: {
-          ...wa,
-          feedbackRequestedAt: new Date().toISOString(),
-          feedbackWamid,
-        },
-      };
-
-      await lead.update({ metadata: lead.metadata });
+      await this.updateLeadWa(lead, {
+        feedbackRequestedAt: new Date().toISOString(),
+        feedbackRequestWamid: waResp?.messages?.[0]?.id || null,
+      });
 
       console.log(`🧾 Feedback solicitado para lead ${lead.id}`);
     }
   }
 
-  static async claimLead(leadId, from) {
+  static async claimLead(leadId, from = null) {
     const lead = await Lead.findById(leadId);
     if (!lead) return null;
 
-    const wa = lead.metadata?.wa || {};
     const now = new Date();
 
-    lead.metadata = {
-      ...(lead.metadata || {}),
-      wa: {
-        ...wa,
+    return this.updateLeadWa(
+      lead,
+      {
         claimedAt: now.toISOString(),
-        claimedBy: from || null,
-        ignoredAt: null,
+        sellerSelectedBy: from,
       },
-    };
+      {
+        status: 'contatado',
+        dataContato: now,
+      },
+    );
+  }
 
-    const updated = await lead.update({
-      status: "contatado",
-      dataContato: now,
-      metadata: lead.metadata,
-    });
+  static async assignSeller({ leadId, sellerKey, sellerId, sellerName, from }) {
+    const cfg = this.cfg();
+    const lead = await Lead.findById(leadId);
+    if (!lead) return null;
+
+    const now = new Date();
+    const estimatedEndAt = new Date(
+      now.getTime() + cfg.attendanceEstimateSec * 1000,
+    );
+
+    const updated = await this.updateLeadWa(
+      lead,
+      {
+        sellerKey,
+        sellerId,
+        sellerName,
+        sellerSelectedBy: from,
+        sellerSelectedAt: now.toISOString(),
+        claimedAt: now.toISOString(),
+        attendanceStartedAt: now.toISOString(),
+        estimatedEndAt: estimatedEndAt.toISOString(),
+        nextReminderAt: null,
+      },
+      {
+        status: 'contatado',
+        dataContato: now,
+      },
+    );
+
+    try {
+      const waResp = await WhatsAppService.sendStartConversationButton({
+        to: cfg.sellerPhone,
+        lead,
+        sellerName,
+      });
+
+      await this.updateLeadWa(lead, {
+        openConversationWamid: waResp?.messages?.[0]?.id || null,
+      });
+    } catch (e) {
+      console.error(
+        `⚠️ Falha ao enviar CTA de início de conversa para lead ${leadId}:`,
+        e.message,
+      );
+    }
 
     return updated;
   }
 
-  static async ignoreLead(leadId) {
+  static async ignoreLead(leadId, from = null) {
     const lead = await Lead.findById(leadId);
     if (!lead) return null;
 
-    const wa = lead.metadata?.wa || {};
-    const now = new Date();
-
-    lead.metadata = {
-      ...(lead.metadata || {}),
-      wa: {
-        ...wa,
-        ignoredAt: now.toISOString(),
-        outcome: "IGNORED",
-        closedAt: now.toISOString(),
+    return this.updateLeadWa(
+      lead,
+      {
+        sellerSelectedBy: from,
+        claimedAt: 'IGNORED',
+        closedAt: new Date().toISOString(),
       },
-    };
-
-    // Ignorado = perdido (ou você pode criar status próprio, mas sua CHECK constraint não tem)
-    const updated = await lead.update({
-      status: "perdido",
-      metadata: lead.metadata,
-    });
-
-    return updated;
+      {
+        status: 'perdido',
+      },
+    );
   }
 
   static async setOutcome({ leadId, outcome }) {
     const lead = await Lead.findById(leadId);
     if (!lead) return null;
 
-    const wa = lead.metadata?.wa || {};
     const now = new Date();
+    const newStatus = this.outcomeMap(outcome);
 
-    const newStatus = outcome === "WON" ? "vendido" : "perdido";
-
-    lead.metadata = {
-      ...(lead.metadata || {}),
-      wa: {
-        ...wa,
+    return this.updateLeadWa(
+      lead,
+      {
         outcome,
         closedAt: now.toISOString(),
       },
-    };
-
-    const updated = await lead.update({
-      status: newStatus,
-      metadata: lead.metadata,
-    });
-
-    return updated;
+      {
+        status: newStatus,
+      },
+    );
   }
 
   static async recordMessageStatus({
@@ -268,73 +331,49 @@ class LeadWorkflowService {
     recipientId,
     raw,
   }) {
-    if (!wamid || !status) return;
-
-    // timestamp do webhook vem como unix string (segundos)
-    const ts = timestamp
-      ? new Date(parseInt(timestamp, 10) * 1000).toISOString()
-      : new Date().toISOString();
-
-    // Atualiza metadata.wa:
-    // - messageStatusById[wamid] = {status, ts, recipientId, raw}
-    // - lastStatus
-    // - lastStatusAt
-    // - lastReadAt (se status === 'read')
-    const patch = {
-      messageStatusById: {
-        [wamid]: {
-          status,
-          ts,
-          recipientId: recipientId || null,
-          raw: raw || null,
-        },
-      },
-      lastStatus: status,
-      lastStatusAt: ts,
-      ...(status === "read" ? { lastReadAt: ts } : {}),
-    };
-
-    // Atualiza leads que tenham qualquer um desses wamids salvos no metadata.wa
-    // (notifyWamid, lastReminderWamid, feedbackWamid...)
     const q = `
-      UPDATE teste.leads
-  SET
-    metadata = jsonb_set(
-      COALESCE(metadata,'{}'::jsonb),
-      '{wa}',
-      (
-        COALESCE(metadata->'wa','{}'::jsonb)
-        ||
-        jsonb_build_object(
-          'lastStatus', $1::text,
-          'lastStatusAt', $2::text
+      SELECT *
+      FROM teste.leads
+      WHERE deleted_at IS NULL
+        AND (
+          metadata->'wa'->>'notifyWamid' = $1
+          OR metadata->'wa'->>'lastReminderWamid' = $1
+          OR metadata->'wa'->>'feedbackRequestWamid' = $1
+          OR metadata->'wa'->>'openConversationWamid' = $1
         )
-        ||
-        CASE WHEN $1::text = 'read'
-          THEN jsonb_build_object('lastReadAt', $2::text)
-          ELSE '{}'::jsonb
-        END
-        ||
-        jsonb_build_object(
-          'messageStatusById',
-          COALESCE(metadata->'wa'->'messageStatusById','{}'::jsonb) || $3::jsonb
-        )
-      ),
-      true
-    ),
-    updated_at = now()
-  WHERE deleted_at IS NULL
-    AND (
-      (metadata->'wa'->>'notifyWamid') = $4
-      OR (metadata->'wa'->>'lastReminderWamid') = $4
-      OR (metadata->'wa'->>'feedbackWamid') = $4
-        );
+      ORDER BY data_recebimento DESC
+      LIMIT 1
     `;
 
-    // $3 precisa ser um json com { "<wamid>": {...} }
-    const wamidObj = JSON.stringify(patch.messageStatusById);
+    const rs = await db.query(q, [wamid]);
 
-    await db.query(q, [status, ts, wamidObj, wamid]);
+    if (!rs.rows?.length) {
+      console.warn(`⚠️ Nenhum lead encontrado para o wamid ${wamid}`);
+      return null;
+    }
+
+    const lead = new Lead(rs.rows[0]);
+    const wa = this.getWaMeta(lead);
+    const statuses = Array.isArray(wa.messageStatuses) ? wa.messageStatuses : [];
+
+    const nextStatuses = [
+      ...statuses,
+      {
+        wamid,
+        status,
+        timestamp,
+        recipientId,
+        raw,
+      },
+    ].slice(-20);
+
+    return this.updateLeadWa(lead, {
+      lastStatus: status,
+      lastStatusAt: timestamp
+        ? new Date(Number(timestamp) * 1000).toISOString()
+        : new Date().toISOString(),
+      messageStatuses: nextStatuses,
+    });
   }
 }
 

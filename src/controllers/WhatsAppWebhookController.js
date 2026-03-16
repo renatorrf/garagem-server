@@ -1,26 +1,26 @@
-// controllers/WhatsAppWebhookController.js
-const LeadWorkflowService = require("../services/LeadWorkflowService");
+const LeadWorkflowService = require('../services/LeadWorkflowService');
 
 class WhatsAppWebhookController {
-  // GET /webhooks/whatsapp
   async verify(req, res) {
-    const mode = req.query["hub.mode"];
-    const token = req.query["hub.verify_token"];
-    const challenge = req.query["hub.challenge"];
+    const mode = req.query['hub.mode'];
+    const token = req.query['hub.verify_token'];
+    const challenge = req.query['hub.challenge'];
 
-    if (mode === "subscribe" && token === process.env.WA_WEBHOOK_VERIFY_TOKEN) {
+    if (
+      mode === 'subscribe' &&
+      token === process.env.WA_WEBHOOK_VERIFY_TOKEN
+    ) {
       return res.status(200).send(challenge);
     }
 
     return res.sendStatus(403);
   }
 
-  // POST /webhooks/whatsapp
   async handle(req, res) {
     try {
       const body = req.body;
 
-      if (body?.object !== "whatsapp_business_account") {
+      if (body?.object !== 'whatsapp_business_account') {
         return res.sendStatus(200);
       }
 
@@ -30,86 +30,86 @@ class WhatsAppWebhookController {
         const changes = entry?.changes || [];
 
         for (const change of changes) {
-          if (change?.field !== "messages") continue;
+          if (change?.field !== 'messages') continue;
 
           const value = change?.value || {};
 
-          // 1) mensagens recebidas
           const messages = value?.messages || [];
 
           for (const msg of messages) {
             const from = msg?.from || null;
 
-            // texto normal
-            if (msg?.type === "text") {
+            if (msg?.type === 'text') {
               console.log(
-                `📩 Mensagem recebida de ${from}: ${msg?.text?.body || ""}`,
+                `📩 Mensagem recebida de ${from}: ${msg?.text?.body || ''}`,
               );
             }
 
-            // interativo
-            if (msg?.type === "interactive") {
+            if (msg?.type === 'interactive') {
               const interactive = msg?.interactive;
 
-              // botão (button_reply)
-              if (interactive?.type === "button_reply") {
-                const id = interactive?.button_reply?.id || "";
+              if (interactive?.type === 'button_reply') {
+                const id = interactive?.button_reply?.id || '';
+                const title = interactive?.button_reply?.title || '';
 
-                if (id.startsWith("claim:")) {
-                  const [, leadId] = id.split(":");
+                console.log('🔘 Button reply recebido:', { id, title, from });
+
+                if (id.startsWith('claim:')) {
+                  const [, leadId] = id.split(':');
 
                   if (leadId) {
                     await LeadWorkflowService.claimLead(leadId, from);
                     console.log(`✅ Lead assumido: ${leadId} por ${from}`);
                   }
-                } else if (id.startsWith("ignore:")) {
-                  const [, leadId] = id.split(":");
+                } else if (id.startsWith('ignore:')) {
+                  const [, leadId] = id.split(':');
 
                   if (leadId) {
-                    await LeadWorkflowService.ignoreLead(leadId);
+                    await LeadWorkflowService.ignoreLead(leadId, from);
                     console.log(`🚫 Lead ignorado: ${leadId}`);
                   }
-                } else if (id.startsWith("seller:")) {
-                  const [, sellerRaw, leadId] = id.split(":");
-                  const seller = (sellerRaw || "").toLowerCase().trim();
-                  const allowedSellers = ["gustavo", "lucas", "luis"];
+                } else if (id.startsWith('seller:')) {
+                  const [, sellerRaw, leadId] = id.split(':');
+                  const sellerKey = (sellerRaw || '').toLowerCase().trim();
+                  const sellerInfo =
+                    LeadWorkflowService.sellerCatalog()[sellerKey];
 
-                  if (leadId && allowedSellers.includes(seller)) {
-                    if (
-                      typeof LeadWorkflowService.assignSeller === "function"
-                    ) {
-                      await LeadWorkflowService.assignSeller({
-                        leadId,
-                        seller,
-                        from,
-                      });
-                    } else {
-                      console.log("👤 Seleção de vendedor recebida:", {
-                        leadId,
-                        seller,
-                        from,
-                      });
-                    }
+                  if (leadId && sellerInfo) {
+                    await LeadWorkflowService.assignSeller({
+                      leadId,
+                      sellerKey: sellerInfo.key,
+                      sellerId: sellerInfo.id,
+                      sellerName: sellerInfo.name,
+                      from,
+                    });
 
                     console.log(
-                      `👤 Vendedor selecionado: ${seller} para lead ${leadId}`,
+                      `👤 Vendedor selecionado: ${sellerInfo.name} (ID ${sellerInfo.id}) para lead ${leadId}`,
                     );
                   } else {
-                    console.warn("⚠️ Seller inválido ou leadId ausente:", {
-                      seller,
+                    console.warn('⚠️ Seller inválido ou leadId ausente:', {
+                      sellerKey,
                       leadId,
                       from,
                     });
                   }
+                } else {
+                  console.warn('⚠️ Button reply não tratado:', {
+                    id,
+                    title,
+                    from,
+                  });
                 }
               }
 
-              // lista (list_reply)
-              if (interactive?.type === "list_reply") {
-                const id = interactive?.list_reply?.id || "";
+              if (interactive?.type === 'list_reply') {
+                const id = interactive?.list_reply?.id || '';
+                const title = interactive?.list_reply?.title || '';
 
-                if (id.startsWith("outcome:")) {
-                  const [, outcome, leadId] = id.split(":");
+                console.log('📋 List reply recebido:', { id, title, from });
+
+                if (id.startsWith('outcome:')) {
+                  const [, outcome, leadId] = id.split(':');
 
                   if (outcome && leadId) {
                     await LeadWorkflowService.setOutcome({ leadId, outcome });
@@ -117,12 +117,17 @@ class WhatsAppWebhookController {
                       `📌 Outcome definido: lead ${leadId}, outcome ${outcome}`,
                     );
                   }
+                } else {
+                  console.warn('⚠️ List reply não tratado:', {
+                    id,
+                    title,
+                    from,
+                  });
                 }
               }
             }
           }
 
-          // 2) status de mensagens (sent/delivered/read/failed)
           const statuses = value?.statuses || [];
 
           for (const s of statuses) {
@@ -134,15 +139,14 @@ class WhatsAppWebhookController {
               raw: s,
             });
 
-            console.log("📩 WA status payload:", JSON.stringify(s, null, 2));
-
             if (s?.errors?.length) {
               console.error(
-                "❌ WA status errors:",
+                '❌ WA status errors:',
                 JSON.stringify(s.errors, null, 2),
               );
             }
 
+            console.log('📩 WA status payload:', JSON.stringify(s, null, 2));
             console.log(`📩 WA status: ${s?.status} ${s?.id}`);
           }
         }
@@ -150,8 +154,8 @@ class WhatsAppWebhookController {
 
       return res.sendStatus(200);
     } catch (e) {
-      console.error("❌ WhatsApp webhook error:", e);
-      return res.sendStatus(200); // evita retries agressivos da Meta
+      console.error('❌ WhatsApp webhook error:', e);
+      return res.sendStatus(200);
     }
   }
 }
