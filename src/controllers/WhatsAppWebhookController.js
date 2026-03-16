@@ -134,6 +134,15 @@ class WhatsAppWebhookController {
               raw: s,
             });
 
+            console.log("📩 WA status payload:", JSON.stringify(s, null, 2));
+
+            if (s?.errors?.length) {
+              console.error(
+                "❌ WA status errors:",
+                JSON.stringify(s.errors, null, 2),
+              );
+            }
+
             console.log(`📩 WA status: ${s?.status} ${s?.id}`);
           }
         }
