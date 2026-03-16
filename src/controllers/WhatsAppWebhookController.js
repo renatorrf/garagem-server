@@ -62,39 +62,14 @@ class WhatsAppWebhookController {
                     await LeadWorkflowService.claimLead(leadId, from);
                     console.log(`✅ Lead assumido: ${leadId} por ${from}`);
                   }
-                }
-
-                if (id.startsWith("ignore:")) {
+                } else if (id.startsWith("ignore:")) {
                   const [, leadId] = id.split(":");
 
                   if (leadId) {
                     await LeadWorkflowService.ignoreLead(leadId);
                     console.log(`🚫 Lead ignorado: ${leadId}`);
                   }
-                }
-              }
-
-              // lista (list_reply)
-              if (interactive?.type === "button_reply") {
-                const id = interactive?.button_reply?.id || "";
-
-                if (id.startsWith("claim:")) {
-                  const [, leadId] = id.split(":");
-                  if (leadId) {
-                    await LeadWorkflowService.claimLead(leadId, from);
-                    console.log(`✅ Lead assumido: ${leadId} por ${from}`);
-                  }
-                }
-
-                if (id.startsWith("ignore:")) {
-                  const [, leadId] = id.split(":");
-                  if (leadId) {
-                    await LeadWorkflowService.ignoreLead(leadId);
-                    console.log(`🚫 Lead ignorado: ${leadId}`);
-                  }
-                }
-
-                if (id.startsWith("seller:")) {
+                } else if (id.startsWith("seller:")) {
                   const [, sellerRaw, leadId] = id.split(":");
                   const seller = (sellerRaw || "").toLowerCase().trim();
                   const allowedSellers = ["gustavo", "lucas", "luis"];
@@ -125,6 +100,22 @@ class WhatsAppWebhookController {
                       leadId,
                       from,
                     });
+                  }
+                }
+              }
+
+              // lista (list_reply)
+              if (interactive?.type === "list_reply") {
+                const id = interactive?.list_reply?.id || "";
+
+                if (id.startsWith("outcome:")) {
+                  const [, outcome, leadId] = id.split(":");
+
+                  if (outcome && leadId) {
+                    await LeadWorkflowService.setOutcome({ leadId, outcome });
+                    console.log(
+                      `📌 Outcome definido: lead ${leadId}, outcome ${outcome}`,
+                    );
                   }
                 }
               }
