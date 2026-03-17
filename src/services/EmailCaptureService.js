@@ -6,11 +6,12 @@
  * 3. Processamento e salvamento no PostgreSQL
  */
 
-const Imap = require("imap");
-const { simpleParser } = require("mailparser");
-const cheerio = require("cheerio");
-const cron = require("node-cron");
-const Lead = require("../models/leads");
+const Imap = require('imap');
+const { simpleParser } = require('mailparser');
+const cheerio = require('cheerio');
+const cron = require('node-cron');
+const Lead = require('../models/leads');
+const LeadWorkflowService = require('./LeadWorkflowService');
 
 class EmailCaptureService {
   constructor() {
@@ -18,14 +19,11 @@ class EmailCaptureService {
     this.isConnected = false;
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
-    this.captureTask = null;
-    this.cacheCleanupTask = null;
-    this.reconnectTimer = null;
 
     this.config = {
-      user: process.env.EMAIL_USER || "leads.nextcaruberlandia@gmail.com",
-      password: process.env.EMAIL_PASSWORD || "",
-      host: "imap.gmail.com",
+      user: process.env.EMAIL_USER || 'leads.nextcaruberlandia@gmail.com',
+      password: process.env.EMAIL_PASSWORD || '',
+      host: 'imap.gmail.com',
       port: 993,
       tls: true,
       tlsOptions: { rejectUnauthorized: false },
@@ -48,54 +46,35 @@ class EmailCaptureService {
 
   async connect() {
     return new Promise((resolve, reject) => {
-      if (!this.config.user || !this.config.password) {
-        console.log("⚠️ IMAP: Credenciais não configuradas no .env");
-        return reject(new Error("Credenciais de email não configuradas"));
+      if (!this.config.user || !this.config.password || this.config.password === '') {
+        console.log('⚠️  IMAP: Credenciais não configuradas no .env');
+        return reject(new Error('Credenciais de email não configuradas'));
       }
 
       if (this.imap && this.isConnected) {
         return resolve();
       }
 
-      // encerra instância anterior se existir
-      if (this.imap) {
-        try {
-          this.imap.removeAllListeners();
-          this.imap.end();
-        } catch (_) {}
-      }
-
       this.imap = new Imap(this.config);
 
-      const onReady = () => {
-        console.log("✅ IMAP conectado");
+      this.imap.on('ready', () => {
+        console.log('✅ IMAP conectado');
         this.isConnected = true;
         this.reconnectAttempts = 0;
-        cleanup();
         resolve();
-      };
+      });
 
-      const onError = (err) => {
-        console.error("❌ Erro IMAP:", err.message);
+      this.imap.on('error', (err) => {
+        console.error('❌ Erro IMAP:', err.message);
         this.isConnected = false;
-        cleanup();
         reject(err);
-      };
+      });
 
-      const onEnd = () => {
-        console.log("🔌 Conexão IMAP finalizada");
+      this.imap.on('end', () => {
+        console.log('🔌 Conexão IMAP finalizada');
         this.isConnected = false;
         this.scheduleReconnect();
-      };
-
-      const cleanup = () => {
-        this.imap.removeListener("ready", onReady);
-        this.imap.removeListener("error", onError);
-      };
-
-      this.imap.on("ready", onReady);
-      this.imap.on("error", onError);
-      this.imap.on("end", onEnd);
+      });
 
       this.imap.connect();
     });
@@ -103,19 +82,14 @@ class EmailCaptureService {
 
   scheduleReconnect() {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error("🚫 Máximo de tentativas de reconexão IMAP atingido");
+      console.error('🚫 Máximo de tentativas de reconexão IMAP atingido');
       return;
-    }
-
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
     }
 
     const delay = Math.min(30000 * Math.pow(2, this.reconnectAttempts), 300000);
     console.log(`🔄 Tentando reconectar IMAP em ${delay / 1000} segundos...`);
 
-    this.reconnectTimer = setTimeout(() => {
+    setTimeout(() => {
       this.reconnectAttempts++;
       this.connect().catch(() => {
         this.scheduleReconnect();
@@ -141,7 +115,7 @@ class EmailCaptureService {
         emails,
       };
     } catch (error) {
-      console.error("❌ Erro ao buscar emails:", error.message);
+      console.error('❌ Erro ao buscar emails:', error.message);
       return {
         success: false,
         error: error.message,
@@ -152,19 +126,19 @@ class EmailCaptureService {
 
   async fetchUnreadEmails() {
     return new Promise((resolve, reject) => {
-      this.imap.openBox("INBOX", false, (err) => {
+      this.imap.openBox('INBOX', false, async (err) => {
         if (err) return reject(err);
 
         const sinceDate = new Date();
         sinceDate.setDate(sinceDate.getDate() - 7);
 
         this.imap.search(
-          ["UNSEEN", ["SINCE", sinceDate.toLocaleDateString("en-CA")]],
+          ['UNSEEN', ['SINCE', sinceDate.toLocaleDateString('en-CA')]],
           async (err, results) => {
             if (err) return reject(err);
 
             if (!results || results.length === 0) {
-              console.log("📭 Nenhum email novo encontrado");
+              console.log('📭 Nenhum email novo encontrado');
               return resolve([]);
             }
 
@@ -172,34 +146,35 @@ class EmailCaptureService {
 
             const leads = [];
             const fetch = this.imap.fetch(results, {
-              bodies: "",
+              bodies: '',
               markSeen: true,
               struct: true,
             });
 
             const messagePromises = [];
 
-            fetch.on("message", (msg) => {
-              const promise = this.processMessage(msg, leads).catch((error) => {
-                console.error("❌ Erro ao processar mensagem:", error.message);
+            fetch.on('message', (msg) => {
+              const promise = new Promise((resolveMsg) => {
+                this.processMessage(msg, leads)
+                  .then(() => resolveMsg())
+                  .catch((error) => {
+                    console.error('Erro ao processar mensagem:', error);
+                    resolveMsg();
+                  });
               });
+
               messagePromises.push(promise);
             });
 
-            fetch.on("error", (err) => reject(err));
+            fetch.on('error', (err) => reject(err));
 
-            fetch.on("end", async () => {
+            fetch.on('end', async () => {
               try {
                 await Promise.all(messagePromises);
-                console.log(
-                  `✅ ${leads.length} emails processados com sucesso`,
-                );
+                console.log(`✅ ${leads.length} emails processados com sucesso`);
                 resolve(leads);
               } catch (error) {
-                console.error(
-                  "❌ Erro ao finalizar processamento:",
-                  error.message,
-                );
+                console.error('Erro ao finalizar processamento:', error);
                 resolve(leads);
               }
             });
@@ -210,61 +185,48 @@ class EmailCaptureService {
   }
 
   async processMessage(msg, leads) {
-    return new Promise((resolve) => {
-      let done = false;
-
-      const finish = () => {
-        if (done) return;
-        done = true;
-        resolve();
-      };
-
-      const timeout = setTimeout(() => {
-        console.warn("⏰ Timeout no processamento de mensagem");
-        finish();
-      }, 30000);
-
+    return new Promise((resolve, reject) => {
       const messageData = {
         attributes: null,
-        buffer: "",
+        buffer: '',
       };
 
-      msg.on("attributes", (attrs) => {
+      msg.on('attributes', (attrs) => {
         messageData.attributes = attrs;
       });
 
-      msg.on("body", (stream) => {
-        stream.on("data", (chunk) => {
-          messageData.buffer += chunk.toString("utf8");
+      msg.on('body', (stream) => {
+        stream.on('data', (chunk) => {
+          messageData.buffer += chunk.toString('utf8');
         });
       });
 
-      msg.once("end", async () => {
-        clearTimeout(timeout);
-
+      msg.once('end', async () => {
         try {
           if (!messageData.buffer) {
-            console.warn("⚠️ Mensagem sem conteúdo");
-            return finish();
+            console.warn('⚠️ Mensagem sem conteúdo');
+            return resolve();
           }
 
           const parsed = await simpleParser(messageData.buffer);
-          const lead = await this.saveLeadFromEmail(
-            parsed,
-            messageData.attributes || {},
-          );
+          const lead = await this.saveLeadFromEmail(parsed, messageData.attributes || {});
 
           if (lead) {
             leads.push(lead);
             console.log(`📝 Processado: ${lead.emailRemetente}`);
           }
 
-          finish();
+          resolve();
         } catch (error) {
-          console.error("❌ Erro ao processar mensagem:", error.message);
-          finish();
+          console.error('❌ Erro ao processar mensagem:', error.message);
+          reject(error);
         }
       });
+
+      setTimeout(() => {
+        console.warn('⏰ Timeout no processamento de mensagem');
+        resolve();
+      }, 30000);
     });
   }
 
@@ -279,7 +241,7 @@ class EmailCaptureService {
       const { subject, from, text, html, messageId, date } = emailData;
 
       if (!messageId) {
-        console.warn("⚠️ Email sem messageId, ignorando");
+        console.warn('⚠️ Email sem messageId, ignorando');
         return null;
       }
 
@@ -290,11 +252,12 @@ class EmailCaptureService {
       }
 
       const senderEmail =
-        from?.value?.[0]?.address || "nao-informado@origem.local";
-      const senderName = from?.text || "Remetente desconhecido";
-      const fallbackText = [text || "", this.htmlToText(html || "")]
+        from?.value?.[0]?.address || 'nao-informado@origem.local';
+      const senderName = from?.text || 'Remetente desconhecido';
+
+      const fallbackText = [text || '', this.htmlToText(html || '')]
         .filter(Boolean)
-        .join("\n")
+        .join('\n')
         .trim();
 
       const platformData = this.detectAndParsePlatform(emailData);
@@ -308,22 +271,21 @@ class EmailCaptureService {
         const tags = this.extractLeadTags(
           platformData.parsed.veiculo,
           platformData.parsed.mensagem,
-          platformData.parsed.extras,
         );
 
         leadData = {
           emailId: messageId,
-          remetente: platformData.parsed.nome || senderName || "Cliente",
+          remetente: platformData.parsed.nome || senderName || 'Cliente',
           emailRemetente: platformData.parsed.email || senderEmail,
           assunto: subject || `Proposta recebida via ${platformData.platform}`,
           telefone: platformData.parsed.telefone || null,
-          nome: platformData.parsed.nome || "Não informado",
+          nome: platformData.parsed.nome || 'Não informado',
           veiculoInteresse:
             platformData.parsed.veiculo ||
             this.extractVehicleInfo(subject, fallbackText),
-          mensagem: platformData.parsed.mensagem || fallbackText || "",
+          mensagem: platformData.parsed.mensagem || fallbackText || '',
           origem: platformData.platform,
-          status: "novo",
+          status: 'novo',
           prioridade: this.determinePriority(platformData.parsed.mensagem),
           dataRecebimento: date || new Date(),
           dataContato: null,
@@ -348,26 +310,26 @@ class EmailCaptureService {
           tags,
         };
 
-        console.log("📋 Dados do lead preparados:");
+        console.log('📋 Dados do lead preparados:');
         console.log(`   Score: ${score}`);
-        console.log(`   Tags: ${tags.join(", ")}`);
+        console.log(`   Tags: ${tags.join(', ')}`);
         console.log(`   Prioridade: ${leadData.prioridade}`);
       } else {
-        console.log("🔧 Usando parser genérico...");
+        console.log('🔧 Usando parser genérico...');
         const extractedData = this.extractLeadData(emailData);
 
         leadData = {
           emailId: messageId,
-          remetente: senderName || "Remetente desconhecido",
+          remetente: senderName || 'Remetente desconhecido',
           emailRemetente: senderEmail,
-          assunto: subject || "Sem assunto",
+          assunto: subject || 'Sem assunto',
           telefone: extractedData.telefone,
-          nome: extractedData.nome || senderName || "Não informado",
-          veiculoInteresse: extractedData.veiculo || "Veículo não especificado",
-          mensagem: fallbackText || "",
+          nome: extractedData.nome || senderName || 'Não informado',
+          veiculoInteresse: extractedData.veiculo || 'Veículo não especificado',
+          mensagem: fallbackText || '',
           origem: this.detectClassifiedOrigin(emailData),
-          status: "novo",
-          prioridade: "media",
+          status: 'novo',
+          prioridade: 'media',
           dataRecebimento: date || new Date(),
           dataContato: null,
           observacoes: null,
@@ -398,407 +360,115 @@ class EmailCaptureService {
         console.log(`   Status: ${savedLead.status}`);
 
         try {
-          const LeadWorkflowService = require("./LeadWorkflowService");
+          if (typeof LeadWorkflowService?.onNewLead !== 'function') {
+            throw new Error('LeadWorkflowService.onNewLead indisponível');
+          }
+
           await LeadWorkflowService.onNewLead(savedLead);
         } catch (e) {
-          console.error("⚠️ Falha ao notificar WhatsApp:", e.message);
+          console.error('⚠️ Falha ao notificar WhatsApp:', e.message);
         }
       }
 
+      this.invalidateCache();
       return savedLead;
     } catch (error) {
-      console.error("❌ ERRO CRÍTICO ao salvar lead:", error.message);
-      console.error("Stack trace:", error.stack);
+      console.error('❌ ERRO CRÍTICO ao salvar lead:', error.message);
+      console.error('Stack trace:', error.stack);
       return null;
     }
   }
 
   detectAndParsePlatform(emailData) {
     const { subject, from, text, html } = emailData;
-    const textContent = text || "";
-    const htmlContent = html || "";
-    const fullText = [textContent, this.htmlToText(htmlContent)]
-      .filter(Boolean)
-      .join("\n");
-    const senderEmail = from?.value?.[0]?.address || "";
-    const senderName = from?.text || "";
+    const fullText = text || this.htmlToText(html || '');
+    const senderEmail = from?.value?.[0]?.address || '';
+    const senderName = from?.text || '';
 
     console.log(`🔍 Analisando email de: ${senderEmail}`);
-    console.log(`   Assunto: "${subject}"`);
+    console.log(`   Assunto: "${subject || ''}"`);
 
-    // 1. MOBIAUTO
     if (
-      senderEmail.includes("mobiauto.com.br") ||
-      senderEmail.includes("contato@mobiauto") ||
-      textContent.includes("mobiauto.com.br") ||
-      htmlContent.includes("mobiauto.com.br")
+      senderEmail.includes('mobiauto.com.br') ||
+      senderEmail.includes('contato@mobiauto') ||
+      fullText.toLowerCase().includes('mobiauto')
     ) {
-      console.log("🎯 Detectado: Mobiauto");
+      console.log('🎯 Detectado: Mobiauto');
       return {
-        platform: "Mobiauto",
-        parsed: this.parseMobiautoEmail(fullText, subject || ""),
+        platform: 'Mobiauto',
+        parsed: this.parseMobiautoEmail(fullText, subject || ''),
         rawData: { subject, senderEmail, senderName },
       };
     }
 
-    // 2. OLX
     if (
-      senderEmail.includes("olx.com.br") ||
-      senderEmail.includes("email@email.olx.com.br") ||
-      textContent.includes("olx.com.br") ||
-      htmlContent.includes("olx.com.br") ||
-      subject?.toLowerCase().includes("olx")
+      senderEmail.includes('olx.com.br') ||
+      senderEmail.includes('email@email.olx.com.br') ||
+      fullText.toLowerCase().includes('olx')
     ) {
-      console.log("🎯 Detectado: OLX");
+      console.log('🎯 Detectado: OLX');
       return {
-        platform: "OLX",
-        parsed: this.parseOlxEmail(fullText, subject || ""),
+        platform: 'OLX',
+        parsed: this.parseOlxEmail(fullText, subject || ''),
         rawData: { subject, senderEmail, senderName },
       };
     }
 
-    // 3. WEBMOTORS
     if (
-      senderEmail.includes("webmotors.com.br") ||
-      textContent.includes("webmotors.com.br") ||
-      htmlContent.includes("webmotors.com.br") ||
-      subject?.toLowerCase().includes("webmotors")
+      senderEmail.includes('webmotors.com.br') ||
+      fullText.toLowerCase().includes('webmotors')
     ) {
-      console.log("🎯 Detectado: Webmotors");
+      console.log('🎯 Detectado: Webmotors');
       return {
-        platform: "Webmotors",
-        parsed: this.parseWebmotorsEmail(fullText, subject || ""),
+        platform: 'Webmotors',
+        parsed: this.parseWebmotorsEmail(fullText, subject || ''),
         rawData: { subject, senderEmail, senderName },
       };
     }
 
-    // 4. ICARROS
     if (
-      senderEmail.includes("icarros.com.br") ||
-      textContent.toLowerCase().includes("icarros") ||
-      htmlContent.toLowerCase().includes("icarros")
+      senderEmail.includes('facebookmail.com') ||
+      senderEmail.includes('facebook.com') ||
+      fullText.toLowerCase().includes('marketplace')
     ) {
-      console.log("🎯 Detectado: iCarros");
+      console.log('🎯 Detectado: Facebook Marketplace');
       return {
-        platform: "iCarros",
-        parsed: this.parseIcarrosEmail(fullText, subject || "", emailData),
+        platform: 'Facebook Marketplace',
+        parsed: this.parseFacebookEmail(fullText, subject || ''),
         rawData: { subject, senderEmail, senderName },
       };
     }
 
-    // 5. MERCADOLIVRE
     if (
-      senderEmail.includes("mercadolivre") ||
-      textContent.toLowerCase().includes("mercadolivre") ||
-      htmlContent.toLowerCase().includes("mercadolivre")
+      senderEmail.includes('instagram.com') ||
+      fullText.toLowerCase().includes('instagram')
     ) {
-      const isPergunta =
-        /Pergunta feita no an/i.test(fullText) ||
-        /perguntas\/vendedor/i.test(fullText);
-
-      const isFinanciamento =
-        /quer financiar seu carro/i.test(fullText) ||
-        /financiamento-veiculos/i.test(fullText);
-
-      const parsed = isPergunta
-        ? this.parseMercadoLivreQuestionEmail(fullText, subject || "")
-        : isFinanciamento
-          ? this.parseMercadoLivreFinancingLeadEmail(fullText, subject || "")
-          : null;
-
-      return parsed
-        ? {
-            platform: "MercadoLivre",
-            parsed,
-            rawData: { subject, senderEmail, senderName },
-          }
-        : { platform: null, parsed: null };
-    }
-
-    // BV / NaPista
-    if (
-      senderEmail.includes("napista.com.br") ||
-      senderEmail.includes("mandrillapp.com") ||
-      subject?.toLowerCase().includes("lead bv") ||
-      subject?.toLowerCase().includes("banco bv") ||
-      fullText.toLowerCase().includes("simulação aprovada no banco bv") ||
-      fullText.toLowerCase().includes("simulacao aprovada no banco bv") ||
-      fullText.toLowerCase().includes("pode ser aprovado no banco bv") ||
-      fullText.toLowerCase().includes("dados do cliente")
-    ) {
-      console.log("🎯 Detectado: BV");
+      console.log('🎯 Detectado: Instagram');
       return {
-        platform: "BV",
-        parsed: this.parseBvEmail(fullText, subject || "", emailData),
+        platform: 'Instagram',
+        parsed: this.parseInstagramEmail(fullText, subject || ''),
         rawData: { subject, senderEmail, senderName },
       };
     }
 
-    // 6. FACEBOOK MARKETPLACE
     if (
-      senderEmail.includes("facebookmail.com") ||
-      senderEmail.includes("facebook.com") ||
-      textContent.includes("facebook.com/marketplace") ||
-      htmlContent.includes("facebook.com/marketplace") ||
-      subject?.toLowerCase().includes("marketplace")
+      senderEmail.includes('whatsapp.com') ||
+      fullText.toLowerCase().includes('whatsapp')
     ) {
-      console.log("🎯 Detectado: Facebook Marketplace");
+      console.log('🎯 Detectado: WhatsApp Business');
       return {
-        platform: "Facebook Marketplace",
-        parsed: this.parseFacebookEmail(fullText, subject || ""),
+        platform: 'WhatsApp Business',
+        parsed: this.parseWhatsAppEmail(fullText, subject || ''),
         rawData: { subject, senderEmail, senderName },
       };
     }
 
-    // 7. INSTAGRAM
-    if (
-      senderEmail.includes("instagram.com") ||
-      textContent.includes("instagram.com") ||
-      htmlContent.includes("instagram.com") ||
-      subject?.toLowerCase().includes("instagram")
-    ) {
-      console.log("🎯 Detectado: Instagram");
-      return {
-        platform: "Instagram",
-        parsed: this.parseInstagramEmail(fullText, subject || ""),
-        rawData: { subject, senderEmail, senderName },
-      };
-    }
-
-    // 8. WHATSAPP BUSINESS
-    if (
-      senderEmail.includes("whatsapp.com") ||
-      textContent.toLowerCase().includes("whatsapp") ||
-      htmlContent.toLowerCase().includes("whatsapp") ||
-      subject?.toLowerCase().includes("whatsapp")
-    ) {
-      console.log("🎯 Detectado: WhatsApp Business");
-      return {
-        platform: "WhatsApp Business",
-        parsed: this.parseWhatsAppEmail(fullText, subject || ""),
-        rawData: { subject, senderEmail, senderName },
-      };
-    }
-
-    console.log(
-      "🔧 Nenhuma plataforma específica detectada, usando parser genérico",
-    );
+    console.log('🔧 Nenhuma plataforma específica detectada, usando parser genérico');
     return { platform: null, parsed: null };
   }
 
-  parseBvEmail(text, subject, emailData = {}) {
-    const clean = String(text || "")
-      .replace(/\r/g, "")
-      .replace(/=\n/g, "")
-      .replace(/=20/g, " ")
-      .replace(/=09/g, " ")
-      .replace(/=3D/g, "=")
-      .replace(/\u00A0/g, " ")
-      .replace(/&nbsp;/gi, " ")
-      .replace(/&ccedil;/gi, "ç")
-      .replace(/&atilde;/gi, "ã")
-      .replace(/&aacute;/gi, "á")
-      .replace(/&eacute;/gi, "é")
-      .replace(/&iacute;/gi, "í")
-      .replace(/&oacute;/gi, "ó")
-      .replace(/&uacute;/gi, "ú")
-      .replace(/&ecirc;/gi, "ê")
-      .replace(/&ocirc;/gi, "ô")
-      .replace(/&agrave;/gi, "à")
-      .replace(/&bull;/gi, " • ")
-      .replace(/&quot;/gi, '"')
-      .replace(/&#039;/g, "'")
-      .replace(/&#8203;/g, " ")
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<\/p>/gi, "\n")
-      .replace(/<\/div>/gi, "\n")
-      .replace(/<[^>]*>/g, " ")
-      .replace(/[ \t]+/g, " ")
-      .replace(/\n\s+/g, "\n")
-      .replace(/\n{2,}/g, "\n")
-      .trim();
-
-    const normalizeMoney = (value) => {
-      if (!value) return null;
-      return value.replace(/\./g, "").replace(",", ".").replace(/\s/g, "");
-    };
-
-    const pickBlock = (startLabel, endLabel = null) => {
-      if (!startLabel) return null;
-
-      const pattern = endLabel
-        ? new RegExp(`${startLabel}\\s*\\n([\\s\\S]*?)\\n${endLabel}`, "i")
-        : new RegExp(`${startLabel}\\s*\\n([\\s\\S]*?)$`, "i");
-
-      return clean.match(pattern)?.[1]?.trim() || null;
-    };
-
-    // =========================================================
-    // 1) Nome
-    // =========================================================
-
-    let nome =
-      // layout antigo
-      pickBlock("Dados do cliente", "Mensagem")
-        ?.split("\n")
-        ?.map((l) => l.trim())
-        ?.find(
-          (l) => /^[A-ZÀ-Ú][A-ZÀ-Ú\s]{8,}$/.test(l) && !l.includes("CPF"),
-        ) ||
-      // layout reminder: CPF linha acima e nome completo logo abaixo
-      clean
-        .match(
-          /CPF:\s*\d{3}\.\d{3}\.\d{3}-\d{2}\s*\n([A-ZÀ-Ú][A-Za-zÀ-ÿ\s]+)$/im,
-        )?.[1]
-        ?.trim() ||
-      clean
-        .match(
-          /CPF:\s*\d{3}\.\d{3}\.\d{3}-\d{2}\s*\n([A-ZÀ-Ú][A-Za-zÀ-ÿ\s]+)/i,
-        )?.[1]
-        ?.trim() ||
-      // nome curto no subject
-      subject?.match(/com\s+([A-Za-zÀ-ÿ]+)\??/i)?.[1]?.trim() ||
-      // nome curto em headline
-      clean
-        .match(/^([A-Za-zÀ-ÿ]+)\s+pode ser aprovado no banco BV/i)?.[1]
-        ?.trim() ||
-      null;
-
-    // =========================================================
-    // 2) CPF
-    // =========================================================
-
-    const cpf = clean.match(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/)?.[0] || null;
-
-    // =========================================================
-    // 3) Telefone
-    // =========================================================
-    // No reminder geralmente vem no link api.whatsapp.com?phone=55...
-    let telefone =
-      clean.match(/api\.whatsapp\.com\/send\?phone=55(\d{10,11})/i)?.[1] ||
-      clean.match(/wa\.me\/55(\d{10,11})/i)?.[1] ||
-      clean.match(/\(?\d{2}\)?\s*9?\d{4,5}-?\d{4}/)?.[0]?.replace(/\D/g, "") ||
-      null;
-
-    // =========================================================
-    // 4) Email
-    // =========================================================
-    const email =
-      clean.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || null;
-
-    // =========================================================
-    // 5) Simulação
-    // Ex.: R$20.000 + 60x de R$ 573,09
-    // Ex.: R$69.630 + 60x de R$ 2.658,68
-    // =========================================================
-
-    let entrada = null;
-    let parcelas = null;
-
-    const financiamentoMatch = clean.match(
-      /R\$\s*([\d\.\,]+)\s*\+\s*(\d{1,3})x\s+de\s+R\$\s*([\d\.\,]+)/i,
-    );
-
-    if (financiamentoMatch) {
-      entrada = normalizeMoney(financiamentoMatch[1]);
-      parcelas = {
-        qtd: financiamentoMatch[2],
-        valor: normalizeMoney(financiamentoMatch[3]),
-      };
-    }
-
-    const simulacaoAprovada =
-      /simula(?:ç|c)[aã]o aprovada no banco bv/i.test(clean) ||
-      /pode ser aprovado no banco bv/i.test(clean) ||
-      /pode ser aprovado/i.test(clean);
-
-    // =========================================================
-    // 6) Veículo
-    // layout 1: bloco "Veículo de interesse"
-    // layout 2: nome do carro + linha seguinte "2014 • 135.000 km • R$ 31.900"
-    // =========================================================
-
-    let veiculo =
-      pickBlock("Veículo de interesse", "Com interesse em financiar no BV")
-        ?.split("\n")
-        ?.map((l) => l.trim())
-        ?.filter(Boolean)?.[0] ||
-      clean
-        .match(
-          /([A-Z0-9\s]+(?:UNO|FIAT|CHERY|FORD|CHEVROLET|VOLKSWAGEN|VW|HONDA|TOYOTA|HYUNDAI|RENAULT|JEEP|NISSAN)[A-Z0-9\s\.\/-]*)\n/i,
-        )?.[1]
-        ?.trim() ||
-      null;
-
-    let veiculoDetalhes =
-      pickBlock("Veículo de interesse", "Com interesse em financiar no BV")
-        ?.split("\n")
-        ?.map((l) => l.trim())
-        ?.filter(Boolean)?.[1] ||
-      clean.match(
-        /\b(19|20)\d{2}\s*•\s*[\d\.\,]+\s*km\s*•\s*R\$\s*[\d\.\,]+/i,
-      )?.[0] ||
-      null;
-
-    const preco = veiculoDetalhes?.match(/R\$\s*([\d\.\,]+)/i)?.[1]
-      ? normalizeMoney(veiculoDetalhes.match(/R\$\s*([\d\.\,]+)/i)[1])
-      : null;
-
-    const ano = veiculoDetalhes?.match(/\b(19|20)\d{2}\b/)?.[0] || null;
-
-    const km =
-      veiculoDetalhes
-        ?.match(/([\d\.\,]+)\s*km/i)?.[1]
-        ?.replace(/\./g, "")
-        .replace(",", "") || null;
-
-    const placa =
-      veiculoDetalhes
-        ?.match(/\b[A-Z]{3}-?[0-9A-Z][A-Z0-9][0-9]{2}\b/i)?.[0]
-        ?.toUpperCase() ||
-      clean
-        .match(/\b[A-Z]{3}-?[0-9A-Z][A-Z0-9][0-9]{2}\b/i)?.[0]
-        ?.toUpperCase() ||
-      null;
-
-    // =========================================================
-    // 7) Mensagem
-    // =========================================================
-
-    const mensagem =
-      pickBlock("Mensagem", "Veículo de interesse") ||
-      clean.match(/Lead BV:[^\n]+/i)?.[0] ||
-      subject ||
-      null;
-
-    return {
-      nome,
-      email,
-      telefone,
-      veiculo,
-      mensagem,
-      preco,
-      placa,
-      extras: {
-        fonte: "bv",
-        cpf,
-        ano,
-        km,
-        veiculoDetalhes,
-        simulacaoAprovada,
-        entrada,
-        parcelas,
-        tipoEmail:
-          /você já falou com/i.test(subject || "") ||
-          /voce ja falou com/i.test(subject || "")
-            ? "reminder"
-            : "lead",
-      },
-    };
-  }
-
   parseMobiautoEmail(text, subject) {
-    console.log("📝 Parseando email do Mobiauto...");
+    console.log('📝 Parseando email do Mobiauto...');
 
     const result = {
       nome: null,
@@ -808,39 +478,34 @@ class EmailCaptureService {
       mensagem: null,
       preco: null,
       placa: null,
-      extras: { fonte: "mobiauto" },
+      extras: {},
     };
 
     try {
       const nomeMatch =
         text.match(/Nome\s*\n\s*([^\n]+)/i) ||
         text.match(/Nome[:\s]*([^\n]+)/i);
-
       if (nomeMatch) result.nome = nomeMatch[1].trim();
 
       const emailMatch =
         text.match(/E-mail\s*\n\s*([^\n@]+@[^\n]+)/i) ||
         text.match(/Email[:\s]*([^\n@]+@[^\n]+)/i);
-
       if (emailMatch) result.email = emailMatch[1].trim();
 
       const telefoneMatch =
         text.match(/Telefone\s*\n\s*(\d{10,11})/i) ||
         text.match(/Telefone[:\s]*(\d{10,11})/i) ||
-        text.match(/(\d{2}\s?\d{4,5}\s?\d{4})/);
-
-      if (telefoneMatch) result.telefone = telefoneMatch[1].replace(/\D/g, "");
+        text.match(/(\d{2}\s?9?\d{4}\s?\d{4})/);
+      if (telefoneMatch) result.telefone = telefoneMatch[1].replace(/\D/g, '');
 
       const veiculoMatch =
         subject.match(/Proposta Recebida:\s*(.+)/i) ||
         subject.match(/Interesse[:\s]*(.+)/i);
-
       if (veiculoMatch) result.veiculo = veiculoMatch[1].trim();
 
       const mensagemMatch =
         text.match(/Mensagem\s*\n\s*["']([^"']+)["']/i) ||
         text.match(/["']([^"']+)["']/);
-
       if (mensagemMatch) result.mensagem = mensagemMatch[1].trim();
 
       const precoMatch = text.match(/R\$\s*([\d\.,]+)/i);
@@ -848,528 +513,114 @@ class EmailCaptureService {
 
       const placaMatch = text.match(/placa[:\s]*([A-Z]{3}\d[A-Z0-9]\d{2})/i);
       if (placaMatch) result.placa = placaMatch[1].toUpperCase();
-
-      if (!result.nome) {
-        const lines = text.split("\n");
-        for (let line of lines) {
-          line = line.trim();
-          if (
-            line.length > 3 &&
-            line.length < 50 &&
-            !line.includes("@") &&
-            !line.includes("http") &&
-            !line.includes("Telefone") &&
-            !line.includes("E-mail") &&
-            !line.includes("Mensagem") &&
-            !line.includes("Nome")
-          ) {
-            if (/^[A-ZÀ-ÿ][a-zà-ÿ]+\s+[A-ZÀ-ÿ][a-zà-ÿ]+/.test(line)) {
-              result.nome = line;
-              break;
-            }
-          }
-        }
-      }
     } catch (error) {
-      console.error("❌ Erro ao parsear email do Mobiauto:", error.message);
+      console.error('❌ Erro ao parsear email do Mobiauto:', error.message);
     }
 
     return result;
   }
 
-  parseIcarrosEmail(text, subject, emailData = {}) {
-    const clean = String(text || "")
-      .replace(/\r/g, "")
-      .replace(/=\n/g, "")
-      .replace(/=20/g, " ")
-      .replace(/=09/g, " ")
-      .replace(/=3D/g, "=")
-      .replace(/\u00A0/g, " ")
-      .replace(/[ \t]+/g, " ")
-      .replace(/\n\s+/g, "\n")
-      .replace(/\n{2,}/g, "\n")
-      .trim();
-
-    const pickLabelValue = (label) => {
-      const re = new RegExp(`${label}\\s*\\n\\s*([^\\n]+)`, "i");
-      const m = clean.match(re);
-      return m ? m[1].trim() : null;
-    };
-
-    const replyToEmail = emailData?.replyTo?.value?.[0]?.address || null;
-    const replyToName = emailData?.replyTo?.text || null;
-
-    let nome =
-      pickLabelValue("Nome") ||
-      clean
-        .match(
-          /Nome\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s]+?)(?:\n|CPF|E-mail|Telefone)/i,
-        )?.[1]
-        ?.trim() ||
-      replyToName ||
-      null;
-
-    let email =
-      pickLabelValue("E-mail") ||
-      pickLabelValue("Email") ||
-      replyToEmail ||
-      clean.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] ||
-      null;
-
-    let telefoneRaw =
-      pickLabelValue("Telefone") ||
-      clean.match(/Telefone\s+(\(?\d{2}\)?\s*\d{4,5}-?\d{4})/i)?.[1] ||
-      null;
-
-    let telefone = telefoneRaw ? telefoneRaw.replace(/\D/g, "") : null;
-
-    let cpf =
-      pickLabelValue("CPF") ||
-      clean.match(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/)?.[0] ||
-      null;
-
-    const subj = String(subject || "")
-      .replace(/\s+/g, " ")
-      .trim();
-
-    let veiculo =
-      subj.match(/Pré-Analisado:\s*(.+)$/i)?.[1]?.trim() ||
-      subj.match(/Proposta.*?:\s*(.+)$/i)?.[1]?.trim() ||
-      clean.match(/Anúncio:\s+([^\n]+)/i)?.[1]?.trim() ||
-      null;
-
-    let mensagem =
-      clean.match(/Mensagem\s+[“"']?([^"”'\n]+)[”"']?/i)?.[1]?.trim() || null;
-
-    let preco =
-      clean
-        .match(/R\$\s*([\d\.\,]+)/i)?.[1]
-        ?.replace(/\./g, "")
-        .replace(",", ".") || null;
-
-    let entrada =
-      clean
-        .match(/Entrada de R\$\s*([\d\.\,]+)/i)?.[1]
-        ?.replace(/\./g, "")
-        .replace(",", ".") || null;
-
-    const superQuente = /SUPER QUENTE/i.test(clean);
-    const preAnalisado = /PR[ÉE]\s*ANALISADO/i.test(clean);
-
-    // =========================================================
-    // VARIAÇÃO 2 - "Aproveite essa oportunidade" / Seminovo
-    // =========================================================
-    if (!nome || !telefone || !veiculo) {
-      const markerMatch = clean.match(
-        /Separamos as informa(?:ç|c)[õo]es pra voc[êe] come(?:ç|c)ar a venda:\s*([\s\S]*?)Esse lead ainda n[ãa]o converteu/i,
-      );
-
-      if (markerMatch?.[1]) {
-        const block = markerMatch[1]
-          .replace(/[ \t]+/g, " ")
-          .replace(/\n{2,}/g, "\n")
-          .trim();
-
-        const lines = block
-          .split("\n")
-          .map((l) => l.trim())
-          .filter(Boolean)
-          .filter(
-            (l) =>
-              !/conferir an[úu]ncio/i.test(l) &&
-              !/^que tal fazer contato\??$/i.test(l),
-          );
-
-        // tenta achar email dentro do bloco
-        const blockEmail =
-          block.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || null;
-
-        // tenta achar telefone no bloco
-        const blockPhoneRaw =
-          block.match(
-            /(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)?9?\d{4,5}-?\d{4}/,
-          )?.[0] || null;
-
-        const blockPhone = blockPhoneRaw
-          ? blockPhoneRaw.replace(/\D/g, "")
-          : null;
-
-        // nome geralmente é a linha imediatamente anterior ao email
-        let blockNome = null;
-        if (blockEmail) {
-          const idx = lines.findIndex((l) => l.includes(blockEmail));
-          if (idx > 0) {
-            blockNome = lines[idx - 1];
-          }
-        }
-
-        // cidade: costuma ser a próxima linha após telefone
-        let cidade = null;
-        if (blockPhoneRaw) {
-          const idx = lines.findIndex((l) => l.includes(blockPhoneRaw));
-          if (idx >= 0 && lines[idx + 1]) {
-            cidade = lines[idx + 1];
-          }
-        }
-
-        // veículo: normalmente duas linhas após cidade
-        let blockVeiculo = null;
-        if (cidade) {
-          const idx = lines.findIndex((l) => l === cidade);
-          if (idx >= 0) {
-            const maybeTitle = lines[idx + 1] || null;
-            const maybeVersion = lines[idx + 2] || null;
-
-            if (maybeTitle && maybeVersion) {
-              blockVeiculo = `${maybeTitle} ${maybeVersion}`
-                .replace(/\s+/g, " ")
-                .trim();
-            } else if (maybeTitle) {
-              blockVeiculo = maybeTitle.trim();
-            }
-          }
-        }
-
-        nome = nome || blockNome;
-        email = email || blockEmail;
-        telefone = telefone || blockPhone;
-        veiculo = veiculo || blockVeiculo;
-        mensagem =
-          mensagem ||
-          "Esse lead ainda não converteu no anúncio, mas está esperando pelo seu contato para negociar. É uma venda com potencial, então bora aproveitar!";
-
-        if (!email && replyToEmail) email = replyToEmail;
-        if (!nome && replyToName) nome = replyToName;
-
-        // guarda cidade no extras, porque nesse template ela aparece
-        var cidadeLead = cidade || null;
-      }
-    }
-
-    // fallback de mensagem
-    if (!mensagem) {
-      mensagem =
-        "Você ainda não recebeu uma mensagem, mas a pessoa se interessou pelo carro. Aproveite o contato!";
-    }
-
-    return {
-      nome,
-      email,
-      telefone,
-      veiculo,
-      mensagem,
-      preco,
-      placa: null,
-      extras: {
-        fonte: "icarros",
-        cpf,
-        entrada,
-        superQuente,
-        preAnalisado,
-        cidade: typeof cidadeLead !== "undefined" ? cidadeLead : null,
-        tipoEmail: /Aproveite essa oportunidade/i.test(clean)
-          ? "match-seminovo"
-          : "proposta",
-      },
-    };
-  }
-
   parseOlxEmail(text, subject) {
-    const clean = String(text || "")
-      .replace(/\r/g, "")
-      .replace(/=\n/g, "") // quoted-printable soft break
-      .replace(/=20/g, " ")
-      .replace(/=09/g, " ")
-      .replace(/=3D/g, "=")
-      .replace(/\u00A0/g, " ")
-      .replace(/[ \t]+/g, " ")
-      .replace(/\n\s+/g, "\n")
-      .replace(/\n{2,}/g, "\n")
-      .trim();
-
-    const pickHtmlField = (label) => {
-      const re = new RegExp(
-        `<strong\\s*>\\s*${label}\\s*:?\\s*<\\/strong>\\s*<span>\\s*([^<]+?)\\s*<\\/span>`,
-        "i",
-      );
-      return clean.match(re)?.[1]?.trim() || null;
-    };
-
-    const pickTextField = (label) => {
-      return (
-        clean
-          .match(new RegExp(`${label}:\\s*\\n\\s*([^\\n]+)`, "i"))?.[1]
-          ?.trim() ||
-        clean.match(new RegExp(`${label}:\\s*([^\\n<]+)`, "i"))?.[1]?.trim() ||
-        null
-      );
-    };
-
-    const nome = pickHtmlField("Nome") || pickTextField("Nome") || null;
-
-    const email =
-      pickHtmlField("Email") ||
-      pickTextField("Email") ||
-      clean.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] ||
-      null;
-
-    const telefoneRaw =
-      pickHtmlField("Telefone") ||
-      pickHtmlField("WhatsApp") ||
-      pickTextField("Telefone") ||
-      pickTextField("WhatsApp") ||
-      clean.match(/(\(?\d{2}\)?\s*9?\d{4,5}-?\d{4})/)?.[1] ||
-      null;
-
-    const telefone = telefoneRaw ? telefoneRaw.replace(/\D/g, "") : null;
-
-    let veiculo = null;
-
-    const priceLineIdx = clean.search(/R\$\s*[\d\.\,]+/i);
-    if (priceLineIdx >= 0) {
-      const window = clean.slice(
-        Math.max(0, priceLineIdx - 500),
-        priceLineIdx + 250,
-      );
-      const lines = window
-        .split("\n")
-        .map((s) => s.trim())
-        .filter(Boolean);
-
-      for (let i = 0; i < lines.length; i++) {
-        const l = lines[i];
-
-        if (/^R\$\s*/i.test(l)) {
-          const prev = lines[i - 1];
-          if (
-            prev &&
-            prev.length > 6 &&
-            prev.length < 140 &&
-            !prev.includes("http") &&
-            !/nome|telefone|email|whatsapp/i.test(prev)
-          ) {
-            veiculo = prev;
-            break;
-          }
-        }
-      }
-    }
-
-    if (!veiculo && subject) {
-      veiculo = subject
-        .replace(/\s+/g, " ")
-        .replace(/^.*?(interesse|proposta|contato)[:\-\s]*/i, "")
-        .trim();
-    }
-
-    const preco =
-      clean
-        .match(/R\$\s*([\d\.\,]+)/i)?.[1]
-        ?.replace(/\./g, "")
-        .replace(",", ".") || null;
-
-    return {
-      nome,
-      email,
-      telefone,
-      veiculo,
-      mensagem: null,
-      preco,
-      placa: null,
-      extras: { fonte: "olx" },
-    };
+    return this.parseGenericPlatformEmail(text, subject, 'OLX');
   }
 
-  parseMercadoLivreQuestionEmail(text, subject) {
-    const clean = text.replace(/\r/g, "");
-
-    const nome =
-      clean.match(/Responda para\s+([^\n]+?)\s+o quanto antes/i)?.[1]?.trim() ||
-      null;
-
-    const veiculo =
-      clean.match(/Pergunta feita no anúncio\s+([^\n<]+)/i)?.[1]?.trim() ||
-      clean
-        .match(/Pergunta feita no an\w+ncio\s+.*?>\s*([^<]+)\s*</i)?.[1]
-        ?.trim() ||
-      null;
-
-    const questionId =
-      clean.match(/question_id=3D(\d+)/i)?.[1] ||
-      clean.match(/question_id=(\d+)/i)?.[1] ||
-      null;
-
-    const anuncioUrl =
-      clean.match(
-        /href=3D"(https?:\/\/carro\.mercadolivre\.com\.br\/[^"]+)/i,
-      )?.[1] ||
-      clean.match(/https?:\/\/carro\.mercadolivre\.com\.br\/\S+/i)?.[0] ||
-      null;
-
-    return {
-      nome,
-      email: null,
-      telefone: null,
-      veiculo,
-      mensagem: subject || null,
-      preco: null,
-      placa: null,
-      extras: { questionId, anuncioUrl, fonte: "mercadolivre-pergunta" },
-    };
-  }
-
-  parseMercadoLivreFinancingLeadEmail(text, subject) {
-    const clean = text.replace(/\r/g, "");
-
-    const nome =
-      clean
-        .match(
-          /([A-Za-zÀ-ÿ]+\s+[A-Za-zÀ-ÿ]\.)\s+quer\s+financiar\s+seu\s+carro/i,
-        )?.[1]
-        ?.trim() ||
-      clean.match(/<h5[^>]*>\s*([^<]+)\s*<\/h5>/i)?.[1]?.trim() ||
-      null;
-
-    const veiculo =
-      clean
-        .match(
-          /quer financiar seu carro\s*<\/h3>\s*<h5[^>]*>\s*([^<]+)\s*</i,
-        )?.[1]
-        ?.trim() ||
-      clean
-        .match(/<h5 class=3D"card-main-subtitle"[^>]*>\s*([^<]+)\s*</i)?.[1]
-        ?.trim() ||
-      null;
-
-    const cpf = clean.match(/\b(\d{3}\.\d{3}\.\d{3}-\d{2})\b/)?.[1] || null;
-
-    const entrada =
-      clean.match(/Entrada\s+de\s+R\$\s*=?\s*([0-9\.\,]+)/i)?.[1] || null;
-
-    const parcelas = clean.match(
-      /\b(\d{1,3})x\s+de\s+R\$\s*=?\s*([0-9\.\,]+)/i,
-    );
-
-    const leadId =
-      clean.match(/lead_id=3D([a-f0-9\-]+)/i)?.[1] ||
-      clean.match(/lead_id=([a-f0-9\-]+)/i)?.[1] ||
-      null;
-
-    return {
-      nome,
-      email: null,
-      telefone: null,
-      veiculo,
-      mensagem: subject || null,
-      preco: null,
-      placa: null,
-      extras: {
-        cpf,
-        entrada,
-        parcelas: parcelas ? { qtd: parcelas[1], valor: parcelas[2] } : null,
-        leadId,
-        fonte: "mercadolivre-financiamento",
-      },
-    };
-  }
-
-  // stubs defensivos para plataformas ainda não implementadas
   parseWebmotorsEmail(text, subject) {
-    return {
-      nome: null,
-      email: null,
-      telefone: null,
-      veiculo: this.extractVehicleInfo(subject, text),
-      mensagem: null,
-      preco: null,
-      placa: null,
-      extras: { fonte: "webmotors" },
-    };
+    return this.parseGenericPlatformEmail(text, subject, 'Webmotors');
   }
 
   parseFacebookEmail(text, subject) {
-    return {
-      nome: null,
-      email: null,
-      telefone: null,
-      veiculo: this.extractVehicleInfo(subject, text),
-      mensagem: null,
-      preco: null,
-      placa: null,
-      extras: { fonte: "facebook-marketplace" },
-    };
+    return this.parseGenericPlatformEmail(text, subject, 'Facebook Marketplace');
   }
 
   parseInstagramEmail(text, subject) {
-    return {
-      nome: null,
-      email: null,
-      telefone: null,
-      veiculo: this.extractVehicleInfo(subject, text),
-      mensagem: null,
-      preco: null,
-      placa: null,
-      extras: { fonte: "instagram" },
-    };
+    return this.parseGenericPlatformEmail(text, subject, 'Instagram');
   }
 
   parseWhatsAppEmail(text, subject) {
+    return this.parseGenericPlatformEmail(text, subject, 'WhatsApp Business');
+  }
+
+  parseGenericPlatformEmail(text, subject, platform) {
+    console.log(`📝 Parseando email genérico da plataforma: ${platform}`);
+
+    const extractedData = this.extractLeadData({
+      text,
+      subject,
+      html: '',
+    });
+
     return {
-      nome: null,
-      email: null,
-      telefone: null,
-      veiculo: this.extractVehicleInfo(subject, text),
-      mensagem: text || null,
-      preco: null,
-      placa: null,
-      extras: { fonte: "whatsapp-business" },
+      nome: extractedData.nome || null,
+      email: this.extractEmail(text),
+      telefone: extractedData.telefone || null,
+      veiculo: extractedData.veiculo || null,
+      mensagem: text || subject || '',
+      preco: this.extractPrice(text),
+      placa: this.extractPlate(text),
+      extras: {
+        plataformaDetectada: platform,
+      },
     };
   }
 
   calculateLeadScore(parsedData) {
     let score = 0;
 
-    if (parsedData.telefone && parsedData.telefone.length >= 10) score += 25;
-    if (parsedData.nome && parsedData.nome.includes(" ")) score += 15;
-    if (parsedData.veiculo) score += 20;
-    if (parsedData.mensagem && parsedData.mensagem.length > 50) score += 10;
-    if (parsedData.email && /\S+@\S+\.\S+/.test(parsedData.email)) score += 10;
+    if (parsedData.telefone && parsedData.telefone.length >= 10) {
+      score += 25;
+    }
+
+    if (parsedData.nome && parsedData.nome.includes(' ')) {
+      score += 15;
+    }
+
+    if (parsedData.veiculo) {
+      score += 20;
+    }
+
+    if (parsedData.mensagem && parsedData.mensagem.length > 50) {
+      score += 10;
+    }
+
+    if (parsedData.email && /\S+@\S+\.\S+/.test(parsedData.email)) {
+      score += 10;
+    }
 
     const urgentKeywords = [
-      "urgente",
-      "hoje",
-      "imediato",
-      "rápido",
-      "agora",
-      "urgentemente",
+      'urgente',
+      'hoje',
+      'imediato',
+      'rápido',
+      'agora',
+      'urgentemente',
     ];
-    const text = (parsedData.mensagem || "").toLowerCase();
-    if (urgentKeywords.some((keyword) => text.includes(keyword))) score += 20;
+    const text = (parsedData.mensagem || '').toLowerCase();
 
-    if (parsedData.extras?.preAnalisado) score += 10;
-    if (parsedData.extras?.superQuente) score += 10;
+    if (urgentKeywords.some((keyword) => text.includes(keyword))) {
+      score += 20;
+    }
 
     return Math.min(score, 100);
   }
 
-  extractLeadTags(veiculo, mensagem, extras = {}) {
+  extractLeadTags(veiculo, mensagem) {
     const tags = [];
-    const text = `${veiculo || ""} ${mensagem || ""}`.toLowerCase();
+    const text = ((veiculo || '') + ' ' + (mensagem || '')).toLowerCase();
 
     const marcas = [
-      "chevrolet",
-      "fiat",
-      "volkswagen",
-      "ford",
-      "toyota",
-      "hyundai",
-      "honda",
-      "nissan",
-      "jeep",
-      "renault",
-      "bmw",
-      "mercedes",
-      "audi",
+      'chevrolet',
+      'fiat',
+      'volkswagen',
+      'ford',
+      'toyota',
+      'hyundai',
+      'honda',
+      'nissan',
+      'jeep',
+      'renault',
+      'bmw',
+      'mercedes',
+      'audi',
     ];
 
     for (const marca of marcas) {
@@ -1379,119 +630,177 @@ class EmailCaptureService {
       }
     }
 
-    if (
-      text.includes("financiamento") ||
-      text.includes("parcelamento") ||
-      extras?.entrada
-    ) {
-      tags.push("financiamento");
+    if (text.includes('financiamento') || text.includes('parcelamento')) {
+      tags.push('financiamento');
     }
 
-    if (text.includes("troca") || text.includes("permuta")) tags.push("troca");
-    if (
-      text.includes("consórcio") ||
-      text.includes("consorcio") ||
-      text.includes("carta")
-    ) {
-      tags.push("consorcio");
+    if (text.includes('troca') || text.includes('permuta')) {
+      tags.push('troca');
     }
-    if (text.includes("test drive") || text.includes("experimentar"))
-      tags.push("test-drive");
-    if (text.includes("urgente") || text.includes("imediato"))
-      tags.push("urgente");
-    if (extras?.preAnalisado) tags.push("pre-analisado");
-    if (extras?.superQuente) tags.push("super-quente");
 
-    return [...new Set(tags)];
+    if (text.includes('consórcio') || text.includes('carta')) {
+      tags.push('consórcio');
+    }
+
+    if (text.includes('test drive') || text.includes('experimentar')) {
+      tags.push('test-drive');
+    }
+
+    if (text.includes('urgente') || text.includes('imediato')) {
+      tags.push('urgente');
+    }
+
+    return tags;
   }
 
   determinePriority(mensagem) {
-    if (!mensagem) return "media";
+    if (!mensagem) return 'media';
 
     const text = mensagem.toLowerCase();
-    const urgentKeywords = [
-      "urgente",
-      "hoje",
-      "imediato",
-      "imediatamente",
-      "agora",
-    ];
-    const highPriorityKeywords = [
-      "interesse",
-      "gostaria",
-      "dúvida",
-      "duvida",
-      "informação",
-      "informacao",
-    ];
+    const urgentKeywords = ['urgente', 'hoje', 'imediato', 'imediatamente', 'agora'];
+    const highPriorityKeywords = ['interesse', 'gostaria', 'dúvida', 'informação'];
 
-    if (urgentKeywords.some((keyword) => text.includes(keyword))) return "alta";
-    if (highPriorityKeywords.some((keyword) => text.includes(keyword)))
-      return "media";
-    return "baixa";
-  }
-
-  htmlToText(html) {
-    if (!html) return "";
-
-    try {
-      const $ = cheerio.load(html);
-      $("script, style").remove();
-
-      $("br").replaceWith("\n");
-      $("p, div, tr, li, td, th, h1, h2, h3, h4, h5, h6").append("\n");
-
-      return $("body")
-        .text()
-        .replace(/\r/g, "")
-        .replace(/[ \t]+\n/g, "\n")
-        .replace(/\n{2,}/g, "\n")
-        .trim();
-    } catch {
-      return String(html)
-        .replace(/<br\s*\/?>/gi, "\n")
-        .replace(/<\/(p|div|tr|li|td|th|h[1-6])>/gi, "\n")
-        .replace(/<[^>]*>/g, " ")
-        .replace(/\r/g, "")
-        .replace(/[ \t]+\n/g, "\n")
-        .replace(/\n{2,}/g, "\n")
-        .trim();
+    if (urgentKeywords.some((keyword) => text.includes(keyword))) {
+      return 'alta';
     }
-  }
 
-  extractVehicleInfo(subject = "", text = "") {
-    const combined = `${subject || ""} ${text || ""}`.trim();
-    return combined ? combined.substring(0, 120) : "Veículo não especificado";
+    if (highPriorityKeywords.some((keyword) => text.includes(keyword))) {
+      return 'media';
+    }
+
+    return 'baixa';
   }
 
   extractLeadData(emailData) {
-    const text = emailData.text || this.htmlToText(emailData.html);
-    const subject = emailData.subject || "";
+    const text = emailData.text || this.htmlToText(emailData.html || '');
+    const subject = emailData.subject || '';
 
-    const phone = (
-      text.match(/(\+55)?\s?\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}/)?.[0] || ""
-    ).replace(/\D/g, "");
+    const phoneRegexes = [
+      /(\+55)?\s?(\(?\d{2}\)?\s?)?(9?\d{4}[-.\s]?\d{4})/g,
+      /(\d{2})\s?9?\d{4}[-\s]?\d{4}/g,
+      /WhatsApp[:\s]*([\d\s()\-.+]+)/gi,
+      /Telefone[:\s]*([\d\s()\-.+]+)/gi,
+      /Celular[:\s]*([\d\s()\-.+]+)/gi,
+    ];
 
-    return {
-      telefone: phone.length >= 10 ? phone : null,
-      nome: null,
-      veiculo: this.extractVehicleInfo(subject, text),
+    let telefone = null;
+    for (const regex of phoneRegexes) {
+      const matches = text.match(regex);
+      if (matches && matches[0]) {
+        telefone = matches[0].replace(/\D/g, '');
+        if (telefone.length >= 10) break;
+      }
+    }
+
+    let nome = '';
+    const nomeRegexes = [
+      /Nome[:\s]*([A-Za-zÀ-ÿ\s]{3,})/i,
+      /Meu nome é\s*([A-Za-zÀ-ÿ\s]{3,})/i,
+      /Sou o\s*([A-Za-zÀ-ÿ\s]{3,})/i,
+      /Sou a\s*([A-Za-zÀ-ÿ\s]{3,})/i,
+    ];
+
+    for (const regex of nomeRegexes) {
+      const match = text.match(regex);
+      if (match && match[1]) {
+        nome = match[1].trim();
+        break;
+      }
+    }
+
+    const veiculo = this.extractVehicleInfo(subject, text);
+
+    return { telefone, nome, veiculo };
+  }
+
+  extractVehicleInfo(subject, text) {
+    const combinedText = `${subject || ''} ${text || ''}`.toUpperCase();
+
+    const marcas = {
+      CHEVROLET: ['CHEVROLET', 'CHEVY', 'GM', 'ONIX', 'TRACKER', 'S10'],
+      FIAT: ['FIAT', 'UNO', 'ARGO', 'TORO'],
+      VOLKSWAGEN: ['VOLKSWAGEN', 'VW', 'GOL', 'POLO', 'T-CROSS'],
+      FORD: ['FORD', 'RANGER', 'KA', 'ECOSPORT'],
+      TOYOTA: ['TOYOTA', 'COROLLA', 'HILUX'],
+      JEEP: ['JEEP', 'RENEGADE', 'COMPASS'],
+      NISSAN: ['NISSAN', 'VERSA', 'KICKS', 'SENTRA'],
+      HYUNDAI: ['HYUNDAI', 'HB20', 'CRETA'],
+      HONDA: ['HONDA', 'CIVIC', 'HR-V', 'FIT'],
     };
+
+    for (const [marca, keywords] of Object.entries(marcas)) {
+      if (keywords.some((keyword) => combinedText.includes(keyword))) {
+        return marca;
+      }
+    }
+
+    return (subject || '').substring(0, 120) || null;
   }
 
   detectClassifiedOrigin(emailData) {
     const { subject, text, html } = emailData;
-    const fullText =
-      `${subject || ""} ${text || ""} ${this.htmlToText(html || "")}`.toLowerCase();
+    const fullText = (
+      `${subject || ''} ${text || ''} ${this.htmlToText(html || '')}`
+    ).toLowerCase();
 
-    if (fullText.includes("olx")) return "OLX";
-    if (fullText.includes("webmotors")) return "Webmotors";
-    if (fullText.includes("icarros")) return "iCarros";
-    if (fullText.includes("mercadolivre")) return "MercadoLivre";
-    if (fullText.includes("facebook")) return "Facebook";
-    if (fullText.includes("instagram")) return "Instagram";
-    if (fullText.includes("whatsapp")) return "WhatsApp";
-    return "Email";
+    const origemMap = [
+      { pattern: /mobiauto/i, origem: 'Mobiauto' },
+      { pattern: /olx\.com\.br|anuncio olx|anúncio olx/i, origem: 'OLX' },
+      { pattern: /webmotors|anuncio webmotors/i, origem: 'Webmotors' },
+      { pattern: /seminovos\.com|icarros/i, origem: 'Seminovos' },
+      { pattern: /facebook\.com|facebook market|marketplace/i, origem: 'Facebook Marketplace' },
+      { pattern: /instagram\.com|direct instagram/i, origem: 'Instagram' },
+      { pattern: /whatsapp business|wa\.me|whatsapp/i, origem: 'WhatsApp Business' },
+      { pattern: /mercado livre|mercadolivre/i, origem: 'Mercado Livre' },
+    ];
+
+    for (const { pattern, origem } of origemMap) {
+      if (pattern.test(fullText)) {
+        return origem;
+      }
+    }
+
+    return 'Email Direto';
+  }
+
+  htmlToText(html) {
+    if (!html) return '';
+
+    try {
+      const $ = cheerio.load(html);
+      $('script, style').remove();
+
+      return (
+        $('body').text() ||
+        $.text() ||
+        ''
+      )
+        .replace(/\s+/g, ' ')
+        .trim();
+    } catch {
+      return String(html)
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+  }
+
+  extractEmail(text) {
+    if (!text) return null;
+    const match = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+    return match ? match[0] : null;
+  }
+
+  extractPrice(text) {
+    if (!text) return null;
+    const match = text.match(/R\$\s*([\d\.,]+)/i);
+    return match ? match[1].trim() : null;
+  }
+
+  extractPlate(text) {
+    if (!text) return null;
+    const match = text.match(/\b([A-Z]{3}\d[A-Z0-9]\d{2})\b/i);
+    return match ? match[1].toUpperCase() : null;
   }
 
   /**
@@ -1525,7 +834,9 @@ class EmailCaptureService {
   async getLeadById(id) {
     try {
       const lead = await Lead.findById(id);
-      if (!lead) throw new Error("Lead não encontrado");
+      if (!lead) {
+        throw new Error('Lead não encontrado');
+      }
       return lead;
     } catch (error) {
       throw new Error(`Erro ao buscar lead: ${error.message}`);
@@ -1546,7 +857,9 @@ class EmailCaptureService {
   async updateLead(id, updates) {
     try {
       const lead = await Lead.findById(id);
-      if (!lead) throw new Error("Lead não encontrado");
+      if (!lead) {
+        throw new Error('Lead não encontrado');
+      }
 
       const updatedLead = await lead.update(updates);
       this.invalidateCache();
@@ -1559,7 +872,9 @@ class EmailCaptureService {
   async deleteLead(id) {
     try {
       const lead = await Lead.delete(id);
-      if (!lead) throw new Error("Lead não encontrado");
+      if (!lead) {
+        throw new Error('Lead não encontrado');
+      }
 
       this.invalidateCache();
       return lead;
@@ -1615,50 +930,38 @@ class EmailCaptureService {
       sinceDate.setDate(sinceDate.getDate() - days);
 
       return new Promise((resolve, reject) => {
-        this.imap.openBox("INBOX", false, (err) => {
+        this.imap.openBox('INBOX', false, (err) => {
           if (err) return reject(err);
 
           this.imap.search(
-            [["SINCE", sinceDate.toLocaleDateString("en-CA")]],
-            (err, results) => {
+            [['SINCE', sinceDate.toLocaleDateString('en-CA')]],
+            async (err, results) => {
               if (err) return reject(err);
 
-              const total = results?.length || 0;
               console.log(
-                `🔄 Encontrados ${total} emails históricos (últimos ${days} dias)`,
+                `🔄 Encontrados ${results.length} emails históricos (últimos ${days} dias)`,
               );
-
-              if (!results || results.length === 0) {
-                return resolve({
-                  success: true,
-                  processed: 0,
-                  days,
-                });
-              }
 
               const leads = [];
               const fetch = this.imap.fetch(results, {
-                bodies: "",
+                bodies: '',
                 struct: true,
               });
 
               const messagePromises = [];
 
-              fetch.on("message", (msg) => {
-                const promise = this.processMessage(msg, leads).catch(
-                  (error) => {
-                    console.error(
-                      "❌ Erro ao processar histórico:",
-                      error.message,
-                    );
-                  },
-                );
+              fetch.on('message', (msg) => {
+                const promise = new Promise((resolveMsg) => {
+                  this.processMessage(msg, leads)
+                    .then(() => resolveMsg())
+                    .catch(() => resolveMsg());
+                });
                 messagePromises.push(promise);
               });
 
-              fetch.on("error", reject);
+              fetch.on('error', reject);
 
-              fetch.on("end", async () => {
+              fetch.on('end', async () => {
                 await Promise.all(messagePromises);
                 console.log(`✅ Processados ${leads.length} emails históricos`);
                 resolve({
@@ -1688,40 +991,31 @@ class EmailCaptureService {
 
   startScheduledCapture() {
     if (!this.config.user || !this.config.password) {
-      console.log(
-        "⚠️ Agendador não iniciado: Credenciais de email não configuradas",
-      );
+      console.log('⚠️  Agendador não iniciado: Credenciais de email não configuradas');
       return;
     }
 
-    if (!this.captureTask) {
-      this.captureTask = cron.schedule("*/2 * * * *", async () => {
-        try {
-          await this.fetchAndProcessEmails();
-        } catch (error) {
-          console.error("❌ Erro na captura agendada:", error.message);
-        }
-      });
+    cron.schedule('*/2 * * * *', async () => {
+      try {
+        await this.fetchAndProcessEmails();
+      } catch (error) {
+        console.error('Erro na captura agendada:', error.message);
+      }
+    });
 
-      console.log(
-        "⏰ Agendador de captura iniciado (verificação a cada 2 minutos)",
-      );
-    }
+    console.log('⏰ Agendador de captura iniciado (verificação a cada 2 minutos)');
 
-    if (!this.cacheCleanupTask) {
-      this.cacheCleanupTask = cron.schedule("0 2 * * *", () => {
-        this.invalidateCache();
-        console.log("🧹 Cache de estatísticas limpo");
-      });
-    }
+    cron.schedule('0 2 * * *', () => {
+      this.statsCache.data = null;
+      this.statsCache.lastUpdate = null;
+      console.log('🧹 Cache de estatísticas limpo');
+    });
   }
 
   stopScheduledCapture() {
-    this.captureTask?.stop();
-    this.cacheCleanupTask?.stop();
-    this.captureTask = null;
-    this.cacheCleanupTask = null;
-    console.log("⏹️ Agendador de captura parado");
+    const tasks = cron.getTasks();
+    tasks.forEach((task) => task.stop());
+    console.log('⏹️  Agendador de captura parado');
   }
 
   /**
@@ -1731,17 +1025,10 @@ class EmailCaptureService {
    */
 
   disconnect() {
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-
     if (this.imap) {
-      try {
-        this.imap.end();
-      } catch (_) {}
+      this.imap.end();
       this.isConnected = false;
-      console.log("🔌 Conexão IMAP finalizada manualmente");
+      console.log('🔌 Conexão IMAP finalizada manualmente');
     }
   }
 
@@ -1750,7 +1037,7 @@ class EmailCaptureService {
       await this.connect();
       return {
         success: true,
-        message: "Conexão IMAP estabelecida com sucesso",
+        message: 'Conexão IMAP estabelecida com sucesso',
         user: this.config.user,
       };
     } catch (error) {
@@ -1765,7 +1052,7 @@ class EmailCaptureService {
   invalidateCache() {
     this.statsCache.data = null;
     this.statsCache.lastUpdate = null;
-    console.log("🧹 Cache invalidado");
+    console.log('🧹 Cache invalidado');
   }
 }
 
