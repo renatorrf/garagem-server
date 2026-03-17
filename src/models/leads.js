@@ -1,6 +1,4 @@
-// models/Lead.js
 const db = require("../config/database");
-const moment = require("moment");
 
 class Lead {
   constructor(data = {}) {
@@ -20,7 +18,10 @@ class Lead {
       data.data_recebimento || data.dataRecebimento || new Date();
     this.dataContato = data.data_contato || data.dataContato;
     this.observacoes = data.observacoes;
-    this.vendedorId = data.vendedor_id || data.vendedorId;
+    this.vendedorId = data.vendedor_id || data.vendedorId || null;
+    this.vendedorWhatsapp =
+      data.vendedor_whatsapp || data.vendedorWhatsapp || null;
+    this.resultText = data.result_text || data.resultText || null;
     this.metadata = data.metadata || {};
 
     if (typeof this.metadata === "string") {
@@ -155,6 +156,8 @@ class Lead {
       dataContato: this.dataContato || null,
       observacoes: this.observacoes || null,
       vendedorId: this.vendedorId || null,
+      vendedorWhatsapp: this.vendedorWhatsapp || null,
+      resultText: this.resultText || null,
       metadata: this.metadata || {},
       score: this.score ?? 0,
       tags: this.tags || [],
@@ -167,10 +170,12 @@ class Lead {
         email_id, remetente, email_remetente, assunto, telefone,
         nome, veiculo_interesse, mensagem, origem, status,
         prioridade, data_recebimento, data_contato, observacoes,
-        vendedor_id, metadata, score, tags, created_at, updated_at
+        vendedor_id, vendedor_whatsapp, result_text,
+        metadata, score, tags, created_at, updated_at
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-        $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
+        $11, $12, $13, $14, $15, $16, $17,
+        $18, $19, $20, $21, $22
       )
       ON CONFLICT (email_id) DO NOTHING
       RETURNING *;
@@ -192,6 +197,8 @@ class Lead {
       insertData.dataContato,
       insertData.observacoes,
       insertData.vendedorId,
+      insertData.vendedorWhatsapp,
+      insertData.resultText,
       JSON.stringify(insertData.metadata),
       insertData.score,
       insertData.tags,
@@ -237,6 +244,8 @@ class Lead {
       dataContato: "data_contato",
       observacoes: "observacoes",
       vendedorId: "vendedor_id",
+      vendedorWhatsapp: "vendedor_whatsapp",
+      resultText: "result_text",
       score: "score",
       tags: "tags",
     };
@@ -310,6 +319,8 @@ class Lead {
     vendedorId,
     page = 1,
     limit = 50,
+    sortBy = "dataRecebimento",
+    order = "DESC",
   } = {}) {
     let whereConditions = ["deleted_at IS NULL"];
     let params = [];
@@ -357,383 +368,18 @@ class Lead {
           to_tsvector('portuguese',
             COALESCE(assunto, '') || ' ' ||
             COALESCE(mensagem, '') || ' ' ||
-            COALESCE(veiculo_interesse, '')
+            COALESCE(veiculo_interesse, '') || ' ' ||
+            COALESCE(result_text, '')
           ) @@ to_tsquery('portuguese', $${paramCount})
           OR email_remetente ILIKE $${paramCount + 1}
           OR telefone ILIKE $${paramCount + 1}
           OR nome ILIKE $${paramCount + 1}
+          OR vendedor_whatsapp ILIKE $${paramCount + 1}
         )
       `);
       const searchTerm = search.trim().split(/\s+/).join(" & ");
       params.push(searchTerm, `%${search}%`);
       paramCount += 2;
-    }
-
-    const whereClause = `WHERE ${whereConditions.join(" AND ")}`;
-
-    const offset = (page - 1) * limit;
-    params.push(limit, offset);
-
-    const query = `
-      SELECT *, COUNT(*) OVER() as total_count
-      FROM ${Lead.tableName}
-      ${whereClause}
-      ORDER BY
-        CASE WHEN status = 'novo' THEN 1 ELSE 2 END,
-        CASE prioridade
-          WHEN 'alta' THEN 1
-          WHEN 'media' THEN 2
-          WHEN 'baixa' THEN 3
-        END,
-        data_recebimento DESC
-      LIMIT $${paramCount}
-      OFFSET $${paramCount + 1}
-    `;
-
-    const result = await db.query(query, params);
-
-    const leads = result.rows.map((row) => new Lead(row));
-    const totalCount =
-      result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0;
-
-    return {
-      leads,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: totalCount,
-        pages: Math.ceil(totalCount / limit),
-      },
-    };
-  }
-
-  static async countByStatus() {
-    const query = `
-      SELECT status, COUNT(*) as count
-      FROM ${Lead.tableName}
-      WHERE deleted_at IS NULL
-      GROUP BY status
-      ORDER BY count DESC
-    `;
-    const result = await db.query(query);
-    return result.rows;
-  }
-
-  static async countByOrigem() {
-    const query = `
-      SELECT origem, COUNT(*) as count
-      FROM ${Lead.tableName}
-      WHERE deleted_at IS NULL
-      GROUP BY origem
-      ORDER BY count DESC
-    `;
-    const result = await db.query(query);
-    return result.rows;
-  }
-
-  static async delete(id) {
-    const query = `
-      UPDATE ${Lead.tableName}
-      SET deleted_at = NOW(), updated_at = NOW()
-      WHERE id = $1
-      RETURNING *;
-    `;
-    const result = await db.query(query, [id]);
-    return result.rows[0] ? new Lead(result.rows[0]) : null;
-  }
-
-  static async getDashboardStats(dataInicio, dataFim) {
-    const schema = process.env.SCHEMA_PADRAO || "teste";
-
-    // tabela qualificada
-    const leadTable =
-      Lead.tableName && String(Lead.tableName).includes(".")
-        ? Lead.tableName
-        : `${schema}.${Lead.tableName || "leads"}`;
-
-    // whereClause com params dinâmicos (para stats e queries que usam o mesmo filtro)
-    const whereConditions = ["deleted_at IS NULL"];
-    const params = [];
-    let paramCount = 1;
-
-    // intervalo: [inicio, fim)
-    if (dataInicio) {
-      whereConditions.push(`data_recebimento >= $${paramCount}`);
-      params.push(moment(dataInicio, "YYYY-MM-DD").startOf("day").toDate());
-      paramCount++;
-    }
-
-    if (dataFim) {
-      whereConditions.push(`data_recebimento < $${paramCount}`);
-      params.push(
-        moment(dataFim, "YYYY-MM-DD").add(1, "day").startOf("day").toDate(),
-      );
-      paramCount++;
-    }
-
-    const whereClause = `WHERE ${whereConditions.join(" AND ")}`;
-
-    // ---------- STATS ----------
-    const statsQuery = `
-    WITH stats AS (
-      SELECT
-        COUNT(*)::int AS total_leads,
-        COUNT(*) FILTER (WHERE status = 'novo')::int AS novos_leads,
-        COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos,
-        COUNT(*) FILTER (
-          WHERE (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date
-                = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
-        )::int AS leads_hoje,
-        COUNT(*) FILTER (WHERE prioridade = 'alta')::int AS alta_prioridade,
-        COUNT(*) FILTER (WHERE status = 'contatado')::int AS contatados
-      FROM ${leadTable}
-      ${whereClause}
-    )
-    SELECT * FROM stats;
-  `;
-
-    const result = await db.getOne(statsQuery, params);
-
-    // intervalo padrão para análises/gráficos (30 dias) caso não venha filtro
-    const ini =
-      dataInicio || new Date(Date.now() - 30 * 86400000).toISOString();
-    const fim = dataFim || new Date().toISOString();
-
-    const timelineWhere = [
-      "deleted_at IS NULL",
-      "data_recebimento >= CURRENT_DATE - INTERVAL '30 days'",
-    ];
-    // ---------- TIMELINE (por dia) ----------
-    const timelineQuery = `
-    SELECT 
-      DATE(data_recebimento) as date,
-      COUNT(*) as total,
-      COUNT(CASE WHEN status = 'vendido' THEN 1 END) as vendidos
-    FROM teste.leads
-    WHERE ${timelineWhere.join(" AND ")}
-    GROUP BY DATE(data_recebimento)
-    ORDER BY date ASC
-  `;
-    const timeline = await db.query(timelineQuery, []);
-
-    // ---------- LEADS POR PLATAFORMA (contagem) ----------
-    const leadsPorPlataformaQuery = `
-                                    WITH base AS (
-                                     SELECT
-                                       public.try_jsonb(metadata::text) AS meta,
-                                       origem,
-                                       status,
-                                       prioridade,
-                                       data_recebimento
-                                     FROM teste.leads
-                                     WHERE deleted_at IS NULL
-                                       AND data_recebimento >= $1
-                                       AND data_recebimento <  $2
-                                    )
-                                    SELECT
-                                     COALESCE(
-                                       NULLIF(meta ->> 'plataforma', ''),
-                                       NULLIF(origem, ''),
-                                       NULLIF(meta #>> '{extras,fonte}', ''),
-                                       'Desconhecido'
-                                     ) AS plataforma,
-                                     COUNT(*)::int AS leads,
-                                     COUNT(*) FILTER (WHERE status = 'novo')::int AS novos,
-                                     COUNT(*) FILTER (WHERE status = 'contatado')::int AS contatados,
-                                     COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos,
-                                     COUNT(*) FILTER (WHERE prioridade = 'alta')::int AS alta_prioridade,
-                                     COUNT(*) FILTER (
-                                       WHERE (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date =
-                                             (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
-                                     )::int AS leads_hoje,
-                                     ROUND(
-                                       (COUNT(*) FILTER (WHERE status = 'vendido')::numeric / NULLIF(COUNT(*),0)) * 100
-                                     , 2) AS taxa_conversao_pct
-                                    FROM base
-                                    GROUP BY plataforma
-                                    ORDER BY leads DESC;
-                                  `;
-
-    const leadsPorPlataforma = await db.query(leadsPorPlataformaQuery, params);
-
-    // ---------- TIMELINE POR PLATAFORMA ----------
-    const timeLinePlataformaQuery = `
-                                     WITH base AS (
-                                   SELECT
-                                     public.try_jsonb(metadata::text) AS meta,
-                                     origem,
-                                     (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date AS dia,
-                                     status
-                                   FROM teste.leads
-                                   WHERE deleted_at IS NULL
-                                     AND data_recebimento >= $1
-                                     AND data_recebimento <  $2
-                                  )
-                                  SELECT
-                                   COALESCE(
-                                     NULLIF(meta ->> 'plataforma', ''),
-                                     NULLIF(origem, ''),
-                                     'Desconhecido'
-                                   ) AS plataforma,
-                                   dia,
-                                   COUNT(*)::int AS total,
-                                   COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos
-                                  FROM base
-                                  GROUP BY plataforma, dia
-                                  ORDER BY dia ASC, plataforma ASC;
-  `;
-    const timeLinePlataforma = await db.query(timeLinePlataformaQuery, [
-      ini,
-      fim,
-    ]);
-
-    // ---------- CUSTO RATEADO + CPL/CPA (custo_mensal / dias_no_mes) ----------
-    const custoPlataformaLeadQuery = `
-                                      WITH base_leads AS (
-                                    SELECT
-                                      public.try_jsonb(metadata::text) AS meta,
-                                      origem,
-                                      status
-                                    FROM teste.leads
-                                    WHERE deleted_at IS NULL
-                                      AND data_recebimento >= $1
-                                      AND data_recebimento <  $2
-                                  ),
-                                  leads_plat AS (
-                                    SELECT
-                                      CASE
-                                        WHEN lower(COALESCE(NULLIF(meta->>'plataforma',''), origem, '')) IN ('bv','napista') THEN 'BV'
-                                        WHEN lower(COALESCE(NULLIF(meta->>'plataforma',''), origem, '')) IN ('mobiauto') THEN 'Mobiauto'
-                                        WHEN lower(COALESCE(NULLIF(meta->>'plataforma',''), origem, '')) IN ('icarros','i carros','i-carros') THEN 'iCarros'
-                                        WHEN lower(COALESCE(NULLIF(meta->>'plataforma',''), origem, '')) IN ('olx') THEN 'OLX'
-                                        WHEN lower(COALESCE(NULLIF(meta->>'plataforma',''), origem, '')) IN ('mercado livre','mercadolivre','ml','mercado_livre') THEN 'Mercado Livre'
-                                        ELSE COALESCE(NULLIF(meta->>'plataforma',''), NULLIF(origem,''), 'Desconhecido')
-                                      END AS plataforma,
-                                      COUNT(*)::int AS leads,
-                                      COUNT(*) FILTER (WHERE status='vendido')::int AS vendidos
-                                    FROM base_leads
-                                    GROUP BY 1
-                                  ),
-                                  dias AS (
-                                    SELECT
-                                      d::date AS dia,
-                                      EXTRACT(day FROM (date_trunc('month', d) + interval '1 month - 1 day'))::int AS dias_no_mes
-                                    FROM generate_series($1::date, ($2::date - interval '1 day')::date, interval '1 day') d
-                                  ),
-                                  spend_plat AS (
-                                    SELECT
-                                      c.plataforma,
-                                      ROUND(SUM(c.custo_mensal / dias.dias_no_mes), 2) AS spend_periodo
-                                    FROM teste.marketing_costs_monthly c
-                                    CROSS JOIN dias
-                                    GROUP BY c.plataforma
-                                  )
-                                  SELECT
-                                    COALESCE(l.plataforma, s.plataforma) AS plataforma,
-                                    COALESCE(l.leads, 0) AS leads,
-                                    COALESCE(l.vendidos, 0) AS vendidos,
-                                    COALESCE(s.spend_periodo, 0) AS spend,
-                                    ROUND(COALESCE(s.spend_periodo, 0) / NULLIF(COALESCE(l.leads, 0), 0), 2) AS cpl,
-                                    ROUND(COALESCE(s.spend_periodo, 0) / NULLIF(COALESCE(l.vendidos, 0), 0), 2) AS cpa
-                                  FROM leads_plat l
-                                  FULL OUTER JOIN spend_plat s USING (plataforma)
-                                  ORDER BY leads DESC, spend DESC;
-  `;
-    const custoPlataformaLead = await db.query(custoPlataformaLeadQuery, [
-      ini,
-      fim,
-    ]);
-
-    // ---------- retorno ----------
-    const total = Number(result?.total_leads ?? 0);
-    const vendidos = Number(result?.vendidos ?? 0);
-
-    return {
-      ...result,
-      taxaConversao:
-        Number(result?.total_leads || 0) > 0
-          ? (
-              (Number(result.vendidos || 0) / Number(result.total_leads || 0)) *
-              100
-            ).toFixed(2)
-          : 0,
-      timeline: timeline.rows,
-      leadsPorPlataforma: leadsPorPlataforma.rows,
-      timeLinePlataforma: timeLinePlataforma.rows,
-      custoPlataformaLead: custoPlataformaLead.rows,
-    };
-  }
-
-  static async searchAdvanced({
-    filters = {},
-    page = 1,
-    limit = 50,
-    sortBy = "dataRecebimento",
-    order = "DESC",
-  }) {
-    let whereConditions = ["deleted_at IS NULL"];
-    let params = [];
-    let paramCount = 1;
-
-    if (filters.status) {
-      whereConditions.push(`status = $${paramCount}`);
-      params.push(filters.status);
-      paramCount++;
-    }
-
-    if (filters.origem) {
-      whereConditions.push(`origem = $${paramCount}`);
-      params.push(filters.origem);
-      paramCount++;
-    }
-
-    if (filters.vendedorId) {
-      whereConditions.push(`vendedor_id = $${paramCount}`);
-      params.push(filters.vendedorId);
-      paramCount++;
-    }
-
-    if (filters.dataInicio) {
-      whereConditions.push(`data_recebimento >= $${paramCount}`);
-      params.push(filters.dataInicio);
-      paramCount++;
-    }
-
-    if (filters.dataFim) {
-      whereConditions.push(`data_recebimento <= $${paramCount}`);
-      params.push(filters.dataFim);
-      paramCount++;
-    }
-
-    if (filters.search) {
-      whereConditions.push(`
-        (
-          to_tsvector('portuguese',
-            COALESCE(assunto, '') || ' ' ||
-            COALESCE(mensagem, '') || ' ' ||
-            COALESCE(veiculo_interesse, '')
-          ) @@ to_tsquery('portuguese', $${paramCount})
-          OR email_remetente ILIKE $${paramCount + 1}
-          OR telefone ILIKE $${paramCount + 1}
-          OR nome ILIKE $${paramCount + 1}
-        )
-      `);
-      const searchTerm = filters.search.trim().split(/\s+/).join(" & ");
-      params.push(searchTerm, `%${filters.search}%`);
-      paramCount += 2;
-    }
-
-    if (
-      filters.tags &&
-      Array.isArray(filters.tags) &&
-      filters.tags.length > 0
-    ) {
-      const tagConditions = filters.tags.map((tag, index) => {
-        params.push(tag);
-        return `$${paramCount + index} = ANY(tags)`;
-      });
-      whereConditions.push(`(${tagConditions.join(" OR ")})`);
-      paramCount += filters.tags.length;
     }
 
     const whereClause = `WHERE ${whereConditions.join(" AND ")}`;
@@ -765,6 +411,238 @@ class Lead {
         total: totalCount,
         pages: Math.ceil(totalCount / limit),
       },
+    };
+  }
+
+  static async getDashboardStats(dataInicio, dataFim) {
+    const schema = process.env.SCHEMA_PADRAO || "teste";
+
+    const leadTable =
+      Lead.tableName && String(Lead.tableName).includes(".")
+        ? Lead.tableName
+        : `${schema}.${Lead.tableName || "leads"}`;
+
+    const whereConditions = ["deleted_at IS NULL"];
+    const params = [];
+    let paramCount = 1;
+
+    if (dataInicio) {
+      whereConditions.push(`data_recebimento >= $${paramCount}`);
+      params.push(dataInicio);
+      paramCount++;
+    }
+    if (dataFim) {
+      whereConditions.push(`data_recebimento < $${paramCount}`);
+      params.push(dataFim);
+      paramCount++;
+    }
+
+    const whereClause = `WHERE ${whereConditions.join(" AND ")}`;
+
+    const statsQuery = `
+      WITH stats AS (
+        SELECT
+          COUNT(*)::int AS total_leads,
+          COUNT(*) FILTER (WHERE status = 'novo')::int AS novos_leads,
+          COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos,
+          COUNT(*) FILTER (
+            WHERE (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date
+                  = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
+          )::int AS leads_hoje,
+          COUNT(*) FILTER (WHERE prioridade = 'alta')::int AS alta_prioridade,
+          COUNT(*) FILTER (WHERE status = 'contatado')::int AS contatados
+        FROM ${leadTable}
+        ${whereClause}
+      )
+      SELECT * FROM stats;
+    `;
+
+    const result = await db.getOne(statsQuery, params);
+
+    const ini =
+      dataInicio || new Date(Date.now() - 30 * 86400000).toISOString();
+    const fim = dataFim || new Date().toISOString();
+
+    const timelineWhere = [
+      "deleted_at IS NULL",
+      "data_recebimento >= $1",
+      "data_recebimento < $2",
+    ];
+
+    const timelineQuery = `
+      SELECT 
+        DATE(data_recebimento) as date,
+        COUNT(*) as total,
+        COUNT(CASE WHEN status = 'vendido' THEN 1 END) as vendidos
+      FROM ${leadTable}
+      WHERE ${timelineWhere.join(" AND ")}
+      GROUP BY DATE(data_recebimento)
+      ORDER BY date ASC
+    `;
+    const timeline = await db.query(timelineQuery, [ini, fim]);
+
+    const leadsPorPlataformaQuery = `
+      WITH base AS (
+        SELECT
+          public.try_jsonb(metadata::text) AS meta,
+          origem,
+          status,
+          prioridade,
+          data_recebimento
+        FROM ${leadTable}
+        WHERE deleted_at IS NULL
+          AND data_recebimento >= $1
+          AND data_recebimento <  $2
+      )
+      SELECT
+        COALESCE(
+          NULLIF(meta ->> 'plataforma', ''),
+          NULLIF(origem, ''),
+          NULLIF(meta #>> '{extras,fonte}', ''),
+          'Desconhecido'
+        ) AS plataforma,
+        COUNT(*)::int AS leads,
+        COUNT(*) FILTER (WHERE status = 'novo')::int AS novos,
+        COUNT(*) FILTER (WHERE status = 'contatado')::int AS contatados,
+        COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos,
+        COUNT(*) FILTER (WHERE prioridade = 'alta')::int AS alta_prioridade,
+        COUNT(*) FILTER (
+          WHERE (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date =
+                (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
+        )::int AS leads_hoje,
+        ROUND(
+          (COUNT(*) FILTER (WHERE status = 'vendido')::numeric / NULLIF(COUNT(*),0)) * 100
+        , 2) AS taxa_conversao_pct
+      FROM base
+      GROUP BY plataforma
+      ORDER BY leads DESC;
+    `;
+    const leadsPorPlataforma = await db.query(leadsPorPlataformaQuery, [ini, fim]);
+
+    const custoPlataformaLeadQuery = `
+      WITH base_leads AS (
+        SELECT
+          public.try_jsonb(metadata::text) AS meta,
+          origem,
+          status
+        FROM ${leadTable}
+        WHERE deleted_at IS NULL
+          AND data_recebimento >= $1
+          AND data_recebimento <  $2
+      ),
+      leads_plat AS (
+        SELECT
+          CASE
+            WHEN lower(COALESCE(NULLIF(meta->>'plataforma',''), origem, '')) IN ('bv','napista') THEN 'BV/NaPista'
+            WHEN lower(COALESCE(NULLIF(meta->>'plataforma',''), origem, '')) IN ('mobiauto') THEN 'MobiAuto'
+            WHEN lower(COALESCE(NULLIF(meta->>'plataforma',''), origem, '')) IN ('icarros','i carros','i-carros') THEN 'iCarros'
+            WHEN lower(COALESCE(NULLIF(meta->>'plataforma',''), origem, '')) IN ('olx') THEN 'OLX'
+            WHEN lower(COALESCE(NULLIF(meta->>'plataforma',''), origem, '')) IN ('mercado livre','mercadolivre','ml','mercado_livre') THEN 'Mercado Livre'
+            ELSE COALESCE(NULLIF(meta->>'plataforma',''), NULLIF(origem,''), 'Desconhecido')
+          END AS plataforma,
+          COUNT(*)::int AS leads,
+          COUNT(*) FILTER (WHERE status='vendido')::int AS vendidos
+        FROM base_leads
+        GROUP BY 1
+      ),
+      dias AS (
+        SELECT
+          d::date AS dia,
+          EXTRACT(day FROM (date_trunc('month', d) + interval '1 month - 1 day'))::int AS dias_no_mes
+        FROM generate_series($1::date, ($2::date - interval '1 day')::date, interval '1 day') d
+      ),
+      spend_plat AS (
+        SELECT
+          c.plataforma,
+          ROUND(SUM(c.custo_mensal / dias.dias_no_mes), 2) AS spend_periodo
+        FROM teste.marketing_costs_monthly c
+        CROSS JOIN dias
+        GROUP BY c.plataforma
+      )
+      SELECT
+        COALESCE(l.plataforma, s.plataforma) AS plataforma,
+        COALESCE(l.leads, 0) AS leads,
+        COALESCE(l.vendidos, 0) AS vendidos,
+        COALESCE(s.spend_periodo, 0) AS spend,
+        ROUND(COALESCE(s.spend_periodo, 0) / NULLIF(COALESCE(l.leads, 0), 0), 2) AS cpl,
+        ROUND(COALESCE(s.spend_periodo, 0) / NULLIF(COALESCE(l.vendidos, 0), 0), 2) AS cpa
+      FROM leads_plat l
+      FULL OUTER JOIN spend_plat s USING (plataforma)
+      ORDER BY leads DESC, spend DESC;
+    `;
+    const custoPlataformaLead = await db.query(custoPlataformaLeadQuery, [
+      ini,
+      fim,
+    ]);
+
+    const attendedBySellerQuery = `
+      WITH base AS (
+        SELECT
+          vendedor_id,
+          vendedor_whatsapp,
+          COALESCE(result_text, metadata->'wa'->>'resultText') AS result_text,
+          status,
+          metadata,
+          data_recebimento,
+          data_contato
+        FROM ${leadTable}
+        WHERE deleted_at IS NULL
+          AND data_recebimento >= $1
+          AND data_recebimento < $2
+          AND (vendedor_id IS NOT NULL OR vendedor_whatsapp IS NOT NULL OR metadata->'wa'->>'sellerName' IS NOT NULL)
+      )
+      SELECT
+        vendedor_id,
+        vendedor_whatsapp,
+        COALESCE(metadata->'wa'->>'sellerName', 'Não definido') AS seller_name,
+        COUNT(*)::int AS atendidos,
+        COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos,
+        COUNT(*) FILTER (WHERE status = 'perdido')::int AS perdidos,
+        ROUND(
+          AVG(
+            EXTRACT(EPOCH FROM (
+              COALESCE((metadata->'wa'->>'attendanceStartedAt')::timestamptz, data_contato)
+              - data_recebimento
+            )) / 60
+          )::numeric
+        , 2) AS tempo_reacao_medio_min
+      FROM base
+      GROUP BY vendedor_id, vendedor_whatsapp, seller_name
+      ORDER BY atendidos DESC, vendidos DESC;
+    `;
+    const attendedBySeller = await db.query(attendedBySellerQuery, [ini, fim]);
+
+    const resultSummaryQuery = `
+      SELECT
+        COALESCE(result_text, metadata->'wa'->>'resultText', status) AS label,
+        COUNT(*)::int AS count
+      FROM ${leadTable}
+      WHERE deleted_at IS NULL
+        AND data_recebimento >= $1
+        AND data_recebimento < $2
+        AND COALESCE(result_text, metadata->'wa'->>'resultText', status) IS NOT NULL
+      GROUP BY 1
+      ORDER BY count DESC;
+    `;
+    const resultSummary = await db.query(resultSummaryQuery, [ini, fim]);
+
+    return {
+      ...result,
+      taxaConversao:
+        Number(result?.total_leads || 0) > 0
+          ? Number(
+              (
+                (Number(result.vendidos || 0) /
+                  Number(result.total_leads || 0)) *
+                100
+              ).toFixed(2),
+            )
+          : 0,
+      timeline: timeline.rows,
+      leadsPorPlataforma: leadsPorPlataforma.rows,
+      custoPlataformaLead: custoPlataformaLead.rows,
+      attendedBySeller: attendedBySeller.rows,
+      resultSummary: resultSummary.rows,
     };
   }
 
@@ -807,6 +685,22 @@ class Lead {
     }
 
     return `ORDER BY ${field} ${dir}`;
+  }
+
+  static async searchAdvanced({
+    filters = {},
+    page = 1,
+    limit = 50,
+    sortBy = "dataRecebimento",
+    order = "DESC",
+  }) {
+    return this.findAll({
+      ...filters,
+      page,
+      limit,
+      sortBy,
+      order,
+    });
   }
 
   static async assignToSeller(ids, vendedorId) {
@@ -879,6 +773,8 @@ class Lead {
       "Data Recebimento",
       "Data Contato",
       "Vendedor ID",
+      "Vendedor WhatsApp",
+      "Resultado",
       "Tags",
     ];
 
@@ -899,6 +795,8 @@ class Lead {
         ? new Date(lead.dataContato).toLocaleString("pt-BR")
         : "",
       lead.vendedorId || "",
+      lead.vendedorWhatsapp || "",
+      lead.resultText || "",
       lead.tags?.join(", ") || "",
     ]);
 
@@ -909,33 +807,15 @@ class Lead {
       .join("\n");
   }
 
-  static async getByPeriod(startDate, endDate) {
+  static async delete(id) {
     const query = `
-      SELECT * FROM ${Lead.tableName}
-      WHERE deleted_at IS NULL
-        AND data_recebimento BETWEEN $1 AND $2
-      ORDER BY data_recebimento DESC
+      UPDATE ${Lead.tableName}
+      SET deleted_at = NOW(), updated_at = NOW()
+      WHERE id = $1
+      RETURNING *;
     `;
-    const result = await db.query(query, [startDate, endDate]);
-    return result.rows.map((row) => new Lead(row));
-  }
-
-  static async getUnattended(limit = 50) {
-    const query = `
-      SELECT * FROM ${Lead.tableName}
-      WHERE deleted_at IS NULL
-        AND status = 'novo'
-      ORDER BY
-        CASE prioridade
-          WHEN 'alta' THEN 1
-          WHEN 'media' THEN 2
-          WHEN 'baixa' THEN 3
-        END,
-        data_recebimento ASC
-      LIMIT $1
-    `;
-    const result = await db.query(query, [limit]);
-    return result.rows.map((row) => new Lead(row));
+    const result = await db.query(query, [id]);
+    return result.rows[0] ? new Lead(result.rows[0]) : null;
   }
 }
 

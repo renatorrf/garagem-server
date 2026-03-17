@@ -33,17 +33,10 @@ class WhatsAppWebhookController {
           if (change?.field !== 'messages') continue;
 
           const value = change?.value || {};
-
           const messages = value?.messages || [];
 
           for (const msg of messages) {
             const from = msg?.from || null;
-
-            if (msg?.type === 'text') {
-              console.log(
-                `📩 Mensagem recebida de ${from}: ${msg?.text?.body || ''}`,
-              );
-            }
 
             if (msg?.type === 'interactive') {
               const interactive = msg?.interactive;
@@ -54,21 +47,7 @@ class WhatsAppWebhookController {
 
                 console.log('🔘 Button reply recebido:', { id, title, from });
 
-                if (id.startsWith('claim:')) {
-                  const [, leadId] = id.split(':');
-
-                  if (leadId) {
-                    await LeadWorkflowService.claimLead(leadId, from);
-                    console.log(`✅ Lead assumido: ${leadId} por ${from}`);
-                  }
-                } else if (id.startsWith('ignore:')) {
-                  const [, leadId] = id.split(':');
-
-                  if (leadId) {
-                    await LeadWorkflowService.ignoreLead(leadId, from);
-                    console.log(`🚫 Lead ignorado: ${leadId}`);
-                  }
-                } else if (id.startsWith('seller:')) {
+                if (id.startsWith('seller:')) {
                   const [, sellerRaw, leadId] = id.split(':');
                   const sellerKey = (sellerRaw || '').toLowerCase().trim();
                   const sellerInfo =
@@ -80,6 +59,7 @@ class WhatsAppWebhookController {
                       sellerKey: sellerInfo.key,
                       sellerId: sellerInfo.id,
                       sellerName: sellerInfo.name,
+                      sellerWhatsapp: sellerInfo.whatsapp,
                       from,
                     });
 
@@ -87,18 +67,12 @@ class WhatsAppWebhookController {
                       `👤 Vendedor selecionado: ${sellerInfo.name} (ID ${sellerInfo.id}) para lead ${leadId}`,
                     );
                   } else {
-                    console.warn('⚠️ Seller inválido ou leadId ausente:', {
+                    console.warn('⚠️ Seller inválido:', {
                       sellerKey,
                       leadId,
                       from,
                     });
                   }
-                } else {
-                  console.warn('⚠️ Button reply não tratado:', {
-                    id,
-                    title,
-                    from,
-                  });
                 }
               }
 
@@ -117,14 +91,14 @@ class WhatsAppWebhookController {
                       `📌 Outcome definido: lead ${leadId}, outcome ${outcome}`,
                     );
                   }
-                } else {
-                  console.warn('⚠️ List reply não tratado:', {
-                    id,
-                    title,
-                    from,
-                  });
                 }
               }
+            }
+
+            if (msg?.type === 'text') {
+              console.log(
+                `📩 Mensagem recebida de ${from}: ${msg?.text?.body || ''}`,
+              );
             }
           }
 

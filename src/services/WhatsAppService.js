@@ -34,49 +34,49 @@ class WhatsAppService {
 
   static toWhatsAppPhone(phone) {
     const digits = this.normalizePhone(phone);
-
     if (!digits) return null;
     if (digits.startsWith('55')) return digits;
-
     return `55${digits}`;
   }
 
-  static buildLeadText(lead) {
-    const origem = lead?.origem || 'Email';
-    const nome = lead?.nome || 'Lead sem nome';
-    const telefone = lead?.telefone || 'Sem telefone';
-    const veiculo = lead?.veiculoInteresse || lead?.veiculo || null;
-    const assunto = lead?.assunto || null;
+  static buildLeadBody(lead) {
+    const plataforma =
+      lead?.metadata?.plataforma ||
+      lead?.metadata?.extras?.fonte ||
+      lead?.origem ||
+      'Email';
 
     return [
       `🚗 *Novo Lead - Next Car Uberlândia*`,
       `ID: *${lead.id}*`,
-      `📍 Origem: ${origem}`,
-      `👤 Cliente: ${nome}`,
-      `📞 Telefone: ${telefone}`,
-      veiculo ? `🚙 Veículo: ${veiculo}` : null,
-      assunto ? `🧾 Observação: ${assunto}` : null,
+      `📍 Plataforma: ${String(plataforma).toUpperCase()}`,
+      lead?.nome ? `👤 Cliente: ${lead.nome}` : null,
+      lead?.telefone ? `📞 Telefone: ${lead.telefone}` : null,
+      lead?.veiculoInteresse ? `🚙 Veículo: ${lead.veiculoInteresse}` : null,
+      lead?.assunto ? `🧾 Assunto: ${lead.assunto}` : null,
       '',
-      'Selecione abaixo quem vai iniciar o atendimento:',
+      'Selecione quem vai atender:',
     ]
       .filter(Boolean)
       .join('\n');
   }
 
-  static buildReminderText(lead, reminderCount) {
-    const nome = lead?.nome || 'Lead sem nome';
-    const telefone = lead?.telefone || 'Sem telefone';
-    const veiculo = lead?.veiculoInteresse || lead?.veiculo || null;
+  static buildReminderBody(lead, reminderCount) {
+    const plataforma =
+      lead?.metadata?.plataforma ||
+      lead?.metadata?.extras?.fonte ||
+      lead?.origem ||
+      'Email';
 
     return [
       `⏱️ *Lembrete de atendimento (${reminderCount})*`,
       `ID: *${lead.id}*`,
-      `👤 Cliente: ${nome}`,
-      `📞 Telefone: ${telefone}`,
-      veiculo ? `🚙 Veículo: ${veiculo}` : null,
+      `📍 Plataforma: ${String(plataforma).toUpperCase()}`,
+      lead?.nome ? `👤 Cliente: ${lead.nome}` : null,
+      lead?.telefone ? `📞 Telefone: ${lead.telefone}` : null,
+      lead?.veiculoInteresse ? `🚙 Veículo: ${lead.veiculoInteresse}` : null,
       '',
-      'Ainda não houve atendimento registrado.',
-      'Selecione abaixo quem vai iniciar o atendimento:',
+      'Lead ainda sem atendimento iniciado.',
     ]
       .filter(Boolean)
       .join('\n');
@@ -109,16 +109,14 @@ class WhatsAppService {
   }
 
   static buildOpenConversationUrl(lead) {
-    const leadPhone = this.toWhatsAppPhone(lead?.telefone || '');
+    const phone = this.toWhatsAppPhone(lead?.telefone || '');
+    if (!phone) return null;
 
-    if (!leadPhone) return null;
-
-    const veiculo = lead?.veiculoInteresse || lead?.veiculo || 'veículo de interesse';
     const text = encodeURIComponent(
-      `Olá, tudo bem? Sou da Next Car Uberlândia. Recebemos seu interesse no ${veiculo} e vou dar sequência no seu atendimento agora.`,
+      `Olá${lead?.nome ? ` ${lead.nome}` : ''}, tudo bem? Aqui é da Next Car Uberlândia. Recebemos seu interesse${lead?.veiculoInteresse ? ` em ${lead.veiculoInteresse}` : ''} e vou dar sequência no seu atendimento agora.`,
     );
 
-    return `https://wa.me/${leadPhone}?text=${text}`;
+    return `https://wa.me/${phone}?text=${text}`;
   }
 
   static async postMessage(payload) {
@@ -152,7 +150,7 @@ class WhatsAppService {
           text: '🚗 Novo Lead - Next Car Uberlândia',
         },
         body: {
-          text: this.buildLeadText(lead),
+          text: this.buildLeadBody(lead),
         },
         footer: {
           text: 'Atendimento comercial',
@@ -181,7 +179,7 @@ class WhatsAppService {
           text: `⏱️ Lembrete ${reminderCount}`,
         },
         body: {
-          text: this.buildReminderText(lead, reminderCount),
+          text: this.buildReminderBody(lead, reminderCount),
         },
         footer: {
           text: 'Next Car Uberlândia',
@@ -217,9 +215,8 @@ class WhatsAppService {
         body: {
           text:
             `Lead assumido por ${sellerName}.\n` +
-            `Cliente: ${lead?.nome || 'Lead sem nome'}\n` +
-            `Telefone: ${lead?.telefone || 'Sem telefone'}\n\n` +
-            `Clique abaixo para iniciar a conversa com o cliente agora.`,
+            `${lead?.nome || 'Cliente'} • ${lead?.telefone || 'Sem telefone'}\n\n` +
+            `Clique abaixo para abrir a conversa agora.`,
         },
         footer: {
           text: 'Next Car Uberlândia',

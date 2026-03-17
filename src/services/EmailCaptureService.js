@@ -921,9 +921,9 @@ class EmailCaptureService {
       clean.match(/Telefone\s+(\(?\d{2}\)?\s*\d{4,5}-?\d{4})/i)?.[1] ||
       null;
 
-    const telefone = telefoneRaw ? telefoneRaw.replace(/\D/g, "") : null;
+    let telefone = telefoneRaw ? telefoneRaw.replace(/\D/g, "") : null;
 
-    const cpf =
+    let cpf =
       pickLabelValue("CPF") ||
       clean.match(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/)?.[0] ||
       null;
@@ -932,23 +932,22 @@ class EmailCaptureService {
       .replace(/\s+/g, " ")
       .trim();
 
-    const veiculo =
+    let veiculo =
       subj.match(/Pré-Analisado:\s*(.+)$/i)?.[1]?.trim() ||
       subj.match(/Proposta.*?:\s*(.+)$/i)?.[1]?.trim() ||
       clean.match(/Anúncio:\s+([^\n]+)/i)?.[1]?.trim() ||
       null;
 
-    const mensagem =
-      clean.match(/Mensagem\s+[“"']?([^"”'\n]+)[”"']?/i)?.[1]?.trim() ||
-      "Você ainda não recebeu uma mensagem, mas a pessoa se interessou pelo carro. Aproveite o contato!";
+    let mensagem =
+      clean.match(/Mensagem\s+[“"']?([^"”'\n]+)[”"']?/i)?.[1]?.trim() || null;
 
-    const preco =
+    let preco =
       clean
         .match(/R\$\s*([\d\.\,]+)/i)?.[1]
         ?.replace(/\./g, "")
         .replace(",", ".") || null;
 
-    const entrada =
+    let entrada =
       clean
         .match(/Entrada de R\$\s*([\d\.\,]+)/i)?.[1]
         ?.replace(/\./g, "")
@@ -956,6 +955,102 @@ class EmailCaptureService {
 
     const superQuente = /SUPER QUENTE/i.test(clean);
     const preAnalisado = /PR[ÉE]\s*ANALISADO/i.test(clean);
+
+    // =========================================================
+    // VARIAÇÃO 2 - "Aproveite essa oportunidade" / Seminovo
+    // =========================================================
+    if (!nome || !telefone || !veiculo) {
+      const markerMatch = clean.match(
+        /Separamos as informa(?:ç|c)[õo]es pra voc[êe] come(?:ç|c)ar a venda:\s*([\s\S]*?)Esse lead ainda n[ãa]o converteu/i,
+      );
+
+      if (markerMatch?.[1]) {
+        const block = markerMatch[1]
+          .replace(/[ \t]+/g, " ")
+          .replace(/\n{2,}/g, "\n")
+          .trim();
+
+        const lines = block
+          .split("\n")
+          .map((l) => l.trim())
+          .filter(Boolean)
+          .filter(
+            (l) =>
+              !/conferir an[úu]ncio/i.test(l) &&
+              !/^que tal fazer contato\??$/i.test(l),
+          );
+
+        // tenta achar email dentro do bloco
+        const blockEmail =
+          block.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || null;
+
+        // tenta achar telefone no bloco
+        const blockPhoneRaw =
+          block.match(
+            /(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)?9?\d{4,5}-?\d{4}/,
+          )?.[0] || null;
+
+        const blockPhone = blockPhoneRaw
+          ? blockPhoneRaw.replace(/\D/g, "")
+          : null;
+
+        // nome geralmente é a linha imediatamente anterior ao email
+        let blockNome = null;
+        if (blockEmail) {
+          const idx = lines.findIndex((l) => l.includes(blockEmail));
+          if (idx > 0) {
+            blockNome = lines[idx - 1];
+          }
+        }
+
+        // cidade: costuma ser a próxima linha após telefone
+        let cidade = null;
+        if (blockPhoneRaw) {
+          const idx = lines.findIndex((l) => l.includes(blockPhoneRaw));
+          if (idx >= 0 && lines[idx + 1]) {
+            cidade = lines[idx + 1];
+          }
+        }
+
+        // veículo: normalmente duas linhas após cidade
+        let blockVeiculo = null;
+        if (cidade) {
+          const idx = lines.findIndex((l) => l === cidade);
+          if (idx >= 0) {
+            const maybeTitle = lines[idx + 1] || null;
+            const maybeVersion = lines[idx + 2] || null;
+
+            if (maybeTitle && maybeVersion) {
+              blockVeiculo = `${maybeTitle} ${maybeVersion}`
+                .replace(/\s+/g, " ")
+                .trim();
+            } else if (maybeTitle) {
+              blockVeiculo = maybeTitle.trim();
+            }
+          }
+        }
+
+        nome = nome || blockNome;
+        email = email || blockEmail;
+        telefone = telefone || blockPhone;
+        veiculo = veiculo || blockVeiculo;
+        mensagem =
+          mensagem ||
+          "Esse lead ainda não converteu no anúncio, mas está esperando pelo seu contato para negociar. É uma venda com potencial, então bora aproveitar!";
+
+        if (!email && replyToEmail) email = replyToEmail;
+        if (!nome && replyToName) nome = replyToName;
+
+        // guarda cidade no extras, porque nesse template ela aparece
+        var cidadeLead = cidade || null;
+      }
+    }
+
+    // fallback de mensagem
+    if (!mensagem) {
+      mensagem =
+        "Você ainda não recebeu uma mensagem, mas a pessoa se interessou pelo carro. Aproveite o contato!";
+    }
 
     return {
       nome,
@@ -971,6 +1066,10 @@ class EmailCaptureService {
         entrada,
         superQuente,
         preAnalisado,
+        cidade: typeof cidadeLead !== "undefined" ? cidadeLead : null,
+        tipoEmail: /Aproveite essa oportunidade/i.test(clean)
+          ? "match-seminovo"
+          : "proposta",
       },
     };
   }
