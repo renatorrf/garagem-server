@@ -1,4 +1,4 @@
-const axios = require('axios');
+const axios = require("axios");
 
 class WhatsAppService {
   static get phoneNumberId() {
@@ -10,32 +10,32 @@ class WhatsAppService {
   }
 
   static get graphVersion() {
-    return process.env.WA_GRAPH_VERSION || 'v22.0';
+    return process.env.WA_GRAPH_VERSION || "v22.0";
   }
 
   static api() {
     if (!this.phoneNumberId || !this.token) {
-      throw new Error('WA_PHONE_NUMBER_ID / WA_ACCESS_TOKEN não configurados');
+      throw new Error("WA_PHONE_NUMBER_ID / WA_ACCESS_TOKEN não configurados");
     }
 
     return axios.create({
       baseURL: `https://graph.facebook.com/${this.graphVersion}/${this.phoneNumberId}`,
       headers: {
         Authorization: `Bearer ${this.token}`,
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       timeout: 15000,
     });
   }
 
   static normalizePhone(phone) {
-    return String(phone || '').replace(/\D/g, '');
+    return String(phone || "").replace(/\D/g, "");
   }
 
   static toWhatsAppPhone(phone) {
     const digits = this.normalizePhone(phone);
     if (!digits) return null;
-    if (digits.startsWith('55')) return digits;
+    if (digits.startsWith("55")) return digits;
     return `55${digits}`;
   }
 
@@ -44,7 +44,7 @@ class WhatsAppService {
       lead?.metadata?.plataforma ||
       lead?.metadata?.extras?.fonte ||
       lead?.origem ||
-      'Email';
+      "Email";
 
     return [
       `🚗 *Novo Lead - Next Car Uberlândia*`,
@@ -54,11 +54,11 @@ class WhatsAppService {
       lead?.telefone ? `📞 Telefone: ${lead.telefone}` : null,
       lead?.veiculoInteresse ? `🚙 Veículo: ${lead.veiculoInteresse}` : null,
       lead?.assunto ? `🧾 Assunto: ${lead.assunto}` : null,
-      '',
-      'Selecione quem vai atender:',
+      "",
+      "Selecione quem vai atender:",
     ]
       .filter(Boolean)
-      .join('\n');
+      .join("\n");
   }
 
   static buildReminderBody(lead, reminderCount) {
@@ -66,7 +66,7 @@ class WhatsAppService {
       lead?.metadata?.plataforma ||
       lead?.metadata?.extras?.fonte ||
       lead?.origem ||
-      'Email';
+      "Email";
 
     return [
       `⏱️ *Lembrete de atendimento (${reminderCount})*`,
@@ -75,45 +75,45 @@ class WhatsAppService {
       lead?.nome ? `👤 Cliente: ${lead.nome}` : null,
       lead?.telefone ? `📞 Telefone: ${lead.telefone}` : null,
       lead?.veiculoInteresse ? `🚙 Veículo: ${lead.veiculoInteresse}` : null,
-      '',
-      'Lead ainda sem atendimento iniciado.',
+      "",
+      "Lead ainda sem atendimento iniciado.",
     ]
       .filter(Boolean)
-      .join('\n');
+      .join("\n");
   }
 
   static buildSellerButtons(leadId) {
     return [
       {
-        type: 'reply',
+        type: "reply",
         reply: {
           id: `seller:gustavo:${leadId}`,
-          title: 'Gustavo',
+          title: "Gustavo",
         },
       },
       {
-        type: 'reply',
+        type: "reply",
         reply: {
           id: `seller:lucas:${leadId}`,
-          title: 'Lucas',
+          title: "Lucas",
         },
       },
       {
-        type: 'reply',
+        type: "reply",
         reply: {
           id: `seller:luis:${leadId}`,
-          title: 'Luis',
+          title: "Luis",
         },
       },
     ];
   }
 
   static buildOpenConversationUrl(lead) {
-    const phone = this.toWhatsAppPhone(lead?.telefone || '');
+    const phone = this.toWhatsAppPhone(lead?.telefone || "");
     if (!phone) return null;
 
     const text = encodeURIComponent(
-      `Olá${lead?.nome ? ` ${lead.nome}` : ''}, tudo bem? Aqui é da Next Car Uberlândia. Recebemos seu interesse${lead?.veiculoInteresse ? ` em ${lead.veiculoInteresse}` : ''} e vou dar sequência no seu atendimento agora.`,
+      `Olá${lead?.nome ? ` ${lead.nome}` : ""}, tudo bem? Aqui é da Next Car Uberlândia. Recebemos seu interesse${lead?.veiculoInteresse ? ` em ${lead.veiculoInteresse}` : ""} e vou dar sequência no seu atendimento agora.`,
     );
 
     return `https://wa.me/${phone}?text=${text}`;
@@ -121,13 +121,13 @@ class WhatsAppService {
 
   static async postMessage(payload) {
     try {
-      const res = await this.api().post('/messages', payload);
+      const res = await this.api().post("/messages", payload);
       return res.data;
     } catch (err) {
       const status = err?.response?.status;
       const data = err?.response?.data;
       console.error(
-        '❌ WhatsApp API error:',
+        "❌ WhatsApp API error:",
         status,
         JSON.stringify(data || {}, null, 2),
       );
@@ -135,25 +135,41 @@ class WhatsAppService {
     }
   }
 
+  static async sendText({ to, text }) {
+    const sellerPhone = this.normalizePhone(to);
+
+    const payload = {
+      messaging_product: "whatsapp",
+      to: sellerPhone,
+      type: "text",
+      text: {
+        body: text,
+      },
+    };
+
+    const res = await this.api().post("/messages", payload);
+    return res.data;
+  }
+
   static async sendLeadNotification({ to, lead }) {
     const sellerPhone = this.toWhatsAppPhone(to);
 
     const payload = {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
       to: sellerPhone,
-      type: 'interactive',
+      type: "interactive",
       interactive: {
-        type: 'button',
+        type: "button",
         header: {
-          type: 'text',
-          text: '🚗 Novo Lead - Next Car Uberlândia',
+          type: "text",
+          text: "🚗 Novo Lead - Next Car Uberlândia",
         },
         body: {
           text: this.buildLeadBody(lead),
         },
         footer: {
-          text: 'Atendimento comercial',
+          text: "Atendimento comercial",
         },
         action: {
           buttons: this.buildSellerButtons(lead.id),
@@ -168,21 +184,21 @@ class WhatsAppService {
     const sellerPhone = this.toWhatsAppPhone(to);
 
     const payload = {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
       to: sellerPhone,
-      type: 'interactive',
+      type: "interactive",
       interactive: {
-        type: 'button',
+        type: "button",
         header: {
-          type: 'text',
+          type: "text",
           text: `⏱️ Lembrete ${reminderCount}`,
         },
         body: {
           text: this.buildReminderBody(lead, reminderCount),
         },
         footer: {
-          text: 'Next Car Uberlândia',
+          text: "Next Car Uberlândia",
         },
         action: {
           buttons: this.buildSellerButtons(lead.id),
@@ -198,33 +214,35 @@ class WhatsAppService {
     const waUrl = this.buildOpenConversationUrl(lead);
 
     if (!waUrl) {
-      throw new Error(`Lead ${lead.id} sem telefone válido para abrir conversa`);
+      throw new Error(
+        `Lead ${lead.id} sem telefone válido para abrir conversa`,
+      );
     }
 
     const payload = {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
       to: sellerPhone,
-      type: 'interactive',
+      type: "interactive",
       interactive: {
-        type: 'cta_url',
+        type: "cta_url",
         header: {
-          type: 'text',
-          text: '✅ Atendimento iniciado',
+          type: "text",
+          text: "✅ Atendimento iniciado",
         },
         body: {
           text:
             `Lead assumido por ${sellerName}.\n` +
-            `${lead?.nome || 'Cliente'} • ${lead?.telefone || 'Sem telefone'}\n\n` +
+            `${lead?.nome || "Cliente"} • ${lead?.telefone || "Sem telefone"}\n\n` +
             `Clique abaixo para abrir a conversa agora.`,
         },
         footer: {
-          text: 'Next Car Uberlândia',
+          text: "Next Car Uberlândia",
         },
         action: {
-          name: 'cta_url',
+          name: "cta_url",
           parameters: {
-            display_text: 'Iniciar conversa agora',
+            display_text: "Iniciar conversa agora",
             url: waUrl,
           },
         },
@@ -238,43 +256,43 @@ class WhatsAppService {
     const sellerPhone = this.toWhatsAppPhone(to);
 
     const payload = {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
       to: sellerPhone,
-      type: 'interactive',
+      type: "interactive",
       interactive: {
-        type: 'list',
+        type: "list",
         body: {
           text:
             `🧾 *Resultado da negociação*\n` +
             `ID: *${lead.id}*\n` +
-            `${lead.nome || 'Cliente'} - ${lead.telefone || 'sem telefone'}\n` +
+            `${lead.nome || "Cliente"} - ${lead.telefone || "sem telefone"}\n` +
             `Como foi o atendimento?`,
         },
         footer: {
-          text: 'Next Car Uberlândia',
+          text: "Next Car Uberlândia",
         },
         action: {
-          button: 'Selecionar resultado',
+          button: "Selecionar resultado",
           sections: [
             {
-              title: 'Escolha uma opção',
+              title: "Escolha uma opção",
               rows: [
                 {
                   id: `outcome:WON:${lead.id}`,
-                  title: '✅ Fechamos com ele',
+                  title: "✅ Fechamos com ele",
                 },
                 {
                   id: `outcome:CREDIT_DENIED:${lead.id}`,
-                  title: '🏦 Crédito negado',
+                  title: "🏦 Crédito negado",
                 },
                 {
                   id: `outcome:NO_REPLY:${lead.id}`,
-                  title: '📵 Não respondeu',
+                  title: "📵 Não respondeu",
                 },
                 {
                   id: `outcome:IMPOSSIBLE:${lead.id}`,
-                  title: '⛔ Negociação impossível',
+                  title: "⛔ Negociação impossível",
                 },
               ],
             },

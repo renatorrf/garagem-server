@@ -1,43 +1,43 @@
-const cron = require('node-cron');
-const db = require('../config/database');
-const Lead = require('../models/leads');
-const WhatsAppService = require('./WhatsAppService');
+const cron = require("node-cron");
+const db = require("../config/database");
+const Lead = require("../models/leads");
+const WhatsAppService = require("./WhatsAppService");
 
 class LeadWorkflowService {
   static start() {
-    cron.schedule('*/1 * * * *', async () => {
+    cron.schedule("*/1 * * * *", async () => {
       try {
         await this.processRemindersTick();
       } catch (e) {
-        console.error('❌ ReminderTick:', e.message);
+        console.error("❌ ReminderTick:", e.message);
       }
     });
 
-    cron.schedule('*/5 * * * *', async () => {
+    cron.schedule("*/5 * * * *", async () => {
       try {
         await this.processFeedbackTick();
       } catch (e) {
-        console.error('❌ FeedbackTick:', e.message);
+        console.error("❌ FeedbackTick:", e.message);
       }
     });
 
-    console.log('✅ LeadWorkflowService iniciado (reminders + feedback)');
+    console.log("✅ LeadWorkflowService iniciado (reminders + feedback)");
   }
 
   static cfg() {
     return {
-      sellerPhone: process.env.WA_SELLER_PHONE || '5534991023869',
+      sellerPhone: process.env.WA_SELLER_PHONE || "5534991023869",
       reminderIntervalSec: parseInt(
-        process.env.LEAD_REMINDER_INTERVAL_SEC || '120',
+        process.env.LEAD_REMINDER_INTERVAL_SEC || "120",
         10,
       ),
-      reminderMax: parseInt(process.env.LEAD_REMINDER_MAX || '5', 10),
+      reminderMax: parseInt(process.env.LEAD_REMINDER_MAX || "5", 10),
       feedbackDelaySec: parseInt(
-        process.env.LEAD_FEEDBACK_DELAY_SEC || '3600',
+        process.env.LEAD_FEEDBACK_DELAY_SEC || "3600",
         10,
       ),
       attendanceEstimateSec: parseInt(
-        process.env.LEAD_ATTENDANCE_ESTIMATE_SEC || '1800',
+        process.env.LEAD_ATTENDANCE_ESTIMATE_SEC || "1800",
         10,
       ),
     };
@@ -45,21 +45,21 @@ class LeadWorkflowService {
 
   static sellerCatalog() {
     return {
-      gustavo: { id: 1, key: 'gustavo', name: 'Gustavo' },
-      lucas: { id: 2, key: 'lucas', name: 'Lucas' },
-      luis: { id: 3, key: 'luis', name: 'Luis' },
+      gustavo: { id: 1, key: "gustavo", name: "Gustavo" },
+      lucas: { id: 2, key: "lucas", name: "Lucas" },
+      luis: { id: 3, key: "luis", name: "Luis" },
     };
   }
 
   static outcomeMap(outcome) {
     const map = {
-      WON: 'vendido',
-      CREDIT_DENIED: 'perdido',
-      NO_REPLY: 'perdido',
-      IMPOSSIBLE: 'perdido',
+      WON: "vendido",
+      CREDIT_DENIED: "perdido",
+      NO_REPLY: "perdido",
+      IMPOSSIBLE: "perdido",
     };
 
-    return map[outcome] || 'perdido';
+    return map[outcome] || "perdido";
   }
 
   static getWaMeta(lead) {
@@ -83,6 +83,22 @@ class LeadWorkflowService {
     };
 
     return lead.update(payload);
+  }
+
+  static async onChatEvent(lead) {
+    const cfg = this.cfg();
+
+    const mensagem =
+      `💬 *Nova mensagem no chat da OLX!*\n\n` +
+      `Tem cliente aguardando resposta no chat.\n\n` +
+      `👉 Acesse agora:\nhttps://chat.olx.com.br/`;
+
+    await WhatsAppService.sendText({
+      to: cfg.sellerPhone,
+      text: mensagem,
+    });
+
+    console.log(`💬 Alerta de chat OLX enviado para lead ${lead.id}`);
   }
 
   static async onNewLead(savedLead) {
@@ -233,7 +249,7 @@ class LeadWorkflowService {
         sellerSelectedBy: from,
       },
       {
-        status: 'contatado',
+        status: "contatado",
         dataContato: now,
       },
     );
@@ -263,7 +279,7 @@ class LeadWorkflowService {
         nextReminderAt: null,
       },
       {
-        status: 'contatado',
+        status: "contatado",
         dataContato: now,
       },
     );
@@ -296,11 +312,11 @@ class LeadWorkflowService {
       lead,
       {
         sellerSelectedBy: from,
-        claimedAt: 'IGNORED',
+        claimedAt: "IGNORED",
         closedAt: new Date().toISOString(),
       },
       {
-        status: 'perdido',
+        status: "perdido",
       },
     );
   }
@@ -354,7 +370,9 @@ class LeadWorkflowService {
 
     const lead = new Lead(rs.rows[0]);
     const wa = this.getWaMeta(lead);
-    const statuses = Array.isArray(wa.messageStatuses) ? wa.messageStatuses : [];
+    const statuses = Array.isArray(wa.messageStatuses)
+      ? wa.messageStatuses
+      : [];
 
     const nextStatuses = [
       ...statuses,
