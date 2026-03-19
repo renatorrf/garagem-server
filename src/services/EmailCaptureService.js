@@ -806,49 +806,187 @@ class EmailCaptureService {
       .replace(/\n{2,}/g, "\n")
       .trim();
 
+    const subj = String(subject || "")
+      .replace(/\s+/g, " ")
+      .trim();
+    const replyToEmail = emailData?.replyTo?.value?.[0]?.address || null;
+    const replyToName = emailData?.replyTo?.text || null;
+
     const pickLabelValue = (label) => {
       const re = new RegExp(`${label}\\s*\\n\\s*([^\\n]+)`, "i");
       const m = clean.match(re);
       return m ? m[1].trim() : null;
     };
 
-    const replyToEmail =
-      emailData?.headers?.get?.("reply-to") ||
-      emailData?.headers?.get?.("Reply-To") ||
-      null;
+    const normalizePhone = (value) => {
+      if (!value) return null;
+      const digits = String(value).replace(/\D/g, "");
+      return digits.length >= 10 ? digits : null;
+    };
 
-    const email =
-      replyToEmail?.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] ||
-      pickLabelValue("E-mail") ||
-      null;
+    const decodeLoose = (value) => {
+      return String(value || "")
+        .replace(/=C3=A1/gi, "á")
+        .replace(/=C3=A0/gi, "à")
+        .replace(/=C3=A2/gi, "â")
+        .replace(/=C3=A3/gi, "ã")
+        .replace(/=C3=A9/gi, "é")
+        .replace(/=C3=AA/gi, "ê")
+        .replace(/=C3=AD/gi, "í")
+        .replace(/=C3=B3/gi, "ó")
+        .replace(/=C3=B4/gi, "ô")
+        .replace(/=C3=B5/gi, "õ")
+        .replace(/=C3=BA/gi, "ú")
+        .replace(/=C3=A7/gi, "ç")
+        .replace(/=E2=80=93/gi, "–")
+        .replace(/=E2=80=94/gi, "—")
+        .replace(/=E2=80=A2/gi, "•")
+        .replace(/=F0=9F=98=89/gi, "😉")
+        .replace(/=F0=9F=9A=98/gi, "🚘")
+        .replace(/=E2=8F=B0/gi, "⏰");
+    };
 
-    const nome =
+    const buildDefaultMessage = () =>
+      "Você ainda não recebeu uma mensagem direta, mas o cliente demonstrou interesse no veículo. Aproveite o contato!";
+
+    // =========================================================
+    // 1) VARIAÇÃO NOVA: “temos uma possível proposta pra você”
+    // =========================================================
+    if (/temos uma poss[ií]vel proposta pra voc[eê]/i.test(subj)) {
+      const leadBlockMatch = clean.match(
+        /Separamos as informa(?:=C3=A7|ç)ões pra voc(?:=C3=AA|ê) come(?:=C3=A7|ç)ar a venda:\s*([\s\S]*?)Esse lead ainda n(?:=C3=A3|ã)o converteu no an(?:=C3=BAn|ún)cio/i,
+      );
+
+      const leadBlock = decodeLoose(leadBlockMatch?.[1] || clean);
+
+      const lines = leadBlock
+        .split("\n")
+        .map((l) => decodeLoose(l).replace(/\s+/g, " ").trim())
+        .filter(Boolean)
+        .filter(
+          (l) =>
+            !/^conferir an[úu]ncio$/i.test(l) &&
+            !/^que tal fazer contato\??$/i.test(l) &&
+            !/^separamos as informa/i.test(l),
+        );
+
+      let nome = null;
+      let email = null;
+      let telefone = null;
+      let cidade = null;
+      let veiculoTitulo = null;
+      let veiculoModelo = null;
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+
+        if (!email && /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(line)) {
+          email = line;
+          nome = lines[i - 1] || nome;
+          telefone = normalizePhone(lines[i + 1]) || telefone;
+          cidade = lines[i + 2] || cidade;
+          veiculoTitulo = lines[i + 3] || veiculoTitulo;
+          veiculoModelo = lines[i + 4] || veiculoModelo;
+          break;
+        }
+      }
+
+      // fallback extra por regex se a ordem acima falhar
+      if (!nome || !email || !telefone) {
+        const blockRegex = leadBlock.match(
+          /([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s]+)\s*\n([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\s*\n((?:\(?\d{2}\)?\s*)?(?:9?\d{4,5})[-\s]?\d{4})\s*\n([A-Za-zÀ-ÿ\s]+)\s*\n([^\n]+)\s*\n([^\n]+)/i,
+        );
+
+        if (blockRegex) {
+          nome = nome || blockRegex[1]?.trim();
+          email = email || blockRegex[2]?.trim();
+          telefone = telefone || normalizePhone(blockRegex[3]);
+          cidade = cidade || blockRegex[4]?.trim();
+          veiculoTitulo = veiculoTitulo || blockRegex[5]?.trim();
+          veiculoModelo = veiculoModelo || blockRegex[6]?.trim();
+        }
+      }
+
+      const veiculo =
+        [veiculoTitulo, veiculoModelo].filter(Boolean).join(" ").trim() || null;
+
+      return {
+        nome: nome || replyToName || null,
+        email: email || replyToEmail || null,
+        telefone: telefone || null,
+        veiculo,
+        mensagem:
+          "Cliente com possível proposta via iCarros. Ainda não houve mensagem direta no anúncio, mas ele está aguardando contato para negociar.",
+        preco: null,
+        placa: null,
+        extras: {
+          fonte: "icarros",
+          cidade: cidade || null,
+          cpf: null,
+          entrada: null,
+          superQuente: false,
+          preAnalisado: false,
+          tipoCaptura: "possivel-proposta",
+        },
+      };
+    }
+
+    // =========================================================
+    // 2) VARIAÇÃO ANTIGA / PRÉ-ANALISADO / SUPER QUENTE
+    // =========================================================
+    let nome =
       pickLabelValue("Nome") ||
-      clean.match(/Olá,?\s*([^\n]+),?/i)?.[1]?.trim() ||
+      clean
+        .match(
+          /Nome\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s]+?)(?:\n|CPF|E-mail|Telefone)/i,
+        )?.[1]
+        ?.trim() ||
+      replyToName ||
       null;
 
-    const telefoneRaw =
+    let email =
+      pickLabelValue("E-mail") ||
+      pickLabelValue("Email") ||
+      replyToEmail ||
+      clean.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] ||
+      null;
+
+    let telefoneRaw =
       pickLabelValue("Telefone") ||
-      clean.match(/\(?\d{2}\)?\s*9?\d{4,5}-?\d{4}/)?.[0] ||
+      clean.match(/Telefone\s+(\(?\d{2}\)?\s*\d{4,5}-?\d{4})/i)?.[1] ||
       null;
 
-    const telefone = telefoneRaw ? telefoneRaw.replace(/\D/g, "") : null;
+    const telefone = normalizePhone(telefoneRaw);
+
+    const cpf =
+      pickLabelValue("CPF") ||
+      clean.match(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/)?.[0] ||
+      null;
 
     const veiculo =
-      clean.match(/sobre o veículo\s*\n\s*([^\n]+)/i)?.[1]?.trim() ||
-      subject?.match(/lead[:\s-]*(.+)$/i)?.[1]?.trim() ||
+      subj.match(/Pré-Analisado:\s*(.+)$/i)?.[1]?.trim() ||
+      subj.match(/Proposta.*?:\s*(.+)$/i)?.[1]?.trim() ||
+      clean.match(/Anúncio:\s+([^\n]+)/i)?.[1]?.trim() ||
       null;
 
     const mensagem =
-      pickLabelValue("Mensagem") ||
-      clean.match(/Mensagem\s*\n([\s\S]*?)$/i)?.[1]?.trim() ||
-      subject ||
-      null;
+      clean.match(/Mensagem\s+[“"']?([^"”'\n]+)[”"']?/i)?.[1]?.trim() ||
+      buildDefaultMessage();
 
-    const placa =
+    const preco =
       clean
-        .match(/\b[A-Z]{3}-?[0-9A-Z][A-Z0-9][0-9]{2}\b/i)?.[0]
-        ?.toUpperCase() || null;
+        .match(/R\$\s*([\d\.\,]+)/i)?.[1]
+        ?.replace(/\./g, "")
+        .replace(",", ".") || null;
+
+    const entrada =
+      clean
+        .match(/Entrada de R\$\s*([\d\.\,]+)/i)?.[1]
+        ?.replace(/\./g, "")
+        .replace(",", ".") || null;
+
+    const superQuente = /SUPER QUENTE/i.test(clean);
+    const preAnalisado = /PR[ÉE]\s*ANALISADO/i.test(clean);
 
     return {
       nome,
@@ -856,11 +994,14 @@ class EmailCaptureService {
       telefone,
       veiculo,
       mensagem,
-      preco: null,
-      placa,
+      preco,
+      placa: null,
       extras: {
-        origemPortal: "iCarros",
-        replyToEmail,
+        fonte: "icarros",
+        cpf,
+        entrada,
+        superQuente,
+        preAnalisado,
       },
     };
   }
@@ -942,7 +1083,12 @@ class EmailCaptureService {
       email,
       telefone,
       veiculo,
-      mensagem: subject || "Lead de financiamento MercadoLivre",
+      mensagem:
+        platformData.parsed.mensagem ||
+        text ||
+        this.htmlToText(html) ||
+        subject ||
+        "",
       preco: null,
       placa: null,
       extras: {
@@ -1155,10 +1301,15 @@ class EmailCaptureService {
     return [...new Set(tags)];
   }
 
-  determinePriority(mensagem) {
+  determinePriority(mensagem, origem, extras = {}) {
+    if (origem === "iCarros" && extras?.tipoCaptura === "possivel-proposta") {
+      return "media";
+    }
+
     if (!mensagem) return "media";
 
     const text = mensagem.toLowerCase();
+
     const urgentKeywords = [
       "urgente",
       "hoje",
@@ -1173,13 +1324,9 @@ class EmailCaptureService {
       "informação",
     ];
 
-    if (urgentKeywords.some((keyword) => text.includes(keyword))) {
-      return "alta";
-    }
-
-    if (highPriorityKeywords.some((keyword) => text.includes(keyword))) {
+    if (urgentKeywords.some((keyword) => text.includes(keyword))) return "alta";
+    if (highPriorityKeywords.some((keyword) => text.includes(keyword)))
       return "media";
-    }
 
     return "baixa";
   }
