@@ -1,0 +1,14 @@
+name: Wake Koyeb App
+
+on:
+  schedule:
+    - cron: "0 11 * * *"
+  workflow_dispatch:
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Chamar healthz
+        run: |
+          curl -fsS https://ytterbic-anita-nextcar-7681c717.koyeb.app/healthz
