@@ -277,7 +277,7 @@ class EmailCaptureService {
 
       const platformData = this.detectAndParsePlatform(emailData);
 
-      const treatAsRegularEmail = this.shouldTreatAsRegularEmail(
+      const classification = this.shouldTreatAsRegularEmail(
         emailData,
         platformData.platform,
       );
@@ -333,6 +333,7 @@ class EmailCaptureService {
             preco: platformData.parsed.preco || null,
             placa: platformData.parsed.placa || null,
             extras: platformData.parsed.extras || {},
+            tipoClassificacao: classification,
           },
           score: treatAsRegularEmail ? 0 : score,
           tags: treatAsRegularEmail ? ["email-comum"] : tags,
@@ -366,6 +367,7 @@ class EmailCaptureService {
                 size: a.size,
               })) || [],
             imapUid: attributes.uid || 0,
+            tipoClassificacao: classification,
           },
           score: 0,
           tags: [],
@@ -413,6 +415,8 @@ class EmailCaptureService {
     const olxChatSubjects = [
       "tem mensagem te esperando no chat!",
       "tem mensagem nova para você sobre",
+      "Tem cliente interessado em um de seus carros!",
+      "Oba! Um cliente está procurando um carro como o seu!",
     ];
 
     if (
@@ -426,7 +430,6 @@ class EmailCaptureService {
     if (detectedPlatform === "OLX") {
       const blockedOlxSubjects = [
         "anúncio excluído",
-        "oba! tem mensagem nova para você sobre:",
         "falta pouco! o seu anúncio estará ativo em breve!",
         "falta pouco! sua edição estará ativa em breve!",
         "parabéns, o seu anúncio está ativo!",
