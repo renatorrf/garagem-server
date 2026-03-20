@@ -54,7 +54,7 @@ class EmailCaptureService {
         !this.config.password ||
         this.config.password === ""
       ) {
-        console.log("⚠️  IMAP: Credenciais não configuradas no .env");
+        console.log("⚠️ IMAP: Credenciais não configuradas no .env");
         return reject(new Error("Credenciais de email não configuradas"));
       }
 
@@ -93,7 +93,10 @@ class EmailCaptureService {
       return;
     }
 
-    const delay = Math.min(30000 * Math.pow(2, this.reconnectAttempts), 300000);
+    const delay = Math.min(
+      30000 * Math.pow(2, this.reconnectAttempts),
+      300000,
+    );
     console.log(`🔄 Tentando reconectar IMAP em ${delay / 1000} segundos...`);
 
     if (this.reconnectTimer) {
@@ -204,6 +207,20 @@ class EmailCaptureService {
         buffer: "",
       };
 
+      let finished = false;
+
+      const finishResolve = () => {
+        if (finished) return;
+        finished = true;
+        resolve();
+      };
+
+      const finishReject = (error) => {
+        if (finished) return;
+        finished = true;
+        reject(error);
+      };
+
       msg.on("attributes", (attrs) => {
         messageData.attributes = attrs;
       });
@@ -218,7 +235,7 @@ class EmailCaptureService {
         try {
           if (!messageData.buffer) {
             console.warn("⚠️ Mensagem sem conteúdo");
-            return resolve();
+            return finishResolve();
           }
 
           const parsed = await simpleParser(messageData.buffer);
@@ -232,16 +249,16 @@ class EmailCaptureService {
             console.log(`📝 Processado: ${lead.emailRemetente}`);
           }
 
-          resolve();
+          finishResolve();
         } catch (error) {
           console.error("❌ Erro ao processar mensagem:", error.message);
-          reject(error);
+          finishReject(error);
         }
       });
 
       setTimeout(() => {
         console.warn("⏰ Timeout no processamento de mensagem");
-        resolve();
+        finishResolve();
       }, 30000);
     });
   }
@@ -267,25 +284,21 @@ class EmailCaptureService {
         return null;
       }
 
-      const senderEmail =
-        from?.value?.[0]?.address || "nao-informado@origem.local";
-      const senderName = from?.text || "Remetente desconhecido";
-      const fallbackText = [text || "", this.htmlToText(html || "")]
-        .filter(Boolean)
-        .join("\n")
-        .trim();
-
+      const fallbackText = text || this.htmlToText(html) || "";
       const platformData = this.detectAndParsePlatform(emailData);
-
-      const classification = this.shouldTreatAsRegularEmail(
-        emailData,
-        platformData.platform,
-      );
 
       let leadData;
 
       if (platformData.platform && platformData.parsed) {
         console.log(`📊 Plataforma detectada: ${platformData.platform}`);
+
+        const classification = this.shouldTreatAsRegularEmail(
+          emailData,
+          platformData.platform,
+        );
+
+        const treatAsRegularEmail = classification === "email";
+        const isChatEvent = classification === "chat_event";
 
         const score = this.calculateLeadScore(platformData.parsed);
         const tags = this.extractLeadTags(
@@ -295,24 +308,38 @@ class EmailCaptureService {
 
         const finalOrigin = treatAsRegularEmail
           ? "Email"
-          : platformData.platform;
+          : isChatEvent
+            ? "OLX Chat"
+            : platformData.platform;
+
+        const finalMensagem =
+          platformData.parsed.mensagem ||
+          fallbackText ||
+          subject ||
+          "Contato recebido";
 
         leadData = {
           emailId: messageId,
-          remetente: platformData.parsed.nome || from.text || "Cliente",
-          emailRemetente: platformData.parsed.email || from.value[0].address,
+          remetente:
+            platformData.parsed.nome || from?.text || "Remetente desconhecido",
+          emailRemetente:
+            platformData.parsed.email || from?.value?.[0]?.address || null,
           assunto: subject || "Email recebido",
           telefone: platformData.parsed.telefone || null,
           nome: platformData.parsed.nome || "Não informado",
           veiculoInteresse:
             platformData.parsed.veiculo ||
-            this.extractVehicleInfo(subject, text || ""),
-          mensagem: platformData.parsed.mensagem || subject || "",
+            this.extractVehicleInfo(subject, fallbackText),
+          mensagem: finalMensagem,
           origem: finalOrigin,
           status: "novo",
           prioridade: treatAsRegularEmail
             ? "baixa"
-            : this.determinePriority(platformData.parsed.mensagem),
+            : this.determinePriority(
+                platformData.parsed.mensagem,
+                platformData.platform,
+                platformData.parsed.extras || {},
+              ),
           dataRecebimento: date || new Date(),
           dataContato: null,
           observacoes: null,
@@ -334,23 +361,34 @@ class EmailCaptureService {
             placa: platformData.parsed.placa || null,
             extras: platformData.parsed.extras || {},
             tipoClassificacao: classification,
+            isChatEvent,
           },
           score: treatAsRegularEmail ? 0 : score,
-          tags: treatAsRegularEmail ? ["email-comum"] : tags,
+          tags: treatAsRegularEmail
+            ? ["email-comum"]
+            : isChatEvent
+              ? ["chat-event"]
+              : tags,
         };
+
+        console.log("📋 Dados do lead preparados:");
+        console.log(`   Score: ${leadData.score}`);
+        console.log(`   Tags: ${leadData.tags.join(", ")}`);
+        console.log(`   Prioridade: ${leadData.prioridade}`);
+        console.log(`   Classificação: ${classification}`);
       } else {
         console.log("🔧 Usando parser genérico...");
         const extractedData = this.extractLeadData(emailData);
 
         leadData = {
           emailId: messageId,
-          remetente: senderName || "Remetente desconhecido",
-          emailRemetente: senderEmail,
+          remetente: from?.text || "Remetente desconhecido",
+          emailRemetente: from?.value?.[0]?.address || null,
           assunto: subject || "Sem assunto",
           telefone: extractedData.telefone,
-          nome: extractedData.nome || senderName || "Não informado",
+          nome: extractedData.nome || from?.text || "Não informado",
           veiculoInteresse: extractedData.veiculo || "Veículo não especificado",
-          mensagem: fallbackText || "",
+          mensagem: fallbackText,
           origem: this.detectClassifiedOrigin(emailData),
           status: "novo",
           prioridade: "media",
@@ -367,7 +405,8 @@ class EmailCaptureService {
                 size: a.size,
               })) || [],
             imapUid: attributes.uid || 0,
-            tipoClassificacao: classification,
+            tipoClassificacao: "lead",
+            tratadoComoEmailComum: false,
           },
           score: 0,
           tags: [],
@@ -378,10 +417,15 @@ class EmailCaptureService {
       const savedLead = await lead.save();
 
       if (savedLead) {
-        const classification = savedLead.metadata?.tipoClassificacao;
+        console.log(`✅ Lead ${savedLead.id} salvo com sucesso!`);
+        console.log(`   Nome: ${savedLead.nome}`);
+        console.log(`   Origem: ${savedLead.origem}`);
+        console.log(`   Veículo: ${savedLead.veiculoInteresse}`);
+        console.log(`   Status: ${savedLead.status}`);
 
         try {
-          const LeadWorkflowService = require("./LeadWorkflowService");
+          const classification =
+            savedLead?.metadata?.tipoClassificacao || "lead";
 
           if (classification === "lead") {
             await LeadWorkflowService.onNewLead(savedLead);
@@ -391,7 +435,7 @@ class EmailCaptureService {
             console.log("📧 Email comum, sem disparo de WhatsApp");
           }
         } catch (e) {
-          console.error("⚠️ Falha no workflow do WhatsApp:", e.message);
+          console.error("⚠️ Falha ao processar workflow do lead:", e.message);
         }
       }
 
@@ -403,133 +447,77 @@ class EmailCaptureService {
     }
   }
 
-  shouldTreatAsRegularEmail(emailData, detectedPlatform) {
-    const subject = String(emailData?.subject || "")
-      .toLowerCase()
-      .trim();
-    const senderEmail = String(emailData?.from?.value?.[0]?.address || "")
-      .toLowerCase()
-      .trim();
-
-    // 💬 EVENTO ESPECIAL: mensagem no chat da OLX
-    const olxChatSubjects = [
-      "tem mensagem te esperando no chat!",
-      "tem mensagem nova para você sobre",
-      "Tem cliente interessado em um de seus carros!",
-      "Oba! Um cliente está procurando um carro como o seu!",
-    ];
-
-    if (
-      detectedPlatform === "OLX" &&
-      olxChatSubjects.some((s) => subject.includes(s))
-    ) {
-      return "chat_event";
-    }
-
-    // 📧 EMAIL COMUM / OPERACIONAL OLX
-    if (detectedPlatform === "OLX") {
-      const blockedOlxSubjects = [
-        "anúncio excluído",
-        "falta pouco! o seu anúncio estará ativo em breve!",
-        "falta pouco! sua edição estará ativa em breve!",
-        "parabéns, o seu anúncio está ativo!",
-        "seu anúncio vai expirar em breve",
-      ];
-
-      if (
-        blockedOlxSubjects.some((s) => subject.includes(s)) ||
-        senderEmail === "dicas@newsolx.com.br"
-      ) {
-        return "email";
-      }
-    }
-
-    // 📧 EMAIL COMUM / OPERACIONAL iCarros
-    if (
-      detectedPlatform === "iCarros" &&
-      subject.includes("seu anúncio foi desativado")
-    ) {
-      return "email";
-    }
-
-    return "lead";
-  }
-
   detectAndParsePlatform(emailData) {
     const { subject, from, text, html } = emailData;
-    const fullText = text || this.htmlToText(html || "");
-    const senderEmail = from?.value?.[0]?.address || "";
+    const fullText = text || this.htmlToText(html);
+    const senderEmail = (from?.value?.[0]?.address || "").toLowerCase();
     const senderName = from?.text || "";
-    const textContent = text || "";
-    const htmlContent = html || "";
 
     console.log(`🔍 Analisando email de: ${senderEmail}`);
-    console.log(`   Assunto: "${subject || ""}"`);
+    console.log(`   Assunto: "${subject}"`);
 
-    // 1. MOBIAUTO
     if (
       senderEmail.includes("mobiauto.com.br") ||
       senderEmail.includes("contato@mobiauto") ||
-      textContent.toLowerCase().includes("mobiauto") ||
-      htmlContent.toLowerCase().includes("mobiauto")
+      text?.includes("mobiauto.com.br") ||
+      html?.includes("mobiauto.com.br")
     ) {
       console.log("🎯 Detectado: Mobiauto");
       return {
         platform: "Mobiauto",
-        parsed: this.parseMobiautoEmail(fullText, subject || ""),
+        parsed: this.parseMobiautoEmail(fullText, subject),
         rawData: { subject, senderEmail, senderName },
       };
     }
 
-    // 2. OLX
     if (
       senderEmail.includes("olx.com.br") ||
       senderEmail.includes("email@email.olx.com.br") ||
-      textContent.toLowerCase().includes("olx") ||
-      htmlContent.toLowerCase().includes("olx")
+      senderEmail.includes("newsolx.com.br") ||
+      text?.includes("olx.com.br") ||
+      html?.includes("olx.com.br") ||
+      subject?.toLowerCase().includes("olx")
     ) {
       console.log("🎯 Detectado: OLX");
       return {
         platform: "OLX",
-        parsed: this.parseOlxEmail(fullText, subject || ""),
+        parsed: this.parseOlxEmail(fullText, subject, emailData),
         rawData: { subject, senderEmail, senderName },
       };
     }
 
-    // 3. WEBMOTORS
     if (
       senderEmail.includes("webmotors.com.br") ||
-      textContent.toLowerCase().includes("webmotors") ||
-      htmlContent.toLowerCase().includes("webmotors")
+      text?.includes("webmotors.com.br") ||
+      html?.includes("webmotors.com.br") ||
+      subject?.toLowerCase().includes("webmotors")
     ) {
       console.log("🎯 Detectado: Webmotors");
       return {
         platform: "Webmotors",
-        parsed: this.parseWebmotorsEmail(fullText, subject || ""),
+        parsed: this.parseWebmotorsEmail(fullText, subject),
         rawData: { subject, senderEmail, senderName },
       };
     }
 
-    // 4. ICARROS
     if (
       senderEmail.includes("icarros.com.br") ||
-      senderEmail.includes("mx.icarros.com.br") ||
-      textContent.toLowerCase().includes("icarros") ||
-      htmlContent.toLowerCase().includes("icarros")
+      senderEmail.includes("em.icarros.com.br") ||
+      text?.toLowerCase().includes("icarros") ||
+      html?.toLowerCase().includes("icarros")
     ) {
       console.log("🎯 Detectado: iCarros");
       return {
         platform: "iCarros",
-        parsed: this.parseIcarrosEmail(fullText, subject || "", emailData),
+        parsed: this.parseIcarrosEmail(fullText, subject, emailData),
         rawData: { subject, senderEmail, senderName },
       };
     }
 
-    // 5. MERCADOLIVRE
     if (
       senderEmail.includes("mercadolivre") ||
-      textContent.toLowerCase().includes("mercadolivre") ||
-      htmlContent.toLowerCase().includes("mercadolivre")
+      text?.includes("mercadolivre") ||
+      html?.includes("mercadolivre")
     ) {
       const isPergunta =
         /Pergunta feita no an/i.test(fullText) ||
@@ -540,9 +528,9 @@ class EmailCaptureService {
         /financiamento-veiculos/i.test(fullText);
 
       const parsed = isPergunta
-        ? this.parseMercadoLivreQuestionEmail(fullText, subject || "")
+        ? this.parseMercadoLivreQuestionEmail(fullText, subject)
         : isFinanciamento
-          ? this.parseMercadoLivreFinancingLeadEmail(fullText, subject || "")
+          ? this.parseMercadoLivreFinancingLeadEmail(fullText, subject)
           : null;
 
       return parsed
@@ -554,78 +542,155 @@ class EmailCaptureService {
         : { platform: null, parsed: null };
     }
 
-    // BV / NaPista
-    if (
-      senderEmail.includes("napista.com.br") ||
-      senderEmail.includes("mandrillapp.com") ||
-      subject?.toLowerCase().includes("lead bv") ||
-      subject?.toLowerCase().includes("banco bv") ||
-      fullText.toLowerCase().includes("simulação aprovada no banco bv") ||
-      fullText.toLowerCase().includes("simulacao aprovada no banco bv") ||
-      fullText.toLowerCase().includes("pode ser aprovado no banco bv") ||
-      fullText.toLowerCase().includes("dados do cliente")
-    ) {
-      console.log("🎯 Detectado: BV");
-      return {
-        platform: "BV",
-        parsed: this.parseBvEmail(fullText, subject || "", emailData),
-        rawData: { subject, senderEmail, senderName },
-      };
-    }
-
-    // 6. FACEBOOK MARKETPLACE
     if (
       senderEmail.includes("facebookmail.com") ||
       senderEmail.includes("facebook.com") ||
-      textContent.includes("facebook.com/marketplace") ||
-      htmlContent.includes("facebook.com/marketplace") ||
+      text?.includes("facebook.com/marketplace") ||
+      html?.includes("facebook.com/marketplace") ||
       subject?.toLowerCase().includes("marketplace")
     ) {
       console.log("🎯 Detectado: Facebook Marketplace");
       return {
         platform: "Facebook Marketplace",
-        parsed: this.parseFacebookEmail(fullText, subject || ""),
+        parsed: this.parseFacebookEmail(fullText, subject),
         rawData: { subject, senderEmail, senderName },
       };
     }
 
-    // 7. INSTAGRAM
     if (
       senderEmail.includes("instagram.com") ||
-      textContent.includes("instagram.com") ||
-      htmlContent.includes("instagram.com") ||
+      text?.includes("instagram.com") ||
+      html?.includes("instagram.com") ||
       subject?.toLowerCase().includes("instagram")
     ) {
       console.log("🎯 Detectado: Instagram");
       return {
         platform: "Instagram",
-        parsed: this.parseInstagramEmail(fullText, subject || ""),
+        parsed: this.parseInstagramEmail(fullText, subject),
         rawData: { subject, senderEmail, senderName },
       };
     }
 
-    // 8. WHATSAPP BUSINESS
     if (
       senderEmail.includes("whatsapp.com") ||
-      textContent.toLowerCase().includes("whatsapp") ||
-      htmlContent.toLowerCase().includes("whatsapp") ||
+      text?.includes("whatsapp") ||
+      html?.includes("whatsapp") ||
       subject?.toLowerCase().includes("whatsapp")
     ) {
       console.log("🎯 Detectado: WhatsApp Business");
       return {
         platform: "WhatsApp Business",
-        parsed: this.parseWhatsAppEmail(fullText, subject || ""),
+        parsed: this.parseWhatsAppEmail(fullText, subject),
         rawData: { subject, senderEmail, senderName },
       };
     }
 
-    console.log(
-      "🔧 Nenhuma plataforma específica detectada, usando parser genérico",
-    );
+    console.log("🔧 Nenhuma plataforma específica detectada");
     return { platform: null, parsed: null };
   }
 
-  parseBvEmail(text, subject, emailData = {}) {
+  shouldTreatAsRegularEmail(emailData, platform) {
+    const subject = String(emailData?.subject || "").toLowerCase();
+    const senderEmail = String(
+      emailData?.from?.value?.[0]?.address || "",
+    ).toLowerCase();
+
+    if (platform === "OLX") {
+      if (senderEmail === "dicas@newsolx.com.br") {
+        return "email";
+      }
+
+      const regularSubjects = [
+        "anúncio excluído",
+        "oba! tem mensagem nova para você sobre:",
+        "falta pouco! o seu anúncio estará ativo em breve!",
+        "falta pouco! sua edição estará ativa em breve!",
+        "parabéns, o seu anúncio está ativo!",
+        "seu anúncio vai expirar em breve",
+      ];
+
+      if (regularSubjects.some((s) => subject.includes(s))) {
+        return "email";
+      }
+
+      const chatSubjects = [
+        "tem mensagem te esperando no chat!",
+        "tem mensagem nova para você sobre",
+      ];
+
+      if (chatSubjects.some((s) => subject.includes(s))) {
+        return "chat_event";
+      }
+    }
+
+    if (platform === "iCarros") {
+      if (subject.includes("seu anúncio foi desativado")) {
+        return "email";
+      }
+    }
+
+    return "lead";
+  }
+
+  parseMobiautoEmail(text, subject) {
+    const result = {
+      nome: null,
+      email: null,
+      telefone: null,
+      veiculo: null,
+      mensagem: null,
+      preco: null,
+      placa: null,
+      extras: {},
+    };
+
+    try {
+      const nomeMatch =
+        text.match(/Nome\s*\n\s*([^\n]+)/i) ||
+        text.match(/Nome[:\s]*([^\n]+)/i);
+
+      if (nomeMatch) result.nome = nomeMatch[1].trim();
+
+      const emailMatch =
+        text.match(/E-mail\s*\n\s*([^\n@]+@[^\n]+)/i) ||
+        text.match(/Email[:\s]*([^\n@]+@[^\n]+)/i);
+
+      if (emailMatch) result.email = emailMatch[1].trim();
+
+      const telefoneMatch =
+        text.match(/Telefone\s*\n\s*(\d{10,11})/i) ||
+        text.match(/Telefone[:\s]*(\d{10,11})/i) ||
+        text.match(/(\d{2}\s?\d{4,5}\s?\d{4})/);
+
+      if (telefoneMatch) {
+        result.telefone = telefoneMatch[1].replace(/\D/g, "");
+      }
+
+      const veiculoMatch =
+        subject?.match(/Proposta Recebida:\s*(.+)/i) ||
+        subject?.match(/Interesse[:\s]*(.+)/i);
+
+      if (veiculoMatch) result.veiculo = veiculoMatch[1].trim();
+
+      const mensagemMatch =
+        text.match(/Mensagem\s*\n\s*["']([^"']+)["']/i) ||
+        text.match(/["']([^"']+)["']/);
+
+      if (mensagemMatch) result.mensagem = mensagemMatch[1].trim();
+
+      const precoMatch = text.match(/R\$\s*([\d\.,]+)/i);
+      if (precoMatch) result.preco = precoMatch[1].trim();
+
+      const placaMatch = text.match(/placa[:\s]*([A-Z]{3}\d[A-Z0-9]\d{2})/i);
+      if (placaMatch) result.placa = placaMatch[1].toUpperCase();
+    } catch (error) {
+      console.error("❌ Erro ao parsear email do Mobiauto:", error.message);
+    }
+
+    return result;
+  }
+
+  parseOlxEmail(text, subject, emailData = {}) {
     const clean = String(text || "")
       .replace(/\r/g, "")
       .replace(/=\n/g, "")
@@ -633,147 +698,90 @@ class EmailCaptureService {
       .replace(/=09/g, " ")
       .replace(/=3D/g, "=")
       .replace(/\u00A0/g, " ")
-      .replace(/&nbsp;/gi, " ")
-      .replace(/&ccedil;/gi, "ç")
-      .replace(/&atilde;/gi, "ã")
-      .replace(/&aacute;/gi, "á")
-      .replace(/&eacute;/gi, "é")
-      .replace(/&iacute;/gi, "í")
-      .replace(/&oacute;/gi, "ó")
-      .replace(/&uacute;/gi, "ú")
-      .replace(/&ecirc;/gi, "ê")
-      .replace(/&ocirc;/gi, "ô")
-      .replace(/&agrave;/gi, "à")
-      .replace(/&bull;/gi, " • ")
-      .replace(/&quot;/gi, '"')
-      .replace(/&#039;/g, "'")
-      .replace(/&#8203;/g, " ")
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<\/p>/gi, "\n")
-      .replace(/<\/div>/gi, "\n")
-      .replace(/<[^>]*>/g, " ")
       .replace(/[ \t]+/g, " ")
       .replace(/\n\s+/g, "\n")
       .replace(/\n{2,}/g, "\n")
       .trim();
 
-    const normalizeMoney = (value) => {
-      if (!value) return null;
-      return value.replace(/\./g, "").replace(",", ".").replace(/\s/g, "");
+    const html = String(emailData?.html || "");
+
+    const htmlValue = (label) => {
+      const re = new RegExp(
+        `<strong[^>]*>\\s*${label}:\\s*<\\/strong>\\s*<span[^>]*>\\s*([^<]+?)\\s*<\\/span>`,
+        "i",
+      );
+      return html.match(re)?.[1]?.trim() || null;
     };
 
-    const pickBlock = (startLabel, endLabel = null) => {
-      if (!startLabel) return null;
-
-      const pattern = endLabel
-        ? new RegExp(`${startLabel}\\s*\\n([\\s\\S]*?)\\n${endLabel}`, "i")
-        : new RegExp(`${startLabel}\\s*\\n([\\s\\S]*?)$`, "i");
-
-      return clean.match(pattern)?.[1]?.trim() || null;
-    };
-
-    let nome =
-      pickBlock("Dados do cliente", "Mensagem")
-        ?.split("\n")
-        ?.map((l) => l.trim())
-        ?.find(
-          (l) => /^[A-ZÀ-Ú][A-ZÀ-Ú\s]{8,}$/.test(l) && !l.includes("CPF"),
-        ) ||
-      clean
-        .match(
-          /CPF:\s*\d{3}\.\d{3}\.\d{3}-\d{2}\s*\n([A-ZÀ-Ú][A-Za-zÀ-ÿ\s]+)$/im,
-        )?.[1]
-        ?.trim() ||
-      clean
-        .match(
-          /CPF:\s*\d{3}\.\d{3}\.\d{3}-\d{2}\s*\n([A-ZÀ-Ú][A-Za-zÀ-ÿ\s]+)/i,
-        )?.[1]
-        ?.trim() ||
-      subject?.match(/com\s+([A-Za-zÀ-ÿ]+)\??/i)?.[1]?.trim() ||
-      clean
-        .match(/^([A-Za-zÀ-ÿ]+)\s+pode ser aprovado no banco BV/i)?.[1]
-        ?.trim() ||
-      null;
-
-    const cpf = clean.match(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/)?.[0] || null;
-
-    let telefone =
-      clean.match(/api\.whatsapp\.com\/send\?phone=55(\d{10,11})/i)?.[1] ||
-      clean.match(/wa\.me\/55(\d{10,11})/i)?.[1] ||
-      clean.match(/\(?\d{2}\)?\s*9?\d{4,5}-?\d{4}/)?.[0]?.replace(/\D/g, "") ||
+    const nome =
+      htmlValue("Nome") ||
+      clean.match(/Nome:\s*\n?\s*([^\n]+)/i)?.[1]?.trim() ||
       null;
 
     const email =
-      clean.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || null;
+      htmlValue("Email") ||
+      clean.match(/Email:\s*\n?\s*([^\s]+@[^\s]+)/i)?.[1]?.trim() ||
+      null;
 
-    let entrada = null;
-    let parcelas = null;
+    const telefoneRaw =
+      htmlValue("Telefone") ||
+      htmlValue("WhatsApp") ||
+      clean.match(/Telefone:\s*\n?\s*([^\n]+)/i)?.[1] ||
+      clean.match(/WhatsApp:\s*\n?\s*([^\n]+)/i)?.[1] ||
+      null;
 
-    const financiamentoMatch = clean.match(
-      /R\$\s*([\d\.\,]+)\s*\+\s*(\d{1,3})x\s+de\s+R\$\s*([\d\.\,]+)/i,
-    );
+    const telefone = telefoneRaw ? telefoneRaw.replace(/\D/g, "") : null;
 
-    if (financiamentoMatch) {
-      entrada = normalizeMoney(financiamentoMatch[1]);
-      parcelas = {
-        qtd: financiamentoMatch[2],
-        valor: normalizeMoney(financiamentoMatch[3]),
-      };
+    let veiculo = null;
+
+    const priceLineIdx = clean.search(/R\$\s*[\d\.\,]+/i);
+    if (priceLineIdx >= 0) {
+      const window = clean.slice(
+        Math.max(0, priceLineIdx - 400),
+        priceLineIdx + 200,
+      );
+      const lines = window
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      for (let i = 0; i < lines.length; i++) {
+        const l = lines[i];
+        if (/^R\$\s*/i.test(l)) {
+          const prev = lines[i - 1];
+          if (
+            prev &&
+            prev.length > 6 &&
+            prev.length < 120 &&
+            !prev.includes("http") &&
+            !/nome|telefone|email/i.test(prev)
+          ) {
+            veiculo = prev;
+            break;
+          }
+        }
+      }
     }
 
-    const simulacaoAprovada =
-      /simula(?:ç|c)[aã]o aprovada no banco bv/i.test(clean) ||
-      /pode ser aprovado no banco bv/i.test(clean) ||
-      /pode ser aprovado/i.test(clean);
+    if (!veiculo && subject) veiculo = subject;
 
-    let veiculo =
-      pickBlock("Veículo de interesse", "Com interesse em financiar no BV")
-        ?.split("\n")
-        ?.map((l) => l.trim())
-        ?.filter(Boolean)?.[0] ||
+    const preco =
       clean
-        .match(
-          /([A-Z0-9\s]+(?:UNO|FIAT|CHERY|FORD|CHEVROLET|VOLKSWAGEN|VW|HONDA|TOYOTA|HYUNDAI|RENAULT|JEEP|NISSAN)[A-Z0-9\s\.\-\/]*)\n/i,
-        )?.[1]
-        ?.trim() ||
-      null;
-
-    let veiculoDetalhes =
-      pickBlock("Veículo de interesse", "Com interesse em financiar no BV")
-        ?.split("\n")
-        ?.map((l) => l.trim())
-        ?.filter(Boolean)?.[1] ||
-      clean.match(
-        /\b(19|20)\d{2}\s*•\s*[\d\.\,]+\s*km\s*•\s*R\$\s*[\d\.\,]+/i,
-      )?.[0] ||
-      null;
-
-    const preco = veiculoDetalhes?.match(/R\$\s*([\d\.\,]+)/i)?.[1]
-      ? normalizeMoney(veiculoDetalhes.match(/R\$\s*([\d\.\,]+)/i)[1])
-      : null;
-
-    const ano = veiculoDetalhes?.match(/\b(19|20)\d{2}\b/)?.[0] || null;
-
-    const km =
-      veiculoDetalhes
-        ?.match(/([\d\.\,]+)\s*km/i)?.[1]
+        .match(/R\$\s*([\d\.\,]+)/i)?.[1]
         ?.replace(/\./g, "")
-        .replace(",", "") || null;
+        .replace(",", ".") || null;
 
-    const placa =
-      veiculoDetalhes
-        ?.match(/\b[A-Z]{3}-?[0-9A-Z][A-Z0-9][0-9]{2}\b/i)?.[0]
-        ?.toUpperCase() ||
-      clean
-        .match(/\b[A-Z]{3}-?[0-9A-Z][A-Z0-9][0-9]{2}\b/i)?.[0]
-        ?.toUpperCase() ||
-      null;
+    const lowerSubject = String(subject || "").toLowerCase();
 
-    const mensagem =
-      pickBlock("Mensagem", "Veículo de interesse") ||
-      clean.match(/Lead BV:[^\n]+/i)?.[0] ||
-      subject ||
-      null;
+    let mensagem = null;
+    const isChatEvent =
+      lowerSubject.includes("tem mensagem te esperando no chat!") ||
+      lowerSubject.includes("tem mensagem nova para você sobre");
+
+    if (isChatEvent) {
+      mensagem =
+        "Cliente com mensagem no chat da OLX. Acesse: https://chat.olx.com.br/";
+    }
 
     return {
       nome,
@@ -782,16 +790,11 @@ class EmailCaptureService {
       veiculo,
       mensagem,
       preco,
-      placa,
+      placa: null,
       extras: {
-        origemFinanceira: "BV",
-        simulacaoAprovada,
-        cpf,
-        entrada,
-        parcelas,
-        veiculoDetalhes,
-        ano,
-        km,
+        fonte: "olx",
+        isChatEvent,
+        chatUrl: isChatEvent ? "https://chat.olx.com.br/" : null,
       },
     };
   }
@@ -809,9 +812,9 @@ class EmailCaptureService {
       .replace(/\n{2,}/g, "\n")
       .trim();
 
-    const subj = String(subject || "")
-      .replace(/\s+/g, " ")
-      .trim();
+    const html = String(emailData?.html || "");
+    const subjectNorm = String(subject || "").replace(/\s+/g, " ").trim();
+    const lowerSubject = subjectNorm.toLowerCase();
     const replyToEmail = emailData?.replyTo?.value?.[0]?.address || null;
     const replyToName = emailData?.replyTo?.text || null;
 
@@ -821,25 +824,23 @@ class EmailCaptureService {
       return m ? m[1].trim() : null;
     };
 
-    const normalizePhone = (value) => {
-      if (!value) return null;
-      const digits = String(value).replace(/\D/g, "");
-      return digits.length >= 10 ? digits : null;
-    };
-
-    const decodeLoose = (value) => {
-      return String(value || "")
+    const decodeBasic = (str = "") =>
+      String(str)
+        .replace(/=C3=81/gi, "Á")
+        .replace(/=C3=89/gi, "É")
+        .replace(/=C3=8D/gi, "Í")
+        .replace(/=C3=93/gi, "Ó")
+        .replace(/=C3=9A/gi, "Ú")
         .replace(/=C3=A1/gi, "á")
-        .replace(/=C3=A0/gi, "à")
-        .replace(/=C3=A2/gi, "â")
-        .replace(/=C3=A3/gi, "ã")
         .replace(/=C3=A9/gi, "é")
-        .replace(/=C3=AA/gi, "ê")
         .replace(/=C3=AD/gi, "í")
         .replace(/=C3=B3/gi, "ó")
-        .replace(/=C3=B4/gi, "ô")
-        .replace(/=C3=B5/gi, "õ")
         .replace(/=C3=BA/gi, "ú")
+        .replace(/=C3=A2/gi, "â")
+        .replace(/=C3=AA/gi, "ê")
+        .replace(/=C3=B4/gi, "ô")
+        .replace(/=C3=A3/gi, "ã")
+        .replace(/=C3=B5/gi, "õ")
         .replace(/=C3=A7/gi, "ç")
         .replace(/=E2=80=93/gi, "–")
         .replace(/=E2=80=94/gi, "—")
@@ -847,99 +848,171 @@ class EmailCaptureService {
         .replace(/=F0=9F=98=89/gi, "😉")
         .replace(/=F0=9F=9A=98/gi, "🚘")
         .replace(/=E2=8F=B0/gi, "⏰");
-    };
 
-    const buildDefaultMessage = () =>
-      "Você ainda não recebeu uma mensagem direta, mas o cliente demonstrou interesse no veículo. Aproveite o contato!";
+    const cleanedDecoded = decodeBasic(clean);
+    const htmlText = this.htmlToText(html);
+    const combined = [cleanedDecoded, htmlText, clean].join("\n");
 
-    // =========================================================
-    // 1) VARIAÇÃO NOVA: “temos uma possível proposta pra você”
-    // =========================================================
-    if (/temos uma poss[ií]vel proposta pra voc[eê]/i.test(subj)) {
-      const leadBlockMatch = clean.match(
-        /Separamos as informa(?:=C3=A7|ç)ões pra voc(?:=C3=AA|ê) come(?:=C3=A7|ç)ar a venda:\s*([\s\S]*?)Esse lead ainda n(?:=C3=A3|ã)o converteu no an(?:=C3=BAn|ún)cio/i,
-      );
+    const isPossibleProposal =
+      lowerSubject.includes("temos uma possível proposta pra você") ||
+      lowerSubject.includes("temos uma possivel proposta pra você");
 
-      const leadBlock = decodeLoose(leadBlockMatch?.[1] || clean);
+    const isReminderBV =
+      lowerSubject.includes("pode ser aprovado no banco bv") ||
+      lowerSubject.includes("já falou com") ||
+      lowerSubject.includes("ja falou com");
 
-      const lines = leadBlock
+    const isPreAnalise =
+      /pré-analisado/i.test(subjectNorm) || /pre-analisado/i.test(subjectNorm);
+
+    const isRegularMarketing =
+      lowerSubject.includes("seu anúncio foi desativado") ||
+      lowerSubject.includes("seu anuncio foi desativado");
+
+    if (isPossibleProposal) {
+      const lines = combined
         .split("\n")
-        .map((l) => decodeLoose(l).replace(/\s+/g, " ").trim())
-        .filter(Boolean)
-        .filter(
-          (l) =>
-            !/^conferir an[úu]ncio$/i.test(l) &&
-            !/^que tal fazer contato\??$/i.test(l) &&
-            !/^separamos as informa/i.test(l),
-        );
+        .map((l) => l.trim())
+        .filter(Boolean);
 
-      let nome = null;
-      let email = null;
-      let telefone = null;
-      let cidade = null;
-      let veiculoTitulo = null;
-      let veiculoModelo = null;
+      let blockStart = -1;
+      let blockEnd = -1;
 
       for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-
-        if (!email && /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(line)) {
-          email = line;
-          nome = lines[i - 1] || nome;
-          telefone = normalizePhone(lines[i + 1]) || telefone;
-          cidade = lines[i + 2] || cidade;
-          veiculoTitulo = lines[i + 3] || veiculoTitulo;
-          veiculoModelo = lines[i + 4] || veiculoModelo;
+        if (/Separamos as informa/i.test(lines[i])) {
+          blockStart = i;
           break;
         }
       }
 
-      // fallback extra por regex se a ordem acima falhar
-      if (!nome || !email || !telefone) {
-        const blockRegex = leadBlock.match(
-          /([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s]+)\s*\n([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\s*\n((?:\(?\d{2}\)?\s*)?(?:9?\d{4,5})[-\s]?\d{4})\s*\n([A-Za-zÀ-ÿ\s]+)\s*\n([^\n]+)\s*\n([^\n]+)/i,
-        );
-
-        if (blockRegex) {
-          nome = nome || blockRegex[1]?.trim();
-          email = email || blockRegex[2]?.trim();
-          telefone = telefone || normalizePhone(blockRegex[3]);
-          cidade = cidade || blockRegex[4]?.trim();
-          veiculoTitulo = veiculoTitulo || blockRegex[5]?.trim();
-          veiculoModelo = veiculoModelo || blockRegex[6]?.trim();
+      if (blockStart >= 0) {
+        for (let i = blockStart + 1; i < lines.length; i++) {
+          if (/Esse lead ainda não converteu/i.test(lines[i])) {
+            blockEnd = i;
+            break;
+          }
         }
       }
 
-      const veiculo =
-        [veiculoTitulo, veiculoModelo].filter(Boolean).join(" ").trim() || null;
+      const block =
+        blockStart >= 0 && blockEnd > blockStart
+          ? lines.slice(blockStart + 1, blockEnd)
+          : lines;
+
+      const email =
+        block.find((l) => /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(l)) ||
+        null;
+
+      let nome = null;
+      if (email) {
+        const emailIdx = block.findIndex((l) => l === email);
+        if (emailIdx > 0) {
+          nome = block[emailIdx - 1] || null;
+        }
+      }
+
+      const telefoneLine =
+        block.find((l) => /\b\d{2}\s?9?\d{4,5}\s?\d{4}\b/.test(l)) || null;
+      const telefone = telefoneLine
+        ? telefoneLine.replace(/\D/g, "")
+        : null;
+
+      let cidade = null;
+      if (telefoneLine) {
+        const telIdx = block.findIndex((l) => l === telefoneLine);
+        if (telIdx >= 0 && block[telIdx + 1]) {
+          cidade = block[telIdx + 1];
+        }
+      }
+
+      let veiculo = null;
+      let mensagem =
+        "Cliente do iCarros com possível proposta. Entre em contato rapidamente.";
+
+      const markerIdx = block.findIndex((l) =>
+        /Conferir an[uú]ncio/i.test(l),
+      );
+
+      if (markerIdx >= 2) {
+        const linha1 = block[markerIdx - 2] || "";
+        const linha2 = block[markerIdx - 1] || "";
+        veiculo = `${linha1} ${linha2}`.replace(/\s+/g, " ").trim();
+      }
 
       return {
-        nome: nome || replyToName || null,
+        nome: nome || "Não informado",
         email: email || replyToEmail || null,
-        telefone: telefone || null,
-        veiculo,
-        mensagem:
-          "Cliente com possível proposta via iCarros. Ainda não houve mensagem direta no anúncio, mas ele está aguardando contato para negociar.",
+        telefone,
+        veiculo: veiculo || "Veículo não especificado",
+        mensagem,
         preco: null,
         placa: null,
         extras: {
           fonte: "icarros",
-          cidade: cidade || null,
-          cpf: null,
-          entrada: null,
+          tipoLead: "possivel-proposta",
+          cidade,
           superQuente: false,
           preAnalisado: false,
-          tipoCaptura: "possivel-proposta",
         },
       };
     }
 
-    // =========================================================
-    // 2) VARIAÇÃO ANTIGA / PRÉ-ANALISADO / SUPER QUENTE
-    // =========================================================
+    if (isReminderBV) {
+      const nome =
+        combined.match(/CPF:\s*[\d\.\-]+\s*\n\s*([A-Za-zÀ-ÿ\s]+)$/im)?.[1]?.trim() ||
+        combined.match(/CPF:\s*[\d\.\-]+[\s\S]*?\n([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s]+)\s*$/im)?.[1]?.trim() ||
+        combined.match(/([A-Za-zÀ-ÿ]+\s+[A-Za-zÀ-ÿ\s]+)\s+pode ser aprovado no banco BV/i)?.[1]?.trim() ||
+        null;
+
+      const cpf =
+        combined.match(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/)?.[0] || null;
+
+      const telefone =
+        combined
+          .match(/api\.whatsapp\.com.*?phone=55(\d{10,11})/i)?.[1]
+          ?.replace(/\D/g, "") || null;
+
+      const financiamento = combined.match(
+        /R\$\s*([\d\.\,]+)\s*\+\s*(\d{1,3})x\s*de\s*R\$\s*([\d\.\,]+)/i,
+      );
+
+      let veiculo = null;
+      const blocoVeiculo =
+        combined.match(
+          /Simula(?:ç|c)[aã]o de financiamento[\s\S]*?([A-Z0-9À-ÿ][^\n]+)\n([^\n]+(?:R\$[^\n]+)?)/i,
+        ) || null;
+
+      if (blocoVeiculo) {
+        veiculo = `${blocoVeiculo[1]} ${blocoVeiculo[2]}`
+          .replace(/\s+/g, " ")
+          .trim();
+      }
+
+      return {
+        nome: nome || "Não informado",
+        email: null,
+        telefone,
+        veiculo: veiculo || "Veículo não especificado",
+        mensagem:
+          "Lead BV/NaPista com possibilidade de aprovação de financiamento.",
+        preco: null,
+        placa: null,
+        extras: {
+          fonte: "icarros-bv-reminder",
+          cpf,
+          entrada: financiamento ? financiamento[1] : null,
+          parcelas: financiamento
+            ? { qtd: financiamento[2], valor: financiamento[3] }
+            : null,
+          superQuente: false,
+          preAnalisado: false,
+        },
+      };
+    }
+
     let nome =
       pickLabelValue("Nome") ||
-      clean
+      cleanedDecoded
         .match(
           /Nome\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s]+?)(?:\n|CPF|E-mail|Telefone)/i,
         )?.[1]
@@ -951,45 +1024,66 @@ class EmailCaptureService {
       pickLabelValue("E-mail") ||
       pickLabelValue("Email") ||
       replyToEmail ||
-      clean.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] ||
+      cleanedDecoded.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] ||
       null;
 
     let telefoneRaw =
       pickLabelValue("Telefone") ||
-      clean.match(/Telefone\s+(\(?\d{2}\)?\s*\d{4,5}-?\d{4})/i)?.[1] ||
+      cleanedDecoded.match(/Telefone\s+(\(?\d{2}\)?\s*\d{4,5}-?\d{4})/i)?.[1] ||
       null;
 
-    const telefone = normalizePhone(telefoneRaw);
+    const telefone = telefoneRaw ? telefoneRaw.replace(/\D/g, "") : null;
 
     const cpf =
       pickLabelValue("CPF") ||
-      clean.match(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/)?.[0] ||
+      cleanedDecoded.match(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/)?.[0] ||
       null;
 
     const veiculo =
-      subj.match(/Pré-Analisado:\s*(.+)$/i)?.[1]?.trim() ||
-      subj.match(/Proposta.*?:\s*(.+)$/i)?.[1]?.trim() ||
-      clean.match(/Anúncio:\s+([^\n]+)/i)?.[1]?.trim() ||
+      subjectNorm.match(/Pré-Analisado:\s*(.+)$/i)?.[1]?.trim() ||
+      subjectNorm.match(/Proposta.*?:\s*(.+)$/i)?.[1]?.trim() ||
+      cleanedDecoded.match(/Anúncio:\s+([^\n]+)/i)?.[1]?.trim() ||
       null;
 
     const mensagem =
-      clean.match(/Mensagem\s+[“"']?([^"”'\n]+)[”"']?/i)?.[1]?.trim() ||
-      buildDefaultMessage();
+      cleanedDecoded.match(/Mensagem\s+[“"']?([^"”'\n]+)[”"']?/i)?.[1]?.trim() ||
+      "Você ainda não recebeu uma mensagem, mas a pessoa se interessou pelo carro. Aproveite o contato!";
 
     const preco =
-      clean
+      cleanedDecoded
         .match(/R\$\s*([\d\.\,]+)/i)?.[1]
         ?.replace(/\./g, "")
         .replace(",", ".") || null;
 
     const entrada =
-      clean
+      cleanedDecoded
         .match(/Entrada de R\$\s*([\d\.\,]+)/i)?.[1]
         ?.replace(/\./g, "")
         .replace(",", ".") || null;
 
-    const superQuente = /SUPER QUENTE/i.test(clean);
-    const preAnalisado = /PR[ÉE]\s*ANALISADO/i.test(clean);
+    const superQuente = /SUPER QUENTE/i.test(cleanedDecoded);
+    const preAnalisado =
+      /PR[ÉE]\s*ANALISADO/i.test(cleanedDecoded) || isPreAnalise;
+
+    if (isRegularMarketing) {
+      return {
+        nome,
+        email,
+        telefone,
+        veiculo,
+        mensagem: "Email informativo do iCarros.",
+        preco,
+        placa: null,
+        extras: {
+          fonte: "icarros",
+          cpf,
+          entrada,
+          superQuente,
+          preAnalisado,
+          isRegularMarketing: true,
+        },
+      };
+    }
 
     return {
       nome,
@@ -1015,25 +1109,29 @@ class EmailCaptureService {
       .replace(/=\n/g, "")
       .replace(/=20/g, " ")
       .replace(/=09/g, " ")
-      .replace(/=3D/g, "=")
-      .replace(/\u00A0/g, " ")
-      .replace(/[ \t]+/g, " ")
-      .replace(/\n\s+/g, "\n")
-      .replace(/\n{2,}/g, "\n")
-      .trim();
-
-    const veiculo =
-      clean.match(/Pergunta feita no anúncio\s*\n\s*([^\n]+)/i)?.[1]?.trim() ||
-      subject?.match(/anúncio[:\s-]*(.+)$/i)?.[1]?.trim() ||
-      null;
+      .replace(/=3D/g, "=");
 
     const nome =
-      clean.match(/([A-ZÀ-Ú][A-Za-zÀ-ÿ\s]+) perguntou/i)?.[1]?.trim() || null;
+      clean.match(/Responda para\s+([^\n]+?)\s+o quanto antes/i)?.[1]?.trim() ||
+      null;
 
-    const pergunta =
-      clean.match(/perguntou:\s*\n([\s\S]*?)$/i)?.[1]?.trim() ||
-      clean.match(/Mensagem\s*\n([\s\S]*?)$/i)?.[1]?.trim() ||
-      subject ||
+    const veiculo =
+      clean.match(/Pergunta feita no anúncio\s+([^\n<]+)/i)?.[1]?.trim() ||
+      clean
+        .match(/Pergunta feita no an\w+ncio\s+.*?>\s*([^<]+)\s*</i)?.[1]
+        ?.trim() ||
+      null;
+
+    const questionId =
+      clean.match(/question_id=3D(\d+)/i)?.[1] ||
+      clean.match(/question_id=(\d+)/i)?.[1] ||
+      null;
+
+    const anuncioUrl =
+      clean.match(
+        /href=3D"(https?:\/\/carro\.mercadolivre\.com\.br\/[^"]+)/i,
+      )?.[1] ||
+      clean.match(/https?:\/\/carro\.mercadolivre\.com\.br\/\S+/i)?.[0] ||
       null;
 
     return {
@@ -1041,13 +1139,10 @@ class EmailCaptureService {
       email: null,
       telefone: null,
       veiculo,
-      mensagem: pergunta,
+      mensagem: subject || null,
       preco: null,
       placa: null,
-      extras: {
-        origemPortal: "MercadoLivre",
-        tipoLead: "pergunta",
-      },
+      extras: { questionId, anuncioUrl, fonte: "mercadolivre-pergunta" },
     };
   }
 
@@ -1081,148 +1176,102 @@ class EmailCaptureService {
     const email =
       clean.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || null;
 
+    const cpf = clean.match(/\b(\d{3}\.\d{3}\.\d{3}-\d{2})\b/)?.[1] || null;
+
+    const entrada =
+      clean.match(/Entrada\s+de\s+R\$\s*=?\s*([0-9\.\,]+)/i)?.[1] || null;
+
+    const parcelas = clean.match(
+      /\b(\d{1,3})x\s+de\s+R\$\s*=?\s*([0-9\.\,]+)/i,
+    );
+
+    const leadId =
+      clean.match(/lead_id=3D([a-f0-9\-]+)/i)?.[1] ||
+      clean.match(/lead_id=([a-f0-9\-]+)/i)?.[1] ||
+      null;
+
     return {
       nome,
       email,
       telefone,
       veiculo,
-      mensagem:
-        platformData.parsed.mensagem ||
-        text ||
-        this.htmlToText(html) ||
-        subject ||
-        "",
+      mensagem: text || subject || "",
       preco: null,
       placa: null,
       extras: {
-        origemPortal: "MercadoLivre",
-        tipoLead: "financiamento",
+        cpf,
+        entrada,
+        parcelas: parcelas ? { qtd: parcelas[1], valor: parcelas[2] } : null,
+        leadId,
+        fonte: "mercadolivre-financiamento",
       },
     };
-  }
-
-  parseMobiautoEmail(text, subject) {
-    console.log("📝 Parseando email do Mobiauto...");
-
-    const result = {
-      nome: null,
-      email: null,
-      telefone: null,
-      veiculo: null,
-      mensagem: null,
-      preco: null,
-      placa: null,
-      extras: {},
-    };
-
-    try {
-      const nomeMatch =
-        text.match(/Nome\s*\n\s*([^\n]+)/i) ||
-        text.match(/Nome[:\s]*([^\n]+)/i);
-      if (nomeMatch) result.nome = nomeMatch[1].trim();
-
-      const emailMatch =
-        text.match(/E-mail\s*\n\s*([^\n@]+@[^\n]+)/i) ||
-        text.match(/Email[:\s]*([^\n@]+@[^\n]+)/i);
-      if (emailMatch) result.email = emailMatch[1].trim();
-
-      const telefoneMatch =
-        text.match(/Telefone\s*\n\s*(\d{10,11})/i) ||
-        text.match(/Telefone[:\s]*(\d{10,11})/i) ||
-        text.match(/(\d{2}\s?9?\d{4}\s?\d{4})/);
-      if (telefoneMatch) result.telefone = telefoneMatch[1].replace(/\D/g, "");
-
-      const veiculoMatch =
-        subject.match(/Proposta Recebida:\s*(.+)/i) ||
-        subject.match(/Interesse[:\s]*(.+)/i);
-      if (veiculoMatch) result.veiculo = veiculoMatch[1].trim();
-
-      const mensagemMatch =
-        text.match(/Mensagem\s*\n\s*["']([^"']+)["']/i) ||
-        text.match(/["']([^"']+)["']/);
-      if (mensagemMatch) result.mensagem = mensagemMatch[1].trim();
-
-      const precoMatch = text.match(/R\$\s*([\d\.,]+)/i);
-      if (precoMatch) result.preco = precoMatch[1].trim();
-
-      const placaMatch = text.match(/placa[:\s]*([A-Z]{3}\d[A-Z0-9]\d{2})/i);
-      if (placaMatch) result.placa = placaMatch[1].toUpperCase();
-    } catch (error) {
-      console.error("❌ Erro ao parsear email do Mobiauto:", error.message);
-    }
-
-    return result;
-  }
-
-  parseOlxEmail(text, subject) {
-    return this.parseGenericPlatformEmail(text, subject, "OLX");
   }
 
   parseWebmotorsEmail(text, subject) {
-    return this.parseGenericPlatformEmail(text, subject, "Webmotors");
+    const veiculo =
+      subject?.match(/interesse.*?:\s*(.+)$/i)?.[1]?.trim() ||
+      this.extractVehicleInfo(subject, text);
+
+    return {
+      nome: null,
+      email: null,
+      telefone: null,
+      veiculo,
+      mensagem: text || subject || "",
+      preco: null,
+      placa: null,
+      extras: { fonte: "webmotors" },
+    };
   }
 
   parseFacebookEmail(text, subject) {
-    return this.parseGenericPlatformEmail(
-      text,
-      subject,
-      "Facebook Marketplace",
-    );
+    return {
+      nome: null,
+      email: null,
+      telefone: null,
+      veiculo: this.extractVehicleInfo(subject, text),
+      mensagem: text || subject || "",
+      preco: null,
+      placa: null,
+      extras: { fonte: "facebook-marketplace" },
+    };
   }
 
   parseInstagramEmail(text, subject) {
-    return this.parseGenericPlatformEmail(text, subject, "Instagram");
+    return {
+      nome: null,
+      email: null,
+      telefone: null,
+      veiculo: this.extractVehicleInfo(subject, text),
+      mensagem: text || subject || "",
+      preco: null,
+      placa: null,
+      extras: { fonte: "instagram" },
+    };
   }
 
   parseWhatsAppEmail(text, subject) {
-    return this.parseGenericPlatformEmail(text, subject, "WhatsApp Business");
-  }
-
-  parseGenericPlatformEmail(text, subject, platform) {
-    console.log(`📝 Parseando email genérico da plataforma: ${platform}`);
-
-    const extractedData = this.extractLeadData({
-      text,
-      subject,
-      html: "",
-    });
-
     return {
-      nome: extractedData.nome || null,
-      email: this.extractEmail(text),
-      telefone: extractedData.telefone || null,
-      veiculo: extractedData.veiculo || null,
+      nome: null,
+      email: null,
+      telefone: null,
+      veiculo: this.extractVehicleInfo(subject, text),
       mensagem: text || subject || "",
-      preco: this.extractPrice(text),
-      placa: this.extractPlate(text),
-      extras: {
-        plataformaDetectada: platform,
-      },
+      preco: null,
+      placa: null,
+      extras: { fonte: "whatsapp-business" },
     };
   }
 
   calculateLeadScore(parsedData) {
     let score = 0;
 
-    if (parsedData.telefone && parsedData.telefone.length >= 10) {
-      score += 25;
-    }
-
-    if (parsedData.nome && parsedData.nome.includes(" ")) {
-      score += 15;
-    }
-
-    if (parsedData.veiculo) {
-      score += 20;
-    }
-
-    if (parsedData.mensagem && parsedData.mensagem.length > 50) {
-      score += 10;
-    }
-
-    if (parsedData.email && /\S+@\S+\.\S+/.test(parsedData.email)) {
-      score += 10;
-    }
+    if (parsedData.telefone && parsedData.telefone.length >= 10) score += 25;
+    if (parsedData.nome && parsedData.nome.includes(" ")) score += 15;
+    if (parsedData.veiculo) score += 20;
+    if (parsedData.mensagem && parsedData.mensagem.length > 50) score += 10;
+    if (parsedData.email && /\S+@\S+\.\S+/.test(parsedData.email)) score += 10;
 
     const urgentKeywords = [
       "urgente",
@@ -1233,15 +1282,12 @@ class EmailCaptureService {
       "urgentemente",
     ];
     const text = (parsedData.mensagem || "").toLowerCase();
-
-    if (urgentKeywords.some((keyword) => text.includes(keyword))) {
-      score += 20;
-    }
+    if (urgentKeywords.some((keyword) => text.includes(keyword))) score += 20;
 
     return Math.min(score, 100);
   }
 
-  extractLeadTags(veiculo, mensagem, extras = {}) {
+  extractLeadTags(veiculo, mensagem) {
     const tags = [];
     const text = ((veiculo || "") + " " + (mensagem || "")).toLowerCase();
 
@@ -1260,6 +1306,8 @@ class EmailCaptureService {
       "mercedes",
       "audi",
       "chery",
+      "citroen",
+      "peugeot",
     ];
 
     for (const marca of marcas) {
@@ -1289,29 +1337,15 @@ class EmailCaptureService {
       tags.push("urgente");
     }
 
-    if (extras?.origemFinanceira === "BV") {
-      tags.push("bv");
-    }
-
-    if (extras?.tipoLead === "financiamento") {
-      tags.push("mercadolivre-financiamento");
-    }
-
-    if (extras?.tipoLead === "pergunta") {
-      tags.push("mercadolivre-pergunta");
-    }
-
     return [...new Set(tags)];
   }
 
-  determinePriority(mensagem, origem, extras = {}) {
-    if (origem === "iCarros" && extras?.tipoCaptura === "possivel-proposta") {
-      return "media";
-    }
+  determinePriority(mensagem, origem = "", extras = {}) {
+    const text = String(mensagem || "").toLowerCase();
+    const source = String(origem || "").toLowerCase();
 
-    if (!mensagem) return "media";
-
-    const text = mensagem.toLowerCase();
+    if (extras?.superQuente || extras?.preAnalisado) return "alta";
+    if (source.includes("bv")) return "alta";
 
     const urgentKeywords = [
       "urgente",
@@ -1319,129 +1353,40 @@ class EmailCaptureService {
       "imediato",
       "imediatamente",
       "agora",
+      "aprovado",
+      "pré-analisado",
+      "pre-analisado",
+      "super quente",
     ];
-    const highPriorityKeywords = [
+
+    const mediumKeywords = [
       "interesse",
       "gostaria",
       "dúvida",
+      "duvida",
       "informação",
+      "informacao",
+      "proposta",
+      "financiamento",
     ];
 
-    if (urgentKeywords.some((keyword) => text.includes(keyword))) return "alta";
-    if (highPriorityKeywords.some((keyword) => text.includes(keyword)))
+    if (urgentKeywords.some((keyword) => text.includes(keyword))) {
+      return "alta";
+    }
+
+    if (mediumKeywords.some((keyword) => text.includes(keyword))) {
       return "media";
+    }
 
     return "baixa";
   }
 
-  extractLeadData(emailData) {
-    const text = emailData.text || this.htmlToText(emailData.html || "");
-    const subject = emailData.subject || "";
-
-    const phoneRegexes = [
-      /(\+55)?\s?(\(?\d{2}\)?\s?)?(9?\d{4}[-.\s]?\d{4})/g,
-      /(\d{2})\s?9?\d{4}[-\s]?\d{4}/g,
-      /WhatsApp[:\s]*([\d\s()\-.+]+)/gi,
-      /Telefone[:\s]*([\d\s()\-.+]+)/gi,
-      /Celular[:\s]*([\d\s()\-.+]+)/gi,
-    ];
-
-    let telefone = null;
-    for (const regex of phoneRegexes) {
-      const matches = text.match(regex);
-      if (matches && matches[0]) {
-        telefone = matches[0].replace(/\D/g, "");
-        if (telefone.length >= 10) break;
-      }
-    }
-
-    let nome = "";
-    const nomeRegexes = [
-      /Nome[:\s]*([A-Za-zÀ-ÿ\s]{3,})/i,
-      /Meu nome é\s*([A-Za-zÀ-ÿ\s]{3,})/i,
-      /Sou o\s*([A-Za-zÀ-ÿ\s]{3,})/i,
-      /Sou a\s*([A-Za-zÀ-ÿ\s]{3,})/i,
-    ];
-
-    for (const regex of nomeRegexes) {
-      const match = text.match(regex);
-      if (match && match[1]) {
-        nome = match[1].trim();
-        break;
-      }
-    }
-
-    const veiculo = this.extractVehicleInfo(subject, text);
-
-    return { telefone, nome, veiculo };
-  }
-
-  extractVehicleInfo(subject, text) {
-    const combinedText = `${subject || ""} ${text || ""}`.toUpperCase();
-
-    const marcas = {
-      CHEVROLET: ["CHEVROLET", "CHEVY", "GM", "ONIX", "TRACKER", "S10"],
-      FIAT: ["FIAT", "UNO", "ARGO", "TORO"],
-      VOLKSWAGEN: ["VOLKSWAGEN", "VW", "GOL", "POLO", "T-CROSS"],
-      FORD: ["FORD", "RANGER", "KA", "ECOSPORT"],
-      TOYOTA: ["TOYOTA", "COROLLA", "HILUX"],
-      JEEP: ["JEEP", "RENEGADE", "COMPASS"],
-      NISSAN: ["NISSAN", "VERSA", "KICKS", "SENTRA"],
-      HYUNDAI: ["HYUNDAI", "HB20", "CRETA"],
-      HONDA: ["HONDA", "CIVIC", "HR-V", "FIT"],
-      CHERY: ["CHERY", "CAOA CHERY", "TIGGO"],
-    };
-
-    for (const [marca, keywords] of Object.entries(marcas)) {
-      if (keywords.some((keyword) => combinedText.includes(keyword))) {
-        return marca;
-      }
-    }
-
-    return (subject || "").substring(0, 120) || null;
-  }
-
-  detectClassifiedOrigin(emailData) {
-    const { subject, text, html } = emailData;
-    const fullText =
-      `${subject || ""} ${text || ""} ${this.htmlToText(html || "")}`.toLowerCase();
-
-    const origemMap = [
-      { pattern: /mobiauto/i, origem: "Mobiauto" },
-      { pattern: /olx\.com\.br|anuncio olx|anúncio olx/i, origem: "OLX" },
-      { pattern: /webmotors|anuncio webmotors/i, origem: "Webmotors" },
-      { pattern: /icarros/i, origem: "iCarros" },
-      { pattern: /seminovos\.com/i, origem: "Seminovos" },
-      {
-        pattern: /facebook\.com|facebook market|marketplace/i,
-        origem: "Facebook Marketplace",
-      },
-      { pattern: /instagram\.com|direct instagram/i, origem: "Instagram" },
-      {
-        pattern: /whatsapp business|wa\.me|whatsapp/i,
-        origem: "WhatsApp Business",
-      },
-      { pattern: /mercado livre|mercadolivre/i, origem: "MercadoLivre" },
-      { pattern: /banco bv|napista|lead bv/i, origem: "BV" },
-    ];
-
-    for (const { pattern, origem } of origemMap) {
-      if (pattern.test(fullText)) {
-        return origem;
-      }
-    }
-
-    return "Email Direto";
-  }
-
   htmlToText(html) {
     if (!html) return "";
-
     try {
       const $ = cheerio.load(html);
-      $("script, style").remove();
-
-      return ($("body").text() || $.text() || "").replace(/\s+/g, " ").trim();
+      $("script, style, noscript").remove();
+      return $("body").text().replace(/\s+/g, " ").trim();
     } catch {
       return String(html)
         .replace(/<[^>]*>/g, " ")
@@ -1450,22 +1395,51 @@ class EmailCaptureService {
     }
   }
 
-  extractEmail(text) {
-    if (!text) return null;
-    const match = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
-    return match ? match[0] : null;
+  extractVehicleInfo(subject = "", text = "") {
+    const combined = `${subject || ""} ${text || ""}`.trim();
+
+    const patterns = [
+      /\b(chevrolet|fiat|volkswagen|vw|ford|toyota|hyundai|honda|nissan|jeep|renault|bmw|mercedes|audi|chery|citroen|peugeot)\b[^\n]{0,80}/i,
+      /\b(onix|uno|gol|polo|corolla|hilux|t-cross|compass|renegade|argo|tracker|versa|civic|hb20|tiggo)\b[^\n]{0,80}/i,
+    ];
+
+    for (const re of patterns) {
+      const m = combined.match(re);
+      if (m) return m[0].replace(/\s+/g, " ").trim();
+    }
+
+    return combined ? combined.substring(0, 120) : "Veículo não especificado";
   }
 
-  extractPrice(text) {
-    if (!text) return null;
-    const match = text.match(/R\$\s*([\d\.,]+)/i);
-    return match ? match[1].trim() : null;
+  extractLeadData(emailData) {
+    const text = emailData.text || this.htmlToText(emailData.html);
+    const subject = emailData.subject || "";
+
+    const phone = (
+      text.match(/(\+55)?\s?\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}/)?.[0] || ""
+    ).replace(/\D/g, "");
+
+    return {
+      telefone: phone.length >= 10 ? phone : null,
+      nome: null,
+      veiculo: this.extractVehicleInfo(subject, text),
+    };
   }
 
-  extractPlate(text) {
-    if (!text) return null;
-    const match = text.match(/\b([A-Z]{3}\d[A-Z0-9]\d{2})\b/i);
-    return match ? match[1].toUpperCase() : null;
+  detectClassifiedOrigin(emailData) {
+    const { subject, text, html } = emailData;
+    const fullText = (
+      `${subject || ""} ${text || ""} ${this.htmlToText(html || "")}`
+    ).toLowerCase();
+
+    if (fullText.includes("olx")) return "OLX";
+    if (fullText.includes("webmotors")) return "Webmotors";
+    if (fullText.includes("icarros")) return "iCarros";
+    if (fullText.includes("mercadolivre")) return "MercadoLivre";
+    if (fullText.includes("facebook")) return "Facebook";
+    if (fullText.includes("instagram")) return "Instagram";
+    if (fullText.includes("mobiauto")) return "Mobiauto";
+    return "Email";
   }
 
   /**
@@ -1512,7 +1486,7 @@ class EmailCaptureService {
     try {
       const lead = new Lead(leadData);
       const savedLead = await lead.save();
-      this.invalidateCache();
+      this.statsCache.data = null;
       return savedLead;
     } catch (error) {
       throw new Error(`Erro ao criar lead: ${error.message}`);
@@ -1527,7 +1501,7 @@ class EmailCaptureService {
       }
 
       const updatedLead = await lead.update(updates);
-      this.invalidateCache();
+      this.statsCache.data = null;
       return updatedLead;
     } catch (error) {
       throw new Error(`Erro ao atualizar lead: ${error.message}`);
@@ -1541,7 +1515,7 @@ class EmailCaptureService {
         throw new Error("Lead não encontrado");
       }
 
-      this.invalidateCache();
+      this.statsCache.data = null;
       return lead;
     } catch (error) {
       throw new Error(`Erro ao deletar lead: ${error.message}`);
@@ -1550,7 +1524,6 @@ class EmailCaptureService {
 
   async getDashboardStats(dataInicio, dataFim) {
     const now = Date.now();
-
     if (
       this.statsCache.data &&
       this.statsCache.lastUpdate &&
@@ -1613,21 +1586,15 @@ class EmailCaptureService {
                 struct: true,
               });
 
-              const messagePromises = [];
-
               fetch.on("message", (msg) => {
-                const promise = new Promise((resolveMsg) => {
-                  this.processMessage(msg, leads)
-                    .then(() => resolveMsg())
-                    .catch(() => resolveMsg());
+                this.processMessage(msg, leads).catch((e) => {
+                  console.error("Erro no backfill:", e.message);
                 });
-                messagePromises.push(promise);
               });
 
               fetch.on("error", reject);
 
-              fetch.on("end", async () => {
-                await Promise.all(messagePromises);
+              fetch.on("end", () => {
                 console.log(`✅ Processados ${leads.length} emails históricos`);
                 resolve({
                   success: true,
@@ -1657,38 +1624,30 @@ class EmailCaptureService {
   startScheduledCapture() {
     if (!this.config.user || !this.config.password) {
       console.log(
-        "⚠️  Agendador não iniciado: Credenciais de email não configuradas",
+        "⚠️ Agendador não iniciado: Credenciais de email não configuradas",
       );
       return;
     }
 
-    if (this.captureTask) {
-      this.captureTask.stop();
-      this.captureTask = null;
+    if (!this.captureTask) {
+      this.captureTask = cron.schedule("*/2 * * * *", async () => {
+        try {
+          await this.fetchAndProcessEmails();
+        } catch (error) {
+          console.error("Erro na captura agendada:", error.message);
+        }
+      });
     }
 
-    if (this.cacheCleanupTask) {
-      this.cacheCleanupTask.stop();
-      this.cacheCleanupTask = null;
+    console.log("⏰ Agendador de captura iniciado (verificação a cada 2 minutos)");
+
+    if (!this.cacheCleanupTask) {
+      this.cacheCleanupTask = cron.schedule("0 2 * * *", () => {
+        this.statsCache.data = null;
+        this.statsCache.lastUpdate = null;
+        console.log("🧹 Cache de estatísticas limpo");
+      });
     }
-
-    this.captureTask = cron.schedule("*/2 * * * *", async () => {
-      try {
-        await this.fetchAndProcessEmails();
-      } catch (error) {
-        console.error("Erro na captura agendada:", error.message);
-      }
-    });
-
-    console.log(
-      "⏰ Agendador de captura iniciado (verificação a cada 2 minutos)",
-    );
-
-    this.cacheCleanupTask = cron.schedule("0 2 * * *", () => {
-      this.statsCache.data = null;
-      this.statsCache.lastUpdate = null;
-      console.log("🧹 Cache de estatísticas limpo");
-    });
   }
 
   stopScheduledCapture() {
@@ -1702,12 +1661,7 @@ class EmailCaptureService {
       this.cacheCleanupTask = null;
     }
 
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-
-    console.log("⏹️  Agendador de captura parado");
+    console.log("⏹️ Agendador de captura parado");
   }
 
   /**
@@ -1717,6 +1671,11 @@ class EmailCaptureService {
    */
 
   disconnect() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
     if (this.imap) {
       this.imap.end();
       this.isConnected = false;
