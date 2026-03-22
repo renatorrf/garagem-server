@@ -440,22 +440,38 @@ class Lead {
     const whereClause = `WHERE ${whereConditions.join(" AND ")}`;
 
     const statsQuery = `
-      WITH stats AS (
-        SELECT
-          COUNT(*)::int AS total_leads,
-          COUNT(*) FILTER (WHERE status = 'novo')::int AS novos_leads,
-          COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos,
-          COUNT(*) FILTER (
-            WHERE (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date
-                  = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
-          )::int AS leads_hoje,
-          COUNT(*) FILTER (WHERE prioridade = 'alta')::int AS alta_prioridade,
-          COUNT(*) FILTER (WHERE status = 'contatado')::int AS contatados
-        FROM ${leadTable}
-        ${whereClause}
-      )
-      SELECT * FROM stats;
-    `;
+  WITH base AS (
+    SELECT *
+    FROM ${leadTable}
+    ${whereClause}
+  ),
+  stats AS (
+    SELECT
+      COUNT(*)::int AS total_leads,
+      COUNT(*) FILTER (WHERE status = 'novo')::int AS novos_leads,
+      COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos,
+      COUNT(*) FILTER (WHERE prioridade = 'alta')::int AS alta_prioridade,
+      COUNT(*) FILTER (WHERE status = 'contatado')::int AS contatados
+    FROM base
+  ),
+  hoje AS (
+    SELECT
+      COUNT(*)::int AS leads_hoje
+    FROM ${leadTable}
+    WHERE deleted_at IS NULL
+      AND (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date =
+          (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
+  )
+  SELECT
+    stats.total_leads,
+    stats.novos_leads,
+    stats.vendidos,
+    hoje.leads_hoje,
+    stats.alta_prioridade,
+    stats.contatados
+  FROM stats
+  CROSS JOIN hoje;
+`;
 
     const result = await db.getOne(statsQuery, params);
 
@@ -517,7 +533,10 @@ class Lead {
       GROUP BY plataforma
       ORDER BY leads DESC;
     `;
-    const leadsPorPlataforma = await db.query(leadsPorPlataformaQuery, [ini, fim]);
+    const leadsPorPlataforma = await db.query(leadsPorPlataformaQuery, [
+      ini,
+      fim,
+    ]);
 
     const custoPlataformaLeadQuery = `
       WITH base_leads AS (
