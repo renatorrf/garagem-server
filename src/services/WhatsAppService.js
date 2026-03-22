@@ -209,48 +209,47 @@ class WhatsAppService {
     return this.postMessage(payload);
   }
 
-  static async sendStartConversationButton({ to, lead, sellerName }) {
-    const sellerPhone = this.toWhatsAppPhone(to);
-    const waUrl = this.buildOpenConversationUrl(lead);
+static async sendStartConversationButton({ to, lead, sellerName }) {
+  const sellerPhone = this.toWhatsAppPhone(to);
+  const waUrl = this.buildOpenConversationUrl(lead);
 
-    if (!waUrl) {
-      throw new Error(
-        `Lead ${lead.id} sem telefone válido para abrir conversa`,
-      );
-    }
+  if (!waUrl) {
+    throw new Error(`Lead ${lead.id} sem telefone válido para abrir conversa`);
+  }
 
-    const payload = {
-      messaging_product: "whatsapp",
-      recipient_type: "individual",
-      to: sellerPhone,
-      type: "interactive",
-      interactive: {
-        type: "cta_url",
-        header: {
-          type: "text",
-          text: "✅ Atendimento iniciado",
-        },
-        body: {
-          text:
-            `Lead assumido por ${sellerName}.\n` +
-            `${lead?.nome || "Cliente"} • ${lead?.telefone || "Sem telefone"}\n\n` +
-            `Clique abaixo para abrir a conversa agora.`,
-        },
-        footer: {
-          text: "Next Car Uberlândia",
-        },
-        action: {
-          name: "cta_url",
-          parameters: {
-            display_text: "Iniciar conversa agora",
-            url: waUrl,
-          },
+  const payload = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to: sellerPhone,
+    type: 'interactive',
+    interactive: {
+      type: 'cta_url',
+      header: {
+        type: 'text',
+        text: '✅ Atendimento iniciado',
+      },
+      body: {
+        text:
+          `Lead assumido por ${sellerName}.\n` +
+          `Cliente: ${lead?.nome || 'Lead sem nome'}\n` +
+          `Telefone: ${lead?.telefone || 'Sem telefone'}\n\n` +
+          `Clique abaixo para falar com o cliente.`,
+      },
+      footer: {
+        text: 'Next Car Uberlândia',
+      },
+      action: {
+        name: 'cta_url',
+        parameters: {
+          display_text: 'Abrir conversa',
+          url: waUrl,
         },
       },
-    };
+    },
+  };
 
-    return this.postMessage(payload);
-  }
+  return this.postMessage(payload);
+}
 
   static async sendFeedbackRequest({ to, lead }) {
     const sellerPhone = this.toWhatsAppPhone(to);
