@@ -201,14 +201,19 @@ exports.cadastraVeiculo = async (req, res) => {
 exports.salvaVeiculo = async (req, res) => {
   const dataAtual = moment().format();
   const { dados_veiculo, imagens_veiculo, img_alterada } = req.body;
-
   const schema = req.headers["schema"];
+
+  if (!schema) {
+    return res.status(400).json({
+      success: false,
+      message: "Schema não especificado nos headers",
+    });
+  }
 
   try {
     await db.transaction(async (client) => {
-      // Extrai os campos do body
       const {
-        seq_veiculo, // Adicionado - necessário para o UPDATE
+        seq_veiculo,
         val_compra,
         ind_tipo_veiculo,
         nome_documento,
@@ -238,74 +243,89 @@ exports.salvaVeiculo = async (req, res) => {
         valor_investido_investidor,
         valor_investido_proprio,
         imgCapaBase64,
+        imagemCapa,
+        img_veiculo_capa_url,
         ind_veiculo_investidor,
         cod_banco,
       } = dados_veiculo;
 
-      // Verifica se seq_veiculo existe (obrigatório para UPDATE)
       if (!seq_veiculo) {
         throw new Error("seq_veiculo é obrigatório para atualização");
       }
 
-      // Monta o objeto com os campos para atualização
+      const imagensValidas = Array.isArray(imagens_veiculo)
+        ? imagens_veiculo
+            .filter((img) => img && img.src)
+            .slice(0, 12)
+        : [];
+
       const veiculoFields = {
         des_veiculo: modelo_completo,
         val_compra: val_compra,
-        des_veiculo_personalizado: des_veiculo_personalizado,
-        observacoes: observacoes,
-        dta_compra: dta_compra,
-        img_veiculo_capa:
-          img_alterada === true ? imagens_veiculo[0]?.src : imgCapaBase64, // Adicionado tratamento para imagem não existente
-        ind_tipo_veiculo: ind_tipo_veiculo,
+        des_veiculo_personalizado,
+        observacoes,
+        dta_compra,
+        ind_tipo_veiculo,
         des_proprietario:
           ind_tipo_veiculo === "P" ? "Prime Veiculos" : des_proprietario,
-        val_venda_esperado: val_venda_esperado,
+        val_venda_esperado,
         cod_parceiro: cod_parceiro || 0,
-        documento: documento,
-        nome_documento: nome_documento,
-        renavam: renavam,
-        placa: placa,
-        ano_fabricacao: ano_fabricacao,
-        ano_modelo: ano_modelo,
-        des_veiculo_completa: des_veiculo_completa,
-        chassis: chassis,
-        modelo: modelo,
-        modelo_completo: modelo_completo,
-        marca: marca,
-        cor: cor,
-        crv: crv,
-        km: km,
-        combustivel: combustivel,
-        motorizacao: motorizacao,
-        portas: portas,
-        cambio: cambio,
-        valor_investido_investidor: valor_investido_investidor,
-        valor_investido_proprio: valor_investido_proprio,
-        ind_veiculo_investidor: ind_veiculo_investidor,
+        documento,
+        nome_documento,
+        renavam,
+        placa,
+        ano_fabricacao,
+        ano_modelo,
+        des_veiculo_completa,
+        chassis,
+        modelo,
+        modelo_completo,
+        marca,
+        cor,
+        crv,
+        km,
+        combustivel,
+        motorizacao,
+        portas,
+        cambio,
+        valor_investido_investidor,
+        valor_investido_proprio,
+        ind_veiculo_investidor,
         dta_ultima_alteracao: dataAtual,
-        cod_banco: cod_banco,
+        cod_banco,
         financeiro_incluso: true,
       };
 
-      // Remove campos com valor undefined/null para evitar erros
+      // Só atualiza a capa se as imagens tiverem sido alteradas
+      if (img_alterada === true) {
+        veiculoFields.img_veiculo_capa_url = imagensValidas?.[0]?.src ?? null;
+      } else {
+        // Mantém compatibilidade com o front antigo/novo
+        const capaAtual =
+          img_veiculo_capa_url ??
+          imagemCapa ??
+          imgCapaBase64 ??
+          null;
+
+        if (capaAtual) {
+          veiculoFields.img_veiculo_capa_url = capaAtual;
+        }
+      }
+
+      // Remove apenas undefined
       Object.keys(veiculoFields).forEach((key) => {
-        if (veiculoFields[key] === undefined || veiculoFields[key] === null) {
+        if (veiculoFields[key] === undefined) {
           delete veiculoFields[key];
         }
       });
 
-      // Constrói a parte SET da query dinamicamente
       const setClause = Object.keys(veiculoFields)
         .map((key, index) => `${key} = $${index + 1}`)
         .join(", ");
 
-      // Valores para o SET
       const values = Object.values(veiculoFields);
-
-      // Adiciona o seq_veiculo no final (para a cláusula WHERE)
       values.push(seq_veiculo);
 
-      // Query de UPDATE
       const updateVeiculoQuery = `
         UPDATE ${schema}.tab_veiculo
         SET ${setClause}
@@ -313,7 +333,6 @@ exports.salvaVeiculo = async (req, res) => {
         RETURNING seq_veiculo;
       `;
 
-      // Executa a atualização do veículo
       const veiculoResult = await client.query(updateVeiculoQuery, values);
 
       if (veiculoResult.rowCount === 0) {
@@ -322,41 +341,33 @@ exports.salvaVeiculo = async (req, res) => {
 
       const seqVeiculo = veiculoResult.rows[0].seq_veiculo;
 
-      // Atualiza as imagens se necessário
-      if (
-        imagens_veiculo &&
-        imagens_veiculo.length > 0 &&
-        img_alterada === true
-      ) {
-        // Primeiro deleta as imagens existentes
+      if (img_alterada === true) {
         await client.query(
           `DELETE FROM ${schema}.tab_veiculo_imagem WHERE seq_veiculo = $1`,
-          [seqVeiculo],
+          [seqVeiculo]
         );
 
-        // Prepara os dados para inserção
-        const columns = ["seq_veiculo"];
-        const insertValues = [seqVeiculo];
-        const placeholders = ["$1"];
+        if (imagensValidas.length > 0) {
+          const columns = ["seq_veiculo"];
+          const insertValues = [seqVeiculo];
+          const placeholders = ["$1"];
 
-        // Adiciona até 12 imagens (img_1 a img_12)
-        for (let i = 0; i < Math.min(imagens_veiculo.length, 12); i++) {
-          const imageIndex = i + 1;
-          columns.push(`img_${imageIndex}`);
-          insertValues.push(imagens_veiculo[i].src);
-          placeholders.push(`$${insertValues.length}`);
+          for (let i = 0; i < imagensValidas.length; i++) {
+            const imageIndex = i + 1;
+            columns.push(`img_${imageIndex}_url`);
+            insertValues.push(imagensValidas[i].src);
+            placeholders.push(`$${insertValues.length}`);
+          }
+
+          const insertImagensQuery = `
+            INSERT INTO ${schema}.tab_veiculo_imagem
+            (${columns.join(", ")})
+            VALUES
+            (${placeholders.join(", ")})
+          `;
+
+          await client.query(insertImagensQuery, insertValues);
         }
-
-        // Monta a query de INSERT
-        const insertImagensQuery = `
-          INSERT INTO ${schema}.tab_veiculo_imagem
-          (${columns.join(", ")})
-          VALUES
-          (${placeholders.join(", ")})
-        `;
-
-        // Executa a inserção das novas imagens
-        await client.query(insertImagensQuery, insertValues);
       }
     });
 
@@ -370,7 +381,6 @@ exports.salvaVeiculo = async (req, res) => {
       success: false,
       message: "Erro ao processar a requisição no servidor",
       details: error.message,
-      //errorDetails: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 };
