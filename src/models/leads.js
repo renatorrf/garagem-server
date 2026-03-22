@@ -446,10 +446,8 @@ class Lead {
           COUNT(*) FILTER (WHERE status = 'novo')::int AS novos_leads,
           COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos,
           COUNT(*) FILTER (
-            WHERE timezone('America/Sao_Paulo', data_recebimento AT TIME ZONE 'UTC') >=
-                  date_trunc('day', timezone('America/Sao_Paulo', now() AT TIME ZONE 'UTC'))
-              AND timezone('America/Sao_Paulo', data_recebimento AT TIME ZONE 'UTC') <
-                  date_trunc('day', timezone('America/Sao_Paulo', now() AT TIME ZONE 'UTC')) + interval '1 day'
+            WHERE data_recebimento >= date_trunc('day', NOW() AT TIME ZONE 'America/Sao_Paulo')
+              AND data_recebimento <  date_trunc('day', NOW() AT TIME ZONE 'America/Sao_Paulo') + interval '1 day'
           )::int AS leads_hoje,
           COUNT(*) FILTER (WHERE prioridade = 'alta')::int AS alta_prioridade,
           COUNT(*) FILTER (WHERE status = 'contatado')::int AS contatados
