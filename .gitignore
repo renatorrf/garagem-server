@@ -1,1 +1,19 @@
+node_modules/
+
+# Secrets
 .env
+.env.*
+!.env.example
+
+# Logs / cache
+*.log
+logs/
+.cache/
+tmp/
+.eslintcache
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

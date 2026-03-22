@@ -84,7 +84,7 @@ exports.cadastraVeiculo = async (req, res) => {
         img_veiculo_capa_url: imagensValidas?.[0]?.src ?? null,
         ind_tipo_veiculo,
         des_proprietario:
-          ind_tipo_veiculo === "P" ? "Prime Veiculos" : des_proprietario,
+          ind_tipo_veiculo === "P" ? "Next Car" : des_proprietario,
         val_venda_esperado,
         cod_parceiro: cod_parceiro || 0,
         documento,
@@ -267,7 +267,7 @@ exports.salvaVeiculo = async (req, res) => {
         dta_compra,
         ind_tipo_veiculo,
         des_proprietario:
-          ind_tipo_veiculo === "P" ? "Prime Veiculos" : des_proprietario,
+          ind_tipo_veiculo === "P" ? "Next Car" : des_proprietario,
         val_venda_esperado,
         cod_parceiro: cod_parceiro || 0,
         documento,
