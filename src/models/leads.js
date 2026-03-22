@@ -508,10 +508,12 @@ class Lead {
         COUNT(*) FILTER (WHERE status = 'contatado')::int AS contatados,
         COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos,
         COUNT(*) FILTER (WHERE prioridade = 'alta')::int AS alta_prioridade,
-        COUNT(*) FILTER (
-          WHERE (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date =
-                (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
-        )::int AS leads_hoje,
+          COUNT(*) FILTER (
+            WHERE timezone('America/Sao_Paulo', data_recebimento AT TIME ZONE 'UTC') >=
+                  date_trunc('day', timezone('America/Sao_Paulo', now() AT TIME ZONE 'UTC'))
+              AND timezone('America/Sao_Paulo', data_recebimento AT TIME ZONE 'UTC') <
+                  date_trunc('day', timezone('America/Sao_Paulo', now() AT TIME ZONE 'UTC')) + interval '1 day'
+          )::int AS leads_hoje,
         ROUND(
           (COUNT(*) FILTER (WHERE status = 'vendido')::numeric / NULLIF(COUNT(*),0)) * 100
         , 2) AS taxa_conversao_pct
