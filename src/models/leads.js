@@ -440,38 +440,24 @@ class Lead {
     const whereClause = `WHERE ${whereConditions.join(" AND ")}`;
 
     const statsQuery = `
-  WITH base AS (
-    SELECT *
-    FROM ${leadTable}
-    ${whereClause}
-  ),
-  stats AS (
-    SELECT
-      COUNT(*)::int AS total_leads,
-      COUNT(*) FILTER (WHERE status = 'novo')::int AS novos_leads,
-      COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos,
-      COUNT(*) FILTER (WHERE prioridade = 'alta')::int AS alta_prioridade,
-      COUNT(*) FILTER (WHERE status = 'contatado')::int AS contatados
-    FROM base
-  ),
-  hoje AS (
-    SELECT
-      COUNT(*)::int AS leads_hoje
-    FROM ${leadTable}
-    WHERE deleted_at IS NULL
-      AND (data_recebimento AT TIME ZONE 'America/Sao_Paulo')::date =
-          (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
-  )
-  SELECT
-    stats.total_leads,
-    stats.novos_leads,
-    stats.vendidos,
-    hoje.leads_hoje,
-    stats.alta_prioridade,
-    stats.contatados
-  FROM stats
-  CROSS JOIN hoje;
-`;
+      WITH stats AS (
+        SELECT
+          COUNT(*)::int AS total_leads,
+          COUNT(*) FILTER (WHERE status = 'novo')::int AS novos_leads,
+          COUNT(*) FILTER (WHERE status = 'vendido')::int AS vendidos,
+          COUNT(*) FILTER (
+            WHERE timezone('America/Sao_Paulo', data_recebimento AT TIME ZONE 'UTC') >=
+                  date_trunc('day', timezone('America/Sao_Paulo', now() AT TIME ZONE 'UTC'))
+              AND timezone('America/Sao_Paulo', data_recebimento AT TIME ZONE 'UTC') <
+                  date_trunc('day', timezone('America/Sao_Paulo', now() AT TIME ZONE 'UTC')) + interval '1 day'
+          )::int AS leads_hoje,
+          COUNT(*) FILTER (WHERE prioridade = 'alta')::int AS alta_prioridade,
+          COUNT(*) FILTER (WHERE status = 'contatado')::int AS contatados
+        FROM ${leadTable}
+        ${whereClause}
+      )
+      SELECT * FROM stats;
+    `;
 
     const result = await db.getOne(statsQuery, params);
 
@@ -648,11 +634,11 @@ class Lead {
     return {
       ...result,
       taxaConversao:
-        Number(result?.total_leads || 0) > 0
+        Number(result?.totalLeads || 0) > 0
           ? Number(
               (
                 (Number(result.vendidos || 0) /
-                  Number(result.total_leads || 0)) *
+                  Number(result.totalLeads || 0)) *
                 100
               ).toFixed(2),
             )
