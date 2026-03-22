@@ -860,6 +860,8 @@ class EmailCaptureService {
     const isReminderBV =
       lowerSubject.includes("pode ser aprovado no banco bv") ||
       lowerSubject.includes("já falou com") ||
+      lowerSubject.includes("está interessado na sua oferta.") ||
+      lowerSubject.includes("interesse na sua oferta") ||
       lowerSubject.includes("ja falou com");
 
     const isPreAnalise =
