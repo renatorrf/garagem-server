@@ -202,7 +202,7 @@ async function mapVeiculoToCadastroPayloadAsync(v) {
       cambio,
       km,
 
-      dta_compra: moment().format('yyyy-MM-dd'),
+      dta_compra: moment().format('yyyy-MM-DD'),
       val_venda_esperado,
 
       observacoes,
