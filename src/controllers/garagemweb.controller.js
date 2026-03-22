@@ -4,11 +4,7 @@ if (process.env.NODE_ENV !== "production") {
 }
 const moment = require("moment");
 const cron = require("node-cron");
-const jwt = require("jsonwebtoken");
-const fs = require("fs");
-const { Console, error } = require("console");
-const nodemailer = require("nodemailer");
-const PDFDocument = require("pdfkit");
+const crypto = require("crypto");
 
 exports.verifyTokenSim = async (req, res, next) => {
   const token = req.headers.authorization;
@@ -1290,126 +1286,242 @@ exports.editaCartao = async (req, res) => {
 };
 
 exports.inserirMovimento = async (req, res) => {
-  const {
-    tipo_movimento,
-    dta_movimento: inputDtaMovimento, // Renomeei para evitar confusão
-    des_movimento,
-    ind_conciliado,
-    dta_conciliado,
-    ind_excluido,
-    ind_alterado,
-    seq_veiculo,
-    des_origem,
-    cod_banco,
-    des_movimento_detalhado,
-    cod_cartao,
-    val_movimento: inputValMovimento, // Renomeei para evitar confusão
-    descricao_mov_ofx,
-    cod_banco_ofx,
-    id_unico,
-    cod_categoria_movimento,
-    des_categoria_movimento,
-    parcela: totalParcelas,
-    seq_despesa,
-    cartao,
-    seq_fatura,
-    ind_cartao_pago,
-  } = req.body;
-
   const schema = req.headers["schema"];
+  const body = req.body;
+
+  if (!schema) {
+    return res.status(400).json({
+      success: false,
+      message: "Schema não especificado nos headers",
+    });
+  }
 
   try {
     const queryResult = await db.transaction(async (client) => {
-      try {
-        let lastResult;
+      let {
+        tipo_movimento,
+        dta_movimento: inputDtaMovimento,
+        des_movimento,
+        ind_conciliado,
+        dta_conciliado,
+        ind_excluido,
+        ind_alterado,
+        seq_veiculo,
+        des_origem,
+        cod_banco,
+        des_movimento_detalhado,
+        cod_cartao,
+        val_movimento: inputValMovimento,
+        descricao_mov_ofx,
+        cod_banco_ofx,
+        id_unico,
+        cod_categoria_movimento,
+        des_categoria_movimento,
+        parcela: totalParcelas,
+        seq_despesa,
+        cartao,
+        seq_fatura,
+        ind_cartao_pago,
 
-        if (totalParcelas && totalParcelas > 1) {
-          // Verifica se há parcelamento
-          for (let index = 0; index < totalParcelas; index++) {
-            const numeroParcela = index + 1;
-            let dataMovimento = moment(inputDtaMovimento); // Cria uma cópia modificável
+        // Novos campos
+        cod_parceiro,
+        nom_parceiro,
+        cod_banco_destino,
+        des_banco_destino,
+        criterio_conciliacao,
+        origem_importacao,
+        hash_conciliacao,
+        seq_movimentacao_relacionada,
+        ind_ofx,
+        des_status_validacao,
+        des_observacao,
+      } = body;
 
-            // Ajusta a data conforme o fechamento do cartão
-            const diaMesFechamento = moment(cartao.fechamento).format("MM-DD");
-            const diaMesMovimento = dataMovimento.format("MM-DD");
+      const categoria = Number(cod_categoria_movimento || 0);
+      const parcelas = Number(totalParcelas || 0);
+      const banco = cod_banco ? Number(cod_banco) : null;
+      const bancoDestino = cod_banco_destino ? Number(cod_banco_destino) : null;
+      const veiculo = seq_veiculo ? Number(seq_veiculo) : null;
+      const parceiro = cod_parceiro ? Number(cod_parceiro) : null;
 
-            if (diaMesMovimento > diaMesFechamento) {
-              dataMovimento.add(30, "days");
-            }
+      if (!tipo_movimento || !["E", "S"].includes(tipo_movimento)) {
+        throw new Error("tipo_movimento inválido. Use 'E' ou 'S'.");
+      }
 
-            // Adiciona 30 dias para cada parcela após a primeira
-            if (index > 0) {
-              dataMovimento.add(30 * index, "days");
-            }
+      if (!inputDtaMovimento) {
+        throw new Error("dta_movimento é obrigatória.");
+      }
 
-            // Calcula o valor da parcela (sem modificar a constante original)
-            const valorParcela = inputValMovimento / totalParcelas;
+      if (!des_movimento || String(des_movimento).trim() === "") {
+        throw new Error("des_movimento é obrigatório.");
+      }
 
-            const insertQuery = `
-              INSERT INTO ${schema}.tab_movimentacao (
-                tipo_movimento, dta_movimento, des_movimento, ind_conciliado, dta_conciliado,
-                ind_excluido, ind_alterado, seq_veiculo, des_origem, cod_banco, 
-                des_movimento_detalhado, cod_cartao, val_movimento, descricao_mov_ofx, 
-                cod_banco_ofx, id_unico, cod_categoria_movimento, des_categoria_movimento, 
-                parcela, seq_despesa, seq_fatura, ind_cartao_pago
-              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
-              RETURNING seq_registro;
-            `;
+      if (
+        inputValMovimento === null ||
+        inputValMovimento === undefined ||
+        Number(inputValMovimento) === 0
+      ) {
+        throw new Error("val_movimento inválido.");
+      }
 
-            const values = [
-              tipo_movimento,
-              dataMovimento.format("YYYY-MM-DD"), // Usa a data ajustada
-              des_movimento,
-              ind_conciliado,
-              dta_conciliado,
-              ind_excluido,
-              ind_alterado,
-              seq_veiculo,
-              des_origem,
-              cod_banco,
-              des_movimento_detalhado,
-              cod_cartao,
-              valorParcela, // Valor já calculado
-              descricao_mov_ofx,
-              cod_banco_ofx,
-              id_unico,
-              cod_categoria_movimento,
-              des_categoria_movimento,
-              numeroParcela,
-              seq_despesa,
-              seq_fatura,
-              ind_cartao_pago,
-            ];
+      if (!banco && !cod_cartao) {
+        throw new Error("Informe cod_banco ou cod_cartao.");
+      }
 
-            lastResult = await client.query(insertQuery, values);
+      let valorNormalizado = Number(inputValMovimento);
+      if (Number.isNaN(valorNormalizado)) {
+        throw new Error("val_movimento inválido.");
+      }
 
-            if (seq_veiculo) {
-              // Simplificado (null/undefined são falsy)
-              const seq_registro = lastResult.rows[0].seq_registro;
-              await client.query(
-                `UPDATE ${schema}.tab_veiculo 
-                 SET cod_movimentacao = $1, financeiro_incluso = true
-                 WHERE seq_veiculo = $2`,
-                [seq_registro, seq_veiculo],
+      valorNormalizado =
+        tipo_movimento === "E"
+          ? Math.abs(valorNormalizado)
+          : -Math.abs(valorNormalizado);
+
+      const hashBase =
+        hash_conciliacao ||
+        crypto
+          .createHash("md5")
+          .update(
+            [
+              banco || "",
+              inputDtaMovimento || "",
+              valorNormalizado || 0,
+              des_movimento || "",
+              id_unico || "",
+            ].join("|")
+          )
+          .digest("hex");
+
+      // =========================================================
+      // Validações por categoria
+      // =========================================================
+      const validarCategoria = () => {
+        switch (categoria) {
+          // Crédito
+          case 95: // Venda de Veículos Próprios
+          case 91: // Recebimento de Vendas a Prazo
+          case 92: // Recebimento de Consórcios
+          case 93: // Recebimento de Financiamentos
+          case 99: // Retorno Financiamento
+            if (!veiculo && !des_movimento_detalhado && !des_observacao) {
+              throw new Error(
+                "Esta categoria exige vínculo com veículo ou detalhamento."
               );
             }
-          }
-        } else {
-          // Lógica para não parcelado (similar, mas sem divisão de valor)
-          const insertQuery = `
-          INSERT INTO ${schema}.tab_movimentacao (
-            tipo_movimento, dta_movimento, des_movimento, ind_conciliado, dta_conciliado,
-            ind_excluido, ind_alterado, seq_veiculo, des_origem, cod_banco, 
-            des_movimento_detalhado, cod_cartao, val_movimento, descricao_mov_ofx, 
-            cod_banco_ofx, id_unico, cod_categoria_movimento, des_categoria_movimento, 
-            parcela, seq_despesa, seq_fatura, ind_cartao_pago
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
-          RETURNING seq_registro;
-        `;
+            break;
 
-          const values = [
+          case 94: // Venda de Veículos de Parceiros
+            if (!veiculo || !parceiro) {
+              throw new Error(
+                "Venda de veículo de parceiro exige veículo e parceiro."
+              );
+            }
+            break;
+
+          case 90: // Recebimento Conta de Parceiros
+            if (!parceiro) {
+              throw new Error("Recebimento de conta de parceiro exige parceiro.");
+            }
+            break;
+
+          case 96: // Recebimento de Terceiros
+          case 98: // Recebimento de Empréstimos
+            if (!parceiro && !nom_parceiro && !des_observacao) {
+              throw new Error(
+                "Informe parceiro, nome do terceiro ou observação."
+              );
+            }
+            break;
+
+          case 97: // Entrada por Transferência entre Contas
+            if (!bancoDestino) {
+              throw new Error(
+                "Entrada por transferência entre contas exige banco destino."
+              );
+            }
+            if (bancoDestino === banco) {
+              throw new Error(
+                "O banco de destino deve ser diferente do banco de origem."
+              );
+            }
+            break;
+
+          // Débito
+          case 4: // Despesas Veículos
+          case 5: // Comissões de Venda
+          case 7: // Compra de Veículo
+            if (!veiculo) {
+              throw new Error("Esta categoria exige vínculo com veículo.");
+            }
+            break;
+
+          case 8: // Saída por Transferência entre Contas
+            if (!bancoDestino) {
+              throw new Error(
+                "Saída por transferência entre contas exige banco destino."
+              );
+            }
+            if (bancoDestino === banco) {
+              throw new Error(
+                "O banco de destino deve ser diferente do banco de origem."
+              );
+            }
+            break;
+
+          case 9: // Pagamento a Terceiros
+          case 6: // Empréstimos Concedidos
+            if (!parceiro && !nom_parceiro && !des_observacao) {
+              throw new Error(
+                "Informe parceiro, nome do terceiro ou observação."
+              );
+            }
+            break;
+
+          case 10: // Pagamento de Conta de Parceiros
+            if (!parceiro) {
+              throw new Error("Pagamento de conta de parceiro exige parceiro.");
+            }
+            break;
+
+          case 11: // Despesas à reembolsar (Sócio)
+          case 12: // Prolabore (Sócio)
+            if (!des_observacao && !des_movimento_detalhado) {
+              throw new Error(
+                "Informe observação ou detalhamento para esta categoria."
+              );
+            }
+            break;
+        }
+      };
+
+      validarCategoria();
+
+      // =========================================================
+      // Anti-duplicidade por id_unico
+      // =========================================================
+      if (id_unico) {
+        const duplicado = await client.query(
+          `SELECT 1
+             FROM ${schema}.tab_movimentacao
+            WHERE id_unico = $1
+            LIMIT 1`,
+          [id_unico]
+        );
+
+        if (duplicado.rowCount > 0) {
+          throw new Error("Movimento já importado anteriormente (id_unico duplicado).");
+        }
+      }
+
+      // =========================================================
+      // Função base de insert
+      // =========================================================
+      const inserirRegistro = async (params) => {
+        const insertQuery = `
+          INSERT INTO ${schema}.tab_movimentacao (
             tipo_movimento,
-            inputDtaMovimento, // Usa a data ajustada
+            dta_movimento,
             des_movimento,
             ind_conciliado,
             dta_conciliado,
@@ -1420,38 +1532,312 @@ exports.inserirMovimento = async (req, res) => {
             cod_banco,
             des_movimento_detalhado,
             cod_cartao,
-            inputValMovimento, // Valor já calculado
+            des_observacao,
+            val_movimento,
             descricao_mov_ofx,
             cod_banco_ofx,
             id_unico,
             cod_categoria_movimento,
             des_categoria_movimento,
-            totalParcelas,
+            parcela,
             seq_despesa,
             seq_fatura,
             ind_cartao_pago,
-          ];
-          lastResult = await client.query(insertQuery, values);
+            cod_parceiro,
+            nom_parceiro,
+            cod_banco_destino,
+            des_banco_destino,
+            criterio_conciliacao,
+            origem_importacao,
+            hash_conciliacao,
+            seq_movimentacao_relacionada,
+            ind_ofx,
+            des_status_validacao
+          ) VALUES (
+            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
+            $11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
+            $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,
+            $31,$32,$33
+          )
+          RETURNING seq_registro;
+        `;
 
-          if (seq_veiculo) {
-            const seq_registro = lastResult.rows[0].seq_registro;
-            const updateQuery = `UPDATE ${schema}.tab_veiculo 
-                                 SET cod_movimentacao = $1,
-                                     financeiro_incluso = true
-                                 WHERE seq_veiculo = $2`;
-            const valuesUpdate = [seq_registro, seq_veiculo];
-            await client.query(updateQuery, valuesUpdate);
-          }
+        const values = [
+          params.tipo_movimento,
+          params.dta_movimento,
+          params.des_movimento,
+          params.ind_conciliado,
+          params.dta_conciliado,
+          params.ind_excluido,
+          params.ind_alterado,
+          params.seq_veiculo,
+          params.des_origem,
+          params.cod_banco,
+          params.des_movimento_detalhado,
+          params.cod_cartao,
+          params.des_observacao,
+          params.val_movimento,
+          params.descricao_mov_ofx,
+          params.cod_banco_ofx,
+          params.id_unico,
+          params.cod_categoria_movimento,
+          params.des_categoria_movimento,
+          params.parcela,
+          params.seq_despesa,
+          params.seq_fatura,
+          params.ind_cartao_pago,
+          params.cod_parceiro,
+          params.nom_parceiro,
+          params.cod_banco_destino,
+          params.des_banco_destino,
+          params.criterio_conciliacao,
+          params.origem_importacao,
+          params.hash_conciliacao,
+          params.seq_movimentacao_relacionada,
+          params.ind_ofx,
+          params.des_status_validacao,
+        ];
+
+        const result = await client.query(insertQuery, values);
+        return result.rows[0].seq_registro;
+      };
+
+      // =========================================================
+      // Atualiza vínculo financeiro do veículo
+      // =========================================================
+      const atualizarVeiculo = async (seqRegistro, seqVeiculo) => {
+        if (!seqVeiculo) return;
+
+        await client.query(
+          `UPDATE ${schema}.tab_veiculo
+              SET cod_movimentacao = $1,
+                  financeiro_incluso = true
+            WHERE seq_veiculo = $2`,
+          [seqRegistro, seqVeiculo]
+        );
+      };
+
+      // =========================================================
+      // Integra conta parceiro
+      // Ajuste o nome das colunas se sua tabela for diferente
+      // =========================================================
+      const inserirContaParceiro = async ({
+        codParceiro,
+        valor,
+        dataMovimento,
+        descricao,
+      }) => {
+        if (!codParceiro) return;
+
+        await client.query(
+          `INSERT INTO ${schema}.tab_conta_parceiro (
+            cod_parceiro,
+            val_movimento,
+            dta_movimento,
+            des_movimento
+          ) VALUES ($1, $2, $3, $4)`,
+          [codParceiro, valor, dataMovimento, descricao]
+        );
+      };
+
+      // =========================================================
+      // Insert principal (com ou sem parcelamento)
+      // =========================================================
+      const registrosInseridos = [];
+
+      if (parcelas > 1) {
+        if (!cartao || !cartao.fechamento) {
+          throw new Error("Parcelamento exige dados do cartão com fechamento.");
         }
 
-        return {
-          rows: lastResult.rows,
-          rowCount: lastResult.rowCount,
-        };
-      } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError;
+        for (let index = 0; index < parcelas; index++) {
+          const numeroParcela = index + 1;
+          let dataMovimento = moment(inputDtaMovimento);
+
+          const diaMesFechamento = moment(cartao.fechamento).format("MM-DD");
+          const diaMesMovimento = dataMovimento.format("MM-DD");
+
+          if (diaMesMovimento > diaMesFechamento) {
+            dataMovimento.add(30, "days");
+          }
+
+          if (index > 0) {
+            dataMovimento.add(30 * index, "days");
+          }
+
+          const valorParcelaBase = Math.abs(valorNormalizado) / parcelas;
+          const valorParcela =
+            tipo_movimento === "E" ? valorParcelaBase : -valorParcelaBase;
+
+          const seqRegistro = await inserirRegistro({
+            tipo_movimento,
+            dta_movimento: dataMovimento.format("YYYY-MM-DD"),
+            des_movimento,
+            ind_conciliado: !!ind_conciliado,
+            dta_conciliado: dta_conciliado || null,
+            ind_excluido: !!ind_excluido,
+            ind_alterado: !!ind_alterado,
+            seq_veiculo: veiculo,
+            des_origem: des_origem || null,
+            cod_banco: banco,
+            des_movimento_detalhado: des_movimento_detalhado || null,
+            cod_cartao: cod_cartao || null,
+            des_observacao: des_observacao || null,
+            val_movimento: valorParcela,
+            descricao_mov_ofx: descricao_mov_ofx || null,
+            cod_banco_ofx: cod_banco_ofx || null,
+            id_unico: index === 0 ? id_unico || null : null,
+            cod_categoria_movimento: categoria || null,
+            des_categoria_movimento: des_categoria_movimento || null,
+            parcela: numeroParcela,
+            seq_despesa: seq_despesa || null,
+            seq_fatura: seq_fatura || null,
+            ind_cartao_pago: !!ind_cartao_pago,
+            cod_parceiro: parceiro,
+            nom_parceiro: nom_parceiro || null,
+            cod_banco_destino: bancoDestino,
+            des_banco_destino: des_banco_destino || null,
+            criterio_conciliacao: criterio_conciliacao || null,
+            origem_importacao: origem_importacao || "MANUAL",
+            hash_conciliacao: `${hashBase}_P${numeroParcela}`,
+            seq_movimentacao_relacionada: seq_movimentacao_relacionada || null,
+            ind_ofx: !!ind_ofx,
+            des_status_validacao: des_status_validacao || "VALIDADO",
+          });
+
+          registrosInseridos.push({
+            seq_registro: seqRegistro,
+            tipo_movimento,
+            val_movimento: valorParcela,
+            dta_movimento: dataMovimento.format("YYYY-MM-DD"),
+          });
+
+          await atualizarVeiculo(seqRegistro, veiculo);
+        }
+      } else {
+        const seqRegistro = await inserirRegistro({
+          tipo_movimento,
+          dta_movimento: inputDtaMovimento,
+          des_movimento,
+          ind_conciliado: !!ind_conciliado,
+          dta_conciliado: dta_conciliado || null,
+          ind_excluido: !!ind_excluido,
+          ind_alterado: !!ind_alterado,
+          seq_veiculo: veiculo,
+          des_origem: des_origem || null,
+          cod_banco: banco,
+          des_movimento_detalhado: des_movimento_detalhado || null,
+          cod_cartao: cod_cartao || null,
+          des_observacao: des_observacao || null,
+          val_movimento: valorNormalizado,
+          descricao_mov_ofx: descricao_mov_ofx || null,
+          cod_banco_ofx: cod_banco_ofx || null,
+          id_unico: id_unico || null,
+          cod_categoria_movimento: categoria || null,
+          des_categoria_movimento: des_categoria_movimento || null,
+          parcela: null,
+          seq_despesa: seq_despesa || null,
+          seq_fatura: seq_fatura || null,
+          ind_cartao_pago: !!ind_cartao_pago,
+          cod_parceiro: parceiro,
+          nom_parceiro: nom_parceiro || null,
+          cod_banco_destino: bancoDestino,
+          des_banco_destino: des_banco_destino || null,
+          criterio_conciliacao: criterio_conciliacao || null,
+          origem_importacao: origem_importacao || "MANUAL",
+          hash_conciliacao: hashBase,
+          seq_movimentacao_relacionada: seq_movimentacao_relacionada || null,
+          ind_ofx: !!ind_ofx,
+          des_status_validacao: des_status_validacao || "VALIDADO",
+        });
+
+        registrosInseridos.push({
+          seq_registro: seqRegistro,
+          tipo_movimento,
+          val_movimento: valorNormalizado,
+          dta_movimento: inputDtaMovimento,
+        });
+
+        await atualizarVeiculo(seqRegistro, veiculo);
       }
+
+      // =========================================================
+      // Transferência entre contas: cria contrapartida automática
+      // Só faz isso se NÃO for parcelado
+      // =========================================================
+      if ([8, 97].includes(categoria) && parcelas <= 1) {
+        const principal = registrosInseridos[0];
+        const tipoContrapartida = principal.tipo_movimento === "E" ? "S" : "E";
+        const valorContrapartida =
+          tipoContrapartida === "E"
+            ? Math.abs(principal.val_movimento)
+            : -Math.abs(principal.val_movimento);
+
+        const seqDestino = await inserirRegistro({
+          tipo_movimento: tipoContrapartida,
+          dta_movimento: principal.dta_movimento,
+          des_movimento: `[TRANSF] ${des_movimento}`,
+          ind_conciliado: !!ind_conciliado,
+          dta_conciliado: dta_conciliado || null,
+          ind_excluido: false,
+          ind_alterado: false,
+          seq_veiculo: null,
+          des_origem: "TRANSFERENCIA_ENTRE_CONTAS",
+          cod_banco: bancoDestino,
+          des_movimento_detalhado: des_movimento_detalhado || null,
+          cod_cartao: null,
+          des_observacao: des_observacao || null,
+          val_movimento: valorContrapartida,
+          descricao_mov_ofx: null,
+          cod_banco_ofx: null,
+          id_unico: null,
+          cod_categoria_movimento: categoria === 8 ? 97 : 8,
+          des_categoria_movimento:
+            categoria === 8
+              ? "Entrada por Transferencia entre Contas"
+              : "Saida por Transferencia entre Contas",
+          parcela: null,
+          seq_despesa: null,
+          seq_fatura: null,
+          ind_cartao_pago: false,
+          cod_parceiro: null,
+          nom_parceiro: null,
+          cod_banco_destino: banco,
+          des_banco_destino: null,
+          criterio_conciliacao: "TRANSFERENCIA_ESPELHADA",
+          origem_importacao: origem_importacao || "MANUAL",
+          hash_conciliacao: `${hashBase}_TRANSF`,
+          seq_movimentacao_relacionada: principal.seq_registro,
+          ind_ofx: false,
+          des_status_validacao: "GERADO_AUTOMATICAMENTE",
+        });
+
+        await client.query(
+          `UPDATE ${schema}.tab_movimentacao
+              SET seq_movimentacao_relacionada = $1
+            WHERE seq_registro = $2`,
+          [seqDestino, principal.seq_registro]
+        );
+      }
+
+      // =========================================================
+      // Conta de parceiro
+      // =========================================================
+      if ([10, 90].includes(categoria) && parceiro) {
+        const principal = registrosInseridos[0];
+
+        await inserirContaParceiro({
+          codParceiro: parceiro,
+          valor: principal.val_movimento,
+          dataMovimento: principal.dta_movimento,
+          descricao: des_movimento,
+        });
+      }
+
+      return {
+        rows: registrosInseridos,
+        rowCount: registrosInseridos.length,
+      };
     });
 
     return res.status(200).json({
@@ -1657,40 +2043,79 @@ exports.buscaDespesaVeiculo = async (req, res) => {
 
 exports.buscaMovimentoFinanceiro = async (req, res) => {
   const schema = req.headers["schema"];
+  const {
+    cod_banco,
+    ind_conciliado,
+    data_inicial,
+    data_final,
+    limit = 1000,
+  } = req.body || {};
+
+  if (!schema) {
+    return res.status(400).json({
+      success: false,
+      message: "Schema não especificado nos headers",
+    });
+  }
 
   try {
     const queryResult = await db.transaction(async (client) => {
-      try {
-        // Sua lógica de transação aqui
+      const where = [];
+      const values = [];
+      let p = 1;
 
-        const selectQuery = `SELECT a.* from ${schema}.tab_movimentacao a order by a.seq_registro desc LIMIT $1 `;
+      if (cod_banco) {
+        where.push(`a.cod_banco = $${p++}`);
+        values.push(Number(cod_banco));
+      }
 
-        const values = [1000];
+      if (ind_conciliado === true || ind_conciliado === false) {
+        where.push(`a.ind_conciliado = $${p++}`);
+        values.push(ind_conciliado);
+      }
 
-        const records = await client.query(selectQuery, values);
+      if (data_inicial) {
+        where.push(`a.dta_movimento >= $${p++}`);
+        values.push(data_inicial);
+      }
 
-        const result = records.rows.map((row) => {
-          return {
-            ...row,
-            val_movimento:
-              row.tipo_movimento === "S"
-                ? -Math.abs(row.val_movimento)
-                : row.val_movimento,
-          };
-        });
+      if (data_final) {
+        where.push(`a.dta_movimento <= $${p++}`);
+        values.push(data_final);
+      }
+
+      const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+      values.push(Number(limit) || 1000);
+
+      const selectQuery = `
+        SELECT a.*
+        FROM ${schema}.tab_movimentacao a
+        ${whereClause}
+        ORDER BY a.dta_movimento DESC, a.seq_registro DESC
+        LIMIT $${p}
+      `;
+
+      const records = await client.query(selectQuery, values);
+
+      const result = records.rows.map((row) => {
+        const valor = Number(row.val_movimento || 0);
 
         return {
-          rows: result,
-          rowCount: records.rowCount,
+          ...row,
+          val_movimento:
+            row.tipo_movimento === "S"
+              ? -Math.abs(valor)
+              : Math.abs(valor),
         };
-        // Commit implícito se não houve erro
-      } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
-      }
+      });
+
+      return {
+        rows: result,
+        rowCount: records.rowCount,
+      };
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
       message: "Operação realizada com sucesso",
@@ -1709,80 +2134,148 @@ exports.buscaMovimentoFinanceiro = async (req, res) => {
 
 exports.importarFinanceiroOFX = async (req, res) => {
   const { movimentosSelecionados, banco } = req.body;
-
-  console.log(movimentosSelecionados);
   const schema = req.headers["schema"];
-
   const dtaAtual = moment().format();
+
+  if (!schema) {
+    return res.status(400).json({
+      success: false,
+      message: "Schema não especificado nos headers",
+    });
+  }
 
   try {
     const queryResult = await db.transaction(async (client) => {
-      try {
-        // Verifica se há movimentos para inserir
-        if (!movimentosSelecionados || movimentosSelecionados.length === 0) {
-          throw new Error("Nenhum movimento selecionado para importação");
+      if (!movimentosSelecionados || movimentosSelecionados.length === 0) {
+        throw new Error("Nenhum movimento selecionado para importação");
+      }
+
+      if (!banco?.seq_registro) {
+        throw new Error("Banco não informado para importação");
+      }
+
+      const inseridos = [];
+      const ignorados = [];
+
+      for (const mov of movimentosSelecionados) {
+        const tipoMovimento = mov.tipo === "E" ? "E" : "S";
+        const valorOriginal = Number(mov.valor || 0);
+        const valorNormalizado =
+          tipoMovimento === "E"
+            ? Math.abs(valorOriginal)
+            : -Math.abs(valorOriginal);
+
+        const hashConciliacao = crypto
+          .createHash("md5")
+          .update(
+            [
+              banco.seq_registro,
+              mov.data || "",
+              valorNormalizado,
+              mov.descricao || "",
+              mov.idUnico || "",
+            ].join("|")
+          )
+          .digest("hex");
+
+        if (mov.idUnico) {
+          const dup = await client.query(
+            `SELECT seq_registro
+               FROM ${schema}.tab_movimentacao
+              WHERE id_unico = $1
+              LIMIT 1`,
+            [mov.idUnico]
+          );
+
+          if (dup.rowCount > 0) {
+            ignorados.push({
+              id_unico: mov.idUnico,
+              descricao: mov.descricao,
+              motivo: "DUPLICADO_ID_UNICO",
+            });
+            continue;
+          }
         }
 
-        // Prepara os valores para inserção em lote
-        const values = movimentosSelecionados.map((mov) => [
-          mov.tipo === "E" ? "E" : "S", // tipo_movimento
-          mov.data, // dta_movimento
-          mov.descricao, // des_movimento
-          true, // ind_conciliado (padrão false)
-          dtaAtual, // dta_conciliado (null inicialmente)
-          false, // ind_excluido (padrão false)
-          false, // ind_alterado (padrão false)
-          null, // seq_veiculo (pode ser ajustado)
-          "Importação OFX", // des_origem
-          banco.seq_registro, // cod_banco
-          mov.descricao, // des_movimento_detalhado
-          null, // cod_cartao (ajuste conforme necessário)
-          `Movimento Importado via OFX em: ${moment(dtaAtual).format("DD/MM/YYYY")}`, // des_observacao
-          mov.valor, // val_movimento
-          mov.descricao, // descricao_mov_ofx
-          parseInt(mov.codigoBanco), // cod_banco_ofx
-          mov.idUnico, // id_unico
-          mov.cod_categoria_movimento, //categoruia
-          mov.des_categoria_movimento, //des_categoria
-        ]);
-
-        // Monta a query de inserção em lote
         const insertQuery = `
-        INSERT INTO ${schema}.tab_movimentacao (
-          tipo_movimento, dta_movimento, des_movimento, 
-          ind_conciliado, dta_conciliado, ind_excluido, 
-          ind_alterado, seq_veiculo, des_origem, 
-          cod_banco, des_movimento_detalhado, cod_cartao, 
-          des_observacao, val_movimento, descricao_mov_ofx, 
-          cod_banco_ofx, id_unico, cod_categoria_movimento, des_categoria_movimento
-        ) VALUES ${movimentosSelecionados
-          .map(
-            (_, i) =>
-              `($${i * 19 + 1}, $${i * 19 + 2}, $${i * 19 + 3}, $${i * 19 + 4}, $${i * 19 + 5}, $${i * 19 + 6}, 
-           $${i * 19 + 7}, $${i * 19 + 8}, $${i * 19 + 9}, $${i * 19 + 10}, $${i * 19 + 11}, $${i * 19 + 12}, 
-           $${i * 19 + 13}, $${i * 19 + 14}, $${i * 19 + 15}, $${i * 19 + 16}, $${i * 19 + 17}, $${i * 19 + 18}, $${i * 19 + 19})`,
+          INSERT INTO ${schema}.tab_movimentacao (
+            tipo_movimento,
+            dta_movimento,
+            des_movimento,
+            ind_conciliado,
+            dta_conciliado,
+            ind_excluido,
+            ind_alterado,
+            seq_veiculo,
+            des_origem,
+            cod_banco,
+            des_movimento_detalhado,
+            cod_cartao,
+            des_observacao,
+            val_movimento,
+            descricao_mov_ofx,
+            cod_banco_ofx,
+            id_unico,
+            cod_categoria_movimento,
+            des_categoria_movimento,
+            criterio_conciliacao,
+            origem_importacao,
+            hash_conciliacao,
+            ind_ofx,
+            des_status_validacao
+          ) VALUES (
+            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
+            $11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
+            $21,$22,$23,$24
           )
-          .join(", ")}
-        RETURNING *
-      `;
+          RETURNING *
+        `;
 
-        // Executa a query - flatten dos valores
-        const result = await client.query(insertQuery, values.flat());
+        const values = [
+          tipoMovimento,
+          mov.data,
+          mov.descricao,
+          true,
+          dtaAtual,
+          false,
+          false,
+          null,
+          "Importação OFX",
+          banco.seq_registro,
+          mov.descricao,
+          null,
+          `Movimento importado via OFX em ${moment(dtaAtual).format("DD/MM/YYYY HH:mm")}`,
+          valorNormalizado,
+          mov.descricao,
+          mov.codigoBanco ? parseInt(mov.codigoBanco) : null,
+          mov.idUnico || null,
+          mov.cod_categoria_movimento || null,
+          mov.des_categoria_movimento || null,
+          mov.criterio_conciliacao || "IMPORTACAO_DIRETA_OFX",
+          "OFX",
+          hashConciliacao,
+          true,
+          "IMPORTADO",
+        ];
 
-        return {
-          rows: result.rows,
-          rowCount: result.rowCount,
-        };
-      } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError;
+        const result = await client.query(insertQuery, values);
+        inseridos.push(result.rows[0]);
       }
+
+      return {
+        rows: inseridos,
+        rowCount: inseridos.length,
+        ignorados,
+        ignoradosCount: ignorados.length,
+      };
     });
 
     return res.status(200).json({
       success: true,
       message: `${queryResult.rowCount} movimentos importados com sucesso`,
       data: queryResult.rows,
+      ignorados: queryResult.ignorados,
+      ignoradosCount: queryResult.ignoradosCount,
     });
   } catch (error) {
     console.error("Erro na operação:", error);
@@ -1790,71 +2283,98 @@ exports.importarFinanceiroOFX = async (req, res) => {
       success: false,
       message: "Erro ao importar movimentos OFX",
       details: error.message,
-      //errorDetails: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 };
 
 exports.conciliarEncontrados = async (req, res) => {
-  const { movimentosEncontrados } = req.body; // Agora recebe um array
+  const { movimentosEncontrados } = req.body;
   const dtaAtual = moment().format();
   const schema = req.headers["schema"];
 
-  // Validação básica
+  if (!schema) {
+    return res.status(400).json({
+      success: false,
+      message: "Schema não especificado nos headers",
+    });
+  }
+
   if (!movimentosEncontrados || !Array.isArray(movimentosEncontrados)) {
     return res.status(400).json({
       success: false,
-      message: "Dados inválidos: movimentosEntrados deve ser um array",
+      message: "Dados inválidos: movimentosEncontrados deve ser um array",
     });
   }
 
   try {
     const queryResult = await db.transaction(async (client) => {
-      try {
-        // Preparar e executar todas as atualizações
-        const resultados = await Promise.all(
-          movimentosEncontrados.map(async (movimento) => {
-            // Validação dos campos obrigatórios
-            if (!movimento.seq_registro) {
-              throw new Error(
-                `Movimento sem seq_registro: ${JSON.stringify(movimento)}`,
-              );
-            }
+      const resultados = [];
 
-            const updateQuery = `
-              UPDATE ${schema}.tab_movimentacao
-              SET 
-                dta_conciliado = $1,
-                descricao_mov_ofx = COALESCE($2, descricao_mov_ofx),
-                cod_banco_ofx = COALESCE($3, cod_banco_ofx),
-                id_unico = COALESCE($4, id_unico),
-                ind_conciliado = $5
-              WHERE seq_registro = $6
-              RETURNING seq_registro, des_movimento
-            `;
+      for (const movimento of movimentosEncontrados) {
+        if (!movimento.seq_registro) {
+          throw new Error(
+            `Movimento sem seq_registro: ${JSON.stringify(movimento)}`
+          );
+        }
 
-            const values = [
-              dtaAtual,
-              movimento.descricao_mov_ofx,
-              movimento.cod_banco_ofx,
-              movimento.id_unico,
-              true, // ind_conciliado
-              movimento.seq_registro,
-            ];
+        if (movimento.id_unico) {
+          const dup = await client.query(
+            `SELECT seq_registro
+               FROM ${schema}.tab_movimentacao
+              WHERE id_unico = $1
+                AND seq_registro <> $2
+              LIMIT 1`,
+            [movimento.id_unico, movimento.seq_registro]
+          );
 
-            const result = await client.query(updateQuery, values);
-            return result.rows[0]; // Retorna o registro atualizado
-          }),
-        );
+          if (dup.rowCount > 0) {
+            throw new Error(
+              `id_unico já vinculado a outro lançamento: ${movimento.id_unico}`
+            );
+          }
+        }
 
-        return {
-          rows: resultados.filter((r) => r), // Filtra resultados nulos
-          rowCount: resultados.length,
-        };
-      } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError;
+        const updateQuery = `
+          UPDATE ${schema}.tab_movimentacao
+             SET dta_conciliado = $1,
+                 descricao_mov_ofx = COALESCE($2, descricao_mov_ofx),
+                 cod_banco_ofx = COALESCE($3, cod_banco_ofx),
+                 id_unico = COALESCE($4, id_unico),
+                 ind_conciliado = $5,
+                 criterio_conciliacao = COALESCE($6, criterio_conciliacao),
+                 origem_importacao = COALESCE($7, origem_importacao),
+                 hash_conciliacao = COALESCE($8, hash_conciliacao),
+                 ind_ofx = $9,
+                 des_status_validacao = $10
+           WHERE seq_registro = $11
+           RETURNING seq_registro, des_movimento, id_unico, criterio_conciliacao
+        `;
+
+        const values = [
+          dtaAtual,
+          movimento.descricao_mov_ofx || movimento.descricao || null,
+          movimento.cod_banco_ofx || null,
+          movimento.id_unico || null,
+          true,
+          movimento.criterio_conciliacao || "MATCH_MANUAL_OFX",
+          "OFX_CONCILIADO",
+          movimento.hash_conciliacao || null,
+          true,
+          "CONCILIADO",
+          movimento.seq_registro,
+        ];
+
+        const result = await client.query(updateQuery, values);
+
+        if (result.rowCount > 0) {
+          resultados.push(result.rows[0]);
+        }
       }
+
+      return {
+        rows: resultados,
+        rowCount: resultados.length,
+      };
     });
 
     return res.status(200).json({
@@ -1868,7 +2388,6 @@ exports.conciliarEncontrados = async (req, res) => {
       success: false,
       message: "Erro ao conciliar movimentos",
       details: error.message,
-      //errorDetails: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 };
@@ -4810,43 +5329,127 @@ exports.editaDespesaFixa = async (req, res) => {
 
 exports.updateMovimentoFinanceiro = async (req, res) => {
   const { movimento } = req.body;
-
   const schema = req.headers["schema"];
+
+  if (!schema) {
+    return res.status(400).json({
+      success: false,
+      message: "Schema não especificado nos headers",
+    });
+  }
+
+  if (!movimento?.seq_registro) {
+    return res.status(400).json({
+      success: false,
+      message: "seq_registro é obrigatório",
+    });
+  }
 
   try {
     const queryResult = await db.transaction(async (client) => {
-      try {
-        // Sua lógica de transação aqui
+      const categoria = Number(movimento.cod_categoria_movimento || 0);
+      const seqVeiculo = movimento.seq_veiculo ? Number(movimento.seq_veiculo) : null;
+      const codParceiro = movimento.cod_parceiro ? Number(movimento.cod_parceiro) : null;
+      const codBancoDestino = movimento.cod_banco_destino
+        ? Number(movimento.cod_banco_destino)
+        : null;
 
-        const insertQuery = `UPDATE ${schema}.tab_movimentacao 
-                             SET COD_CATEGORIA_MOVIMENTO = $1,
-                                 des_categoria_movimento = $2,
-                                 ind_conciliado = $3,
-                                 dta_conciliado = $4
-                             WHERE seq_registro = $5 `;
+      const validarCategoria = () => {
+        switch (categoria) {
+          case 95:
+          case 91:
+          case 92:
+          case 93:
+          case 4:
+          case 5:
+          case 7:
+            if (!seqVeiculo) {
+              throw new Error("Esta categoria exige vínculo com veículo.");
+            }
+            break;
 
-        const values = [
-          movimento.cod_categoria_movimento,
-          movimento.des_categoria_movimento,
-          true,
-          moment().format(),
-          movimento.seq_registro,
-        ];
+          case 94:
+            if (!seqVeiculo || !codParceiro) {
+              throw new Error("Venda de veículo de parceiro exige veículo e parceiro.");
+            }
+            break;
 
-        const result = await client.query(insertQuery, values);
+          case 90:
+          case 10:
+            if (!codParceiro) {
+              throw new Error("Esta categoria exige parceiro.");
+            }
+            break;
 
-        return {
-          rows: result.rows,
-          rowCount: result.rowCount,
-        };
-        // Commit implícito se não houve erro
-      } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+          case 97:
+          case 8:
+            if (!codBancoDestino) {
+              throw new Error("Transferência entre contas exige banco destino.");
+            }
+            break;
+        }
+      };
+
+      validarCategoria();
+
+      const updateQuery = `
+        UPDATE ${schema}.tab_movimentacao
+           SET cod_categoria_movimento = $1,
+               des_categoria_movimento = $2,
+               ind_conciliado = $3,
+               dta_conciliado = $4,
+               seq_veiculo = $5,
+               cod_parceiro = $6,
+               nom_parceiro = $7,
+               cod_banco_destino = $8,
+               des_banco_destino = $9,
+               des_observacao = $10,
+               des_movimento_detalhado = $11,
+               criterio_conciliacao = COALESCE($12, criterio_conciliacao),
+               des_status_validacao = $13
+         WHERE seq_registro = $14
+         RETURNING *
+      `;
+
+      const values = [
+        movimento.cod_categoria_movimento || null,
+        movimento.des_categoria_movimento || null,
+        movimento.ind_conciliado === true ? true : false,
+        movimento.ind_conciliado === true ? moment().format() : null,
+        seqVeiculo,
+        codParceiro,
+        movimento.nom_parceiro || null,
+        codBancoDestino,
+        movimento.des_banco_destino || null,
+        movimento.des_observacao || null,
+        movimento.des_movimento_detalhado || null,
+        movimento.criterio_conciliacao || null,
+        movimento.ind_conciliado === true ? "VALIDADO_E_CONCILIADO" : "VALIDADO",
+        movimento.seq_registro,
+      ];
+
+      const result = await client.query(updateQuery, values);
+
+      if (result.rowCount === 0) {
+        throw new Error("Movimento não encontrado para atualização.");
       }
+
+      if (seqVeiculo) {
+        await client.query(
+          `UPDATE ${schema}.tab_veiculo
+              SET cod_movimentacao = $1,
+                  financeiro_incluso = true
+            WHERE seq_veiculo = $2`,
+          [movimento.seq_registro, seqVeiculo]
+        );
+      }
+
+      return {
+        rows: result.rows,
+        rowCount: result.rowCount,
+      };
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
       message: "Operação realizada com sucesso",
@@ -4862,3 +5465,106 @@ exports.updateMovimentoFinanceiro = async (req, res) => {
     });
   }
 };
+
+//helpers Conciliacao
+
+
+function normalizeValorPorTipo(tipo, valor) {
+  const n = Number(valor || 0);
+  if (Number.isNaN(n) || n === 0) {
+    throw new Error("val_movimento inválido.");
+  }
+  return tipo === "E" ? Math.abs(n) : -Math.abs(n);
+}
+
+function gerarHashConciliacao({ cod_banco, dta_movimento, val_movimento, des_movimento, id_unico }) {
+  return crypto
+    .createHash("md5")
+    .update(
+      [
+        cod_banco || "",
+        dta_movimento || "",
+        val_movimento || 0,
+        des_movimento || "",
+        id_unico || "",
+      ].join("|")
+    )
+    .digest("hex");
+}
+
+function validarCategoriaFinanceira({
+  categoria,
+  seq_veiculo,
+  cod_parceiro,
+  nom_parceiro,
+  cod_banco,
+  cod_banco_destino,
+  des_observacao,
+  des_movimento_detalhado,
+}) {
+  switch (Number(categoria || 0)) {
+    // Crédito com vínculo forte em veículo
+    case 95: // Venda de Veículos Próprios
+    case 91: // Recebimento de Vendas a Prazo
+    case 92: // Recebimento de Consórcios
+    case 93: // Recebimento de Financiamentos
+      if (!seq_veiculo) {
+        throw new Error("Esta categoria exige vínculo com veículo.");
+      }
+      break;
+
+    case 99: // Retorno Financiamento
+      if (!seq_veiculo && !des_movimento_detalhado && !des_observacao) {
+        throw new Error("Informe veículo ou detalhamento para esta categoria.");
+      }
+      break;
+
+    case 94: // Venda de Veículos de Parceiros
+      if (!seq_veiculo || !cod_parceiro) {
+        throw new Error("Venda de veículo de parceiro exige veículo e parceiro.");
+      }
+      break;
+
+    case 90: // Recebimento Conta de Parceiros
+    case 10: // Pagamento de Conta de Parceiros
+      if (!cod_parceiro) {
+        throw new Error("Esta categoria exige parceiro.");
+      }
+      break;
+
+    case 96: // Recebimento de Terceiros
+    case 98: // Recebimento de Empréstimos
+    case 9:  // Pagamento a Terceiros
+    case 6:  // Empréstimos Concedidos
+      if (!cod_parceiro && !nom_parceiro && !des_observacao) {
+        throw new Error("Informe parceiro, nome do terceiro ou observação.");
+      }
+      break;
+
+    case 97: // Entrada por Transferência entre Contas
+    case 8:  // Saída por Transferência entre Contas
+      if (!cod_banco_destino) {
+        throw new Error("Transferência entre contas exige banco destino.");
+      }
+      if (Number(cod_banco_destino) === Number(cod_banco)) {
+        throw new Error("Banco de destino deve ser diferente do banco de origem.");
+      }
+      break;
+
+    case 4: // Despesas Veículos
+    case 5: // Comissões de Venda
+    case 7: // Compra de Veículo
+      if (!seq_veiculo) {
+        throw new Error("Esta categoria exige vínculo com veículo.");
+      }
+      break;
+
+    case 11: // Despesas à reembolsar (Sócio)
+    case 12: // Prolabore (Sócio)
+      if (!des_observacao && !des_movimento_detalhado) {
+        throw new Error("Informe observação ou detalhamento para esta categoria.");
+      }
+      break;
+  }
+}
+
