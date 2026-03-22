@@ -636,11 +636,11 @@ class Lead {
     return {
       ...result,
       taxaConversao:
-        Number(result?.totalLeads || 0) > 0
+        Number(result?.total_leads || 0) > 0
           ? Number(
               (
                 (Number(result.vendidos || 0) /
-                  Number(result.totalLeads || 0)) *
+                  Number(result.total_leads || 0)) *
                 100
               ).toFixed(2),
             )

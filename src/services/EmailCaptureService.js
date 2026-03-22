@@ -93,10 +93,7 @@ class EmailCaptureService {
       return;
     }
 
-    const delay = Math.min(
-      30000 * Math.pow(2, this.reconnectAttempts),
-      300000,
-    );
+    const delay = Math.min(30000 * Math.pow(2, this.reconnectAttempts), 300000);
     console.log(`🔄 Tentando reconectar IMAP em ${delay / 1000} segundos...`);
 
     if (this.reconnectTimer) {
@@ -629,6 +626,15 @@ class EmailCaptureService {
       }
     }
 
+    if (platform === "Mobiauto") {
+      if (subject.includes("BOLETO EM ABERTO")) {
+        return "email";
+      }
+      if (senderEmail === "mailer@vindi.com.br") {
+        return "email";
+      }
+    }
+
     return "lead";
   }
 
@@ -813,7 +819,9 @@ class EmailCaptureService {
       .trim();
 
     const html = String(emailData?.html || "");
-    const subjectNorm = String(subject || "").replace(/\s+/g, " ").trim();
+    const subjectNorm = String(subject || "")
+      .replace(/\s+/g, " ")
+      .trim();
     const lowerSubject = subjectNorm.toLowerCase();
     const replyToEmail = emailData?.replyTo?.value?.[0]?.address || null;
     const replyToName = emailData?.replyTo?.text || null;
@@ -915,9 +923,7 @@ class EmailCaptureService {
 
       const telefoneLine =
         block.find((l) => /\b\d{2}\s?9?\d{4,5}\s?\d{4}\b/.test(l)) || null;
-      const telefone = telefoneLine
-        ? telefoneLine.replace(/\D/g, "")
-        : null;
+      const telefone = telefoneLine ? telefoneLine.replace(/\D/g, "") : null;
 
       let cidade = null;
       if (telefoneLine) {
@@ -931,9 +937,7 @@ class EmailCaptureService {
       let mensagem =
         "Cliente do iCarros com possível proposta. Entre em contato rapidamente.";
 
-      const markerIdx = block.findIndex((l) =>
-        /Conferir an[uú]ncio/i.test(l),
-      );
+      const markerIdx = block.findIndex((l) => /Conferir an[uú]ncio/i.test(l));
 
       if (markerIdx >= 2) {
         const linha1 = block[markerIdx - 2] || "";
@@ -961,13 +965,22 @@ class EmailCaptureService {
 
     if (isReminderBV) {
       const nome =
-        combined.match(/CPF:\s*[\d\.\-]+\s*\n\s*([A-Za-zÀ-ÿ\s]+)$/im)?.[1]?.trim() ||
-        combined.match(/CPF:\s*[\d\.\-]+[\s\S]*?\n([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s]+)\s*$/im)?.[1]?.trim() ||
-        combined.match(/([A-Za-zÀ-ÿ]+\s+[A-Za-zÀ-ÿ\s]+)\s+pode ser aprovado no banco BV/i)?.[1]?.trim() ||
+        combined
+          .match(/CPF:\s*[\d\.\-]+\s*\n\s*([A-Za-zÀ-ÿ\s]+)$/im)?.[1]
+          ?.trim() ||
+        combined
+          .match(
+            /CPF:\s*[\d\.\-]+[\s\S]*?\n([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s]+)\s*$/im,
+          )?.[1]
+          ?.trim() ||
+        combined
+          .match(
+            /([A-Za-zÀ-ÿ]+\s+[A-Za-zÀ-ÿ\s]+)\s+pode ser aprovado no banco BV/i,
+          )?.[1]
+          ?.trim() ||
         null;
 
-      const cpf =
-        combined.match(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/)?.[0] || null;
+      const cpf = combined.match(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/)?.[0] || null;
 
       const telefone =
         combined
@@ -1048,7 +1061,9 @@ class EmailCaptureService {
       null;
 
     const mensagem =
-      cleanedDecoded.match(/Mensagem\s+[“"']?([^"”'\n]+)[”"']?/i)?.[1]?.trim() ||
+      cleanedDecoded
+        .match(/Mensagem\s+[“"']?([^"”'\n]+)[”"']?/i)?.[1]
+        ?.trim() ||
       "Você ainda não recebeu uma mensagem, mas a pessoa se interessou pelo carro. Aproveite o contato!";
 
     const preco =
@@ -1430,9 +1445,8 @@ class EmailCaptureService {
 
   detectClassifiedOrigin(emailData) {
     const { subject, text, html } = emailData;
-    const fullText = (
-      `${subject || ""} ${text || ""} ${this.htmlToText(html || "")}`
-    ).toLowerCase();
+    const fullText =
+      `${subject || ""} ${text || ""} ${this.htmlToText(html || "")}`.toLowerCase();
 
     if (fullText.includes("olx")) return "OLX";
     if (fullText.includes("webmotors")) return "Webmotors";
@@ -1641,7 +1655,9 @@ class EmailCaptureService {
       });
     }
 
-    console.log("⏰ Agendador de captura iniciado (verificação a cada 2 minutos)");
+    console.log(
+      "⏰ Agendador de captura iniciado (verificação a cada 2 minutos)",
+    );
 
     if (!this.cacheCleanupTask) {
       this.cacheCleanupTask = cron.schedule("0 2 * * *", () => {
