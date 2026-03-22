@@ -3,7 +3,7 @@ if (process.env.NODE_ENV !== "production") {
   require("dotenv-safe").config({ example: ".env.example" });
 }
 const moment = require("moment");
-const cron = require('node-cron');
+const cron = require("node-cron");
 const jwt = require("jsonwebtoken");
 const fs = require("fs");
 const { Console, error } = require("console");
@@ -17,21 +17,28 @@ exports.verifyTokenSim = async (req, res, next) => {
   if (token === tokenValido) {
     next(); // Chama o próximo middleware se o token for válido
   } else {
-    return res.status(401).json({ auth: false, message: "Auth-Token inválido." });
+    return res
+      .status(401)
+      .json({ auth: false, message: "Auth-Token inválido." });
   }
 };
 
 exports.cadastraVeiculo = async (req, res) => {
+  const dataAtual = moment().format();
+  const { dados_veiculo, imagens_veiculo } = req.body;
+  const schema = req.headers["schema"];
 
-  const dataAtual = moment().format()
-  const { dados_veiculo, imagens_veiculo } = req.body; // Agora recebe o objeto diretamente, não mais um array em data
-  const schema = req.headers['schema']; // ou req.get('schema')
+  if (!schema) {
+    return res.status(400).json({
+      success: false,
+      message: "Schema não especificado nos headers",
+    });
+  }
 
   try {
     await db.transaction(async (client) => {
-      // Extrai os campos do body
       const {
-        ind_tipo_veiculo, // recebe valor P para o lojista realizar o ajuste necessario
+        ind_tipo_veiculo,
         nome_documento,
         des_veiculo_personalizado,
         documento,
@@ -56,28 +63,38 @@ exports.cadastraVeiculo = async (req, res) => {
         cod_parceiro,
         des_proprietario,
         ind_veiculo_investidor,
-        ind_importado, // recebe true toda vez que for veiculo importado por xml
-        id_importacao //recebe o id do xml
+        ind_importado,
+        id_importacao,
       } = dados_veiculo;
 
-      // Monta o objeto com os campos para inserção
+      const imagensValidas = Array.isArray(imagens_veiculo)
+        ? imagens_veiculo
+            .filter((img) => img && img.src)
+            .slice(0, 12)
+        : [];
+
       const veiculoFields = {
-        des_veiculo: `${marca} ${modelo}`, // Combina marca e modelo
+        des_veiculo: `${marca ?? ""} ${modelo ?? ""}`.trim(),
         des_veiculo_personalizado,
-        observacoes: observacoes === null ? `Cor: ${cor}, Combustível: ${combustivel}, Motor: ${motorizacao}, Portas: ${portas}, Câmbio: ${cambio}, KM: ${km}` : observacoes,
+        observacoes:
+          observacoes == null
+            ? `Cor: ${cor ?? ""}, Combustível: ${combustivel ?? ""}, Motor: ${motorizacao ?? ""}, Portas: ${portas ?? ""}, Câmbio: ${cambio ?? ""}, KM: ${km ?? ""}`
+            : observacoes,
         dta_compra,
-        img_veiculo_capa: imagens_veiculo[0].src ?? null,
+        img_veiculo_capa_url: imagensValidas?.[0]?.src ?? null,
         ind_tipo_veiculo,
-        des_proprietario: ind_tipo_veiculo === 'P' ? 'Prime Veiculos' : des_proprietario, // Ajustar conforme necessário
+        des_proprietario:
+          ind_tipo_veiculo === "P" ? "Prime Veiculos" : des_proprietario,
         val_venda_esperado,
-        cod_parceiro: cod_parceiro || 0, // Ajustar se tiver parceiro
+        cod_parceiro: cod_parceiro || 0,
         documento,
         nome_documento,
         renavam,
         placa,
         ano_fabricacao,
         ano_modelo,
-        des_veiculo_completa: `${marca} ${modelo} ${ano_fabricacao} ${cor}`, // Descrição completa
+        des_veiculo_completa:
+          `${marca ?? ""} ${modelo ?? ""} ${ano_fabricacao ?? ""} ${cor ?? ""}`.trim(),
         chassis,
         modelo,
         modelo_completo,
@@ -90,21 +107,15 @@ exports.cadastraVeiculo = async (req, res) => {
         motorizacao,
         portas,
         cambio,
-        valor_investido_investidor: 0, // Ajustar se for veículo de investidor
+        valor_investido_investidor: 0,
         valor_investido_proprio: 0,
-        ind_veiculo_investidor: ind_veiculo_investidor,
+        ind_veiculo_investidor,
         ind_importado,
-        id_importacao
+        id_importacao,
       };
 
-      // Construímos a query dinamicamente
-      const columns = Object.keys(veiculoFields).join(', ');
-      const values = Object.values(veiculoFields);
-      const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
-
-      // Campos com valores fixos (mesmo do código anterior)
       const fixedValues = {
-        ind_status: 'A',
+        ind_status: "A",
         val_venda: null,
         val_compra: null,
         dta_venda: null,
@@ -113,51 +124,63 @@ exports.cadastraVeiculo = async (req, res) => {
         ind_retorno_vinculado: false,
         cod_usuario_vinculado: 0,
         ind_ocorrencia_aberta: false,
-        ind_financiado: false
+        ind_financiado: false,
       };
 
-      // Query final com todos os campos
-      const insertVeiculoQuery = `
-          INSERT INTO ${schema}.tab_veiculo (
-            ${columns}, ${Object.keys(fixedValues).join(', ')}
-          ) VALUES (
-            ${placeholders}, ${Object.values(fixedValues).map((_, i) => `$${values.length + i + 1}`).join(', ')}
-          )
-          RETURNING seq_veiculo; 
-        `;
+      const veiculoColumns = [
+        ...Object.keys(veiculoFields),
+        ...Object.keys(fixedValues),
+      ];
 
-      // Executa a inserção do veículo
-      const veiculoResult = await client.query(insertVeiculoQuery, [...values, ...Object.values(fixedValues)]);
+      const veiculoValues = [
+        ...Object.values(veiculoFields),
+        ...Object.values(fixedValues),
+      ];
+
+      const veiculoPlaceholders = veiculoValues
+        .map((_, i) => `$${i + 1}`)
+        .join(", ");
+
+      const insertVeiculoQuery = `
+        INSERT INTO ${schema}.tab_veiculo (
+          ${veiculoColumns.join(", ")}
+        ) VALUES (
+          ${veiculoPlaceholders}
+        )
+        RETURNING seq_veiculo;
+      `;
+
+      const veiculoResult = await client.query(
+        insertVeiculoQuery,
+        veiculoValues
+      );
+
       const seqVeiculo = veiculoResult.rows[0].seq_veiculo;
 
-      if (imagens_veiculo && imagens_veiculo.length > 0) {
-        // Prepara os dados para inserção em UM ÚNICO REGISTRO
-        const columns = ['seq_veiculo'];
-        const values = [seqVeiculo];
-        const placeholders = ['$1'];
+      if (imagensValidas.length > 0) {
+        const imageColumns = ["seq_veiculo"];
+        const imageValues = [seqVeiculo];
+        const imagePlaceholders = ["$1"];
 
-        // Adiciona até 12 imagens (img_1 a img_12)
-        for (let i = 0; i < Math.min(imagens_veiculo.length, 12); i++) {
+        for (let i = 0; i < imagensValidas.length; i++) {
           const imageIndex = i + 1;
-          columns.push(`img_${imageIndex}`);
-          values.push(imagens_veiculo[i].src);
-          placeholders.push(`$${values.length}`);
-
-          console.log(imagens_veiculo[i].id)
+          imageColumns.push(`img_${imageIndex}_url`);
+          imageValues.push(imagensValidas[i].src);
+          imagePlaceholders.push(`$${imageValues.length}`);
         }
 
-        // Monta a query dinamicamente
-        const query = `
-              INSERT INTO ${schema}.tab_veiculo_imagem
-              (${columns.join(', ')})
-              VALUES
-              (${placeholders.join(', ')})
-          `;
+        const insertImagemQuery = `
+          INSERT INTO ${schema}.tab_veiculo_imagem
+          (${imageColumns.join(", ")})
+          VALUES
+          (${imagePlaceholders.join(", ")})
+        `;
 
-        // Executa uma ÚNICA inserção com todas as imagens
-        await client.query(query, values);
+        await client.query(insertImagemQuery, imageValues);
 
-        console.log(`Inserido registro com ${Math.min(imagens_veiculo.length, 12)} imagens para o veículo ${seqVeiculo}`);
+        console.log(
+          `Inserido registro com ${imagensValidas.length} imagens para o veículo ${seqVeiculo}`
+        );
       }
     });
 
@@ -170,7 +193,7 @@ exports.cadastraVeiculo = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Falha ao cadastrar o veículo",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -179,7 +202,7 @@ exports.salvaVeiculo = async (req, res) => {
   const dataAtual = moment().format();
   const { dados_veiculo, imagens_veiculo, img_alterada } = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     await db.transaction(async (client) => {
@@ -216,12 +239,12 @@ exports.salvaVeiculo = async (req, res) => {
         valor_investido_proprio,
         imgCapaBase64,
         ind_veiculo_investidor,
-        cod_banco
+        cod_banco,
       } = dados_veiculo;
 
       // Verifica se seq_veiculo existe (obrigatório para UPDATE)
       if (!seq_veiculo) {
-        throw new Error('seq_veiculo é obrigatório para atualização');
+        throw new Error("seq_veiculo é obrigatório para atualização");
       }
 
       // Monta o objeto com os campos para atualização
@@ -231,9 +254,11 @@ exports.salvaVeiculo = async (req, res) => {
         des_veiculo_personalizado: des_veiculo_personalizado,
         observacoes: observacoes,
         dta_compra: dta_compra,
-        img_veiculo_capa: img_alterada === true ? imagens_veiculo[0]?.src : imgCapaBase64, // Adicionado tratamento para imagem não existente
+        img_veiculo_capa:
+          img_alterada === true ? imagens_veiculo[0]?.src : imgCapaBase64, // Adicionado tratamento para imagem não existente
         ind_tipo_veiculo: ind_tipo_veiculo,
-        des_proprietario: ind_tipo_veiculo === 'P' ? 'Prime Veiculos' : des_proprietario,
+        des_proprietario:
+          ind_tipo_veiculo === "P" ? "Prime Veiculos" : des_proprietario,
         val_venda_esperado: val_venda_esperado,
         cod_parceiro: cod_parceiro || 0,
         documento: documento,
@@ -259,11 +284,11 @@ exports.salvaVeiculo = async (req, res) => {
         ind_veiculo_investidor: ind_veiculo_investidor,
         dta_ultima_alteracao: dataAtual,
         cod_banco: cod_banco,
-        financeiro_incluso: true
+        financeiro_incluso: true,
       };
 
       // Remove campos com valor undefined/null para evitar erros
-      Object.keys(veiculoFields).forEach(key => {
+      Object.keys(veiculoFields).forEach((key) => {
         if (veiculoFields[key] === undefined || veiculoFields[key] === null) {
           delete veiculoFields[key];
         }
@@ -272,7 +297,7 @@ exports.salvaVeiculo = async (req, res) => {
       // Constrói a parte SET da query dinamicamente
       const setClause = Object.keys(veiculoFields)
         .map((key, index) => `${key} = $${index + 1}`)
-        .join(', ');
+        .join(", ");
 
       // Valores para o SET
       const values = Object.values(veiculoFields);
@@ -292,20 +317,27 @@ exports.salvaVeiculo = async (req, res) => {
       const veiculoResult = await client.query(updateVeiculoQuery, values);
 
       if (veiculoResult.rowCount === 0) {
-        throw new Error('Nenhum veículo encontrado para atualização');
+        throw new Error("Nenhum veículo encontrado para atualização");
       }
 
       const seqVeiculo = veiculoResult.rows[0].seq_veiculo;
 
       // Atualiza as imagens se necessário
-      if (imagens_veiculo && imagens_veiculo.length > 0 && img_alterada === true) {
+      if (
+        imagens_veiculo &&
+        imagens_veiculo.length > 0 &&
+        img_alterada === true
+      ) {
         // Primeiro deleta as imagens existentes
-        await client.query(`DELETE FROM ${schema}.tab_veiculo_imagem WHERE seq_veiculo = $1`, [seqVeiculo]);
+        await client.query(
+          `DELETE FROM ${schema}.tab_veiculo_imagem WHERE seq_veiculo = $1`,
+          [seqVeiculo],
+        );
 
         // Prepara os dados para inserção
-        const columns = ['seq_veiculo'];
+        const columns = ["seq_veiculo"];
         const insertValues = [seqVeiculo];
-        const placeholders = ['$1'];
+        const placeholders = ["$1"];
 
         // Adiciona até 12 imagens (img_1 a img_12)
         for (let i = 0; i < Math.min(imagens_veiculo.length, 12); i++) {
@@ -318,9 +350,9 @@ exports.salvaVeiculo = async (req, res) => {
         // Monta a query de INSERT
         const insertImagensQuery = `
           INSERT INTO ${schema}.tab_veiculo_imagem
-          (${columns.join(', ')})
+          (${columns.join(", ")})
           VALUES
-          (${placeholders.join(', ')})
+          (${placeholders.join(", ")})
         `;
 
         // Executa a inserção das novas imagens
@@ -336,7 +368,7 @@ exports.salvaVeiculo = async (req, res) => {
     console.error("Erro ao atualizar veículo:", error);
     res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição no servidor',
+      message: "Erro ao processar a requisição no servidor",
       details: error.message,
       //errorDetails: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
@@ -344,92 +376,56 @@ exports.salvaVeiculo = async (req, res) => {
 };
 
 exports.buscaVeiculo = async (req, res) => {
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   if (!schema) {
     return res.status(400).json({
       success: false,
-      message: "Schema não especificado nos headers"
+      message: "Schema não especificado nos headers",
     });
   }
 
   try {
-    // Consulta principal de veículos
     const veiculos = await db.getMany(`
-      SELECT * FROM ${schema}.tab_veiculo
+      SELECT *
+      FROM ${schema}.tab_veiculo
       WHERE ind_status != 'E'
-      ORDER BY seq_veiculo DESC`);
+      ORDER BY seq_veiculo DESC
+    `);
 
-    // Processamento assíncrono dos veículos
-    const veiculosComDocumentosEImagens = await Promise.all(
-      veiculos.map(async veiculo => {
-        // Cria cópia do veículo sem o documento original
-        const veiculoConvertido = { ...veiculo };
+    const veiculosTratados = veiculos.map((veiculo) => {
+      const imagemCapa = veiculo.img_veiculo_capa_url
+        ? veiculo.img_veiculo_capa_url
+        : veiculo.img_veiculo_capa
+          ? Buffer.isBuffer(veiculo.img_veiculo_capa)
+            ? veiculo.img_veiculo_capa.toString()
+            : veiculo.img_veiculo_capa
+          : null;
 
-        // Converte o documento PDF para Base64 (se existir)
-        if (veiculo.documento) {
-          veiculoConvertido.documentoBase64 =
-            veiculo.documento = veiculo.documento.toString()
+      const documentoBase64 = veiculo.documento
+        ? Buffer.isBuffer(veiculo.documento)
+          ? veiculo.documento.toString()
+          : veiculo.documento
+        : null;
 
-          // Remove o documento original para economizar espaço
-          delete veiculoConvertido.documento;
-        }
-
-        if (veiculo.img_veiculo_capa) {
-          veiculoConvertido.imgCapaBase64 =
-            veiculo.img_veiculo_capa = veiculo.img_veiculo_capa.toString()
-
-          // Remove o documento original para economizar espaço
-          delete veiculoConvertido.img_veiculo_capa;
-        }
-
-        // // Busca as imagens do veículo
-        // const imagens = await db.getMany(`
-        //   SELECT img_1, img_2, img_3, img_4, img_5, img_6, img_7, img_8, img_9, img_10, img_11, img_12
-        //   FROM ${schema}.tab_veiculo_imagem
-        //   WHERE seq_veiculo = $1`, [veiculo.seq_veiculo]);
-
-        // const imagensConvertidas = imagens.map(row => {
-        //   const {
-        //     img_1, img_2, img_3, img_4, img_5, img_6,
-        //     img_7, img_8, img_9, img_10, img_11, img_12
-        //   } = row;
-
-        //   return {
-        //     img_1: img_1 !== null ? img_1.toString() : null,
-        //     img_2: img_2 !== null ? img_2.toString() : null,
-        //     img_3: img_3 !== null ? img_3.toString() : null,
-        //     img_4: img_4 !== null ? img_4.toString() : null,
-        //     img_5: img_5 !== null ? img_5.toString() : null,
-        //     img_6: img_6 !== null ? img_6.toString() : null,
-        //     img_7: img_7 !== null ? img_7.toString() : null,
-        //     img_8: img_8 !== null ? img_8.toString() : null,
-        //     img_9: img_9 !== null ? img_9.toString() : null,
-        //     img_10: img_10 !== null ? img_10.toString() : null,
-        //     img_11: img_11 !== null ? img_11.toString() : null,
-        //     img_12: img_12 !== null ? img_12.toString() : null,
-        //   };
-        // });
-
-        return {
-          ...veiculoConvertido,
-          //imagens: imagensConvertidas
-        };
-      })
-    );
+      return {
+        ...veiculo,
+        imagemCapa,
+        documentoBase64,
+      };
+    });
 
     res.status(200).json({
       success: true,
-      data: veiculosComDocumentosEImagens,
-      count: veiculosComDocumentosEImagens.length
+      data: veiculosTratados,
+      count: veiculosTratados.length,
     });
-
   } catch (error) {
     console.error("Erro ao buscar veículos:", error);
     res.status(500).json({
       success: false,
       message: "Falha ao buscar veículos",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -437,7 +433,7 @@ exports.buscaVeiculo = async (req, res) => {
 exports.excluirVeiculo = async (req, res) => {
   const { seq_veiculo, motivo_exclusao } = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -449,17 +445,17 @@ exports.excluirVeiculo = async (req, res) => {
                                   motivo_exclusao = $2
                               WHERE seq_veiculo = $3 `;
 
-        const values = ['E', motivo_exclusao, seq_veiculo]
+        const values = ["E", motivo_exclusao, seq_veiculo];
 
         const result = await client.query(insertQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -467,44 +463,70 @@ exports.excluirVeiculo = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.buscaImgVeiculo = async (req, res) => {
   const { seq_veiculo } = req.body;
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
+
+  if (!schema) {
+    return res.status(400).json({
+      success: false,
+      message: "Schema não especificado nos headers",
+    });
+  }
+
+  if (!seq_veiculo) {
+    return res.status(400).json({
+      success: false,
+      message: "seq_veiculo não informado",
+    });
+  }
 
   try {
     const result = await db.transaction(async (client) => {
-      const query = `SELECT * FROM ${schema}.tab_veiculo_imagem WHERE seq_veiculo = $1`;
+      const query = `
+        SELECT *
+        FROM ${schema}.tab_veiculo_imagem
+        WHERE seq_veiculo = $1
+      `;
       const values = [seq_veiculo];
 
       const queryResult = await client.query(query, values);
 
-      // Processa todas as imagens de todos os registros
-      const resultados = queryResult.rows.map(row => {
+      const resultados = queryResult.rows.map((row) => {
         const imagensDoRegistro = [];
 
-        // Verifica cada coluna de imagem (img_1 a img_12)
         for (let i = 1; i <= 12; i++) {
-          const colName = `img_${i}`;
-          if (row[colName] !== null) {
+          const legacyCol = `img_${i}`;
+          const urlCol = `img_${i}_url`;
+
+          let imagemFinal = null;
+
+          if (row[urlCol]) {
+            imagemFinal = row[urlCol];
+          } else if (row[legacyCol] !== null && row[legacyCol] !== undefined) {
+            imagemFinal = Buffer.isBuffer(row[legacyCol])
+              ? row[legacyCol].toString()
+              : row[legacyCol];
+          }
+
+          if (imagemFinal) {
             imagensDoRegistro.push({
               posicao: i,
-              imagem: Buffer.isBuffer(row[colName])
-                ? row[colName].toString()
-                : row[colName]
+              imagem: imagemFinal,
             });
           }
         }
@@ -513,29 +535,27 @@ exports.buscaImgVeiculo = async (req, res) => {
           seq_registro: row.seq_registro,
           seq_veiculo: row.seq_veiculo,
           imagens: imagensDoRegistro,
-          total_imagens: imagensDoRegistro.length
+          total_imagens: imagensDoRegistro.length,
         };
       });
 
       return {
         registros: resultados,
-        total_registros: queryResult.rowCount
+        total_registros: queryResult.rowCount,
       };
     });
 
     return res.status(200).json({
       success: true,
-      message: 'Imagens recuperadas com sucesso',
-      data: result
+      message: "Imagens recuperadas com sucesso",
+      data: result,
     });
-
   } catch (error) {
-    console.error('Erro ao buscar imagens:', error);
+    console.error("Erro ao buscar imagens:", error);
     return res.status(500).json({
       success: false,
-      message: 'Falha ao recuperar imagens do veículo',
+      message: "Falha ao recuperar imagens do veículo",
       details: error.message,
-      //errorDetails: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 };
@@ -546,28 +566,41 @@ exports.atualizarImagemVeiculo = async (req, res) => {
   let paramIndex = 2;
 
   imagens_veiculo.forEach((image, index) => {
-    if (index < 10) { // Para não exceder img_10
+    if (index < 10) {
+      // Para não exceder img_10
       setClauses.push(`img_${index + 1} = $${paramIndex}`);
       values.push(image);
       paramIndex++;
     }
-  }
-  );
+  });
 
-  await client.query(`
+  await client.query(
+    `
         UPDATE ${schema}.tab_veiculo_imagem
-        SET ${setClauses.join(', ')}
+        SET ${setClauses.join(", ")}
         WHERE seq_veiculo = $1
-        `, values);
-}
+        `,
+    values,
+  );
+};
 
 exports.cadastraDocumentoVeiculo = async (req, res) => {
-
-  let { seq_veiculo, des_veiculo, documento, nome_documento, renavam, placa, ano, des_veiculo_completa, chassis, modelo } = req.body;
+  let {
+    seq_veiculo,
+    des_veiculo,
+    documento,
+    nome_documento,
+    renavam,
+    placa,
+    ano,
+    des_veiculo_completa,
+    chassis,
+    modelo,
+  } = req.body;
 
   try {
-
-    await db.queryGaragem(`
+    await db.queryGaragem(
+      `
       UPDATE tab_veiculo
       SET 
         des_veiculo = $1,
@@ -580,58 +613,82 @@ exports.cadastraDocumentoVeiculo = async (req, res) => {
         chassis = $8,
         modelo = $9
       WHERE seq_veiculo = $10
-    `, [des_veiculo, documento, nome_documento, renavam, placa, ano, des_veiculo_completa, chassis, modelo, seq_veiculo]);
+    `,
+      [
+        des_veiculo,
+        documento,
+        nome_documento,
+        renavam,
+        placa,
+        ano,
+        des_veiculo_completa,
+        chassis,
+        modelo,
+        seq_veiculo,
+      ],
+    );
 
     res.status(200).json({
       message: "Documento Anexado com sucesso.",
     });
-
   } catch (error) {
     res.status(500).json({
-      message: "Falha em anexar documento:" + error
+      message: "Falha em anexar documento:" + error,
     });
   }
-
 };
 
 exports.cadastraCompromissoAgenda = async (req, res) => {
-  const { seq_registro, titulo, hora, dia, descricao, concluido = false, tipo, repeatMonths } = req.body;
-  const schema = req.headers['schema'];
+  const {
+    seq_registro,
+    titulo,
+    hora,
+    dia,
+    descricao,
+    concluido = false,
+    tipo,
+    repeatMonths,
+  } = req.body;
+  const schema = req.headers["schema"];
 
-  console.log(req.body)
+  console.log(req.body);
 
   // Validação dos campos obrigatórios
   if (!tipo) {
     return res.status(400).json({
       success: false,
-      message: "Tipo de operação não especificado (i=inserir, c=concluir, p=pendente, d=deletar)"
+      message:
+        "Tipo de operação não especificado (i=inserir, c=concluir, p=pendente, d=deletar)",
     });
   }
 
-  if (tipo === 'i' && (!titulo || !hora || !dia)) {
+  if (tipo === "i" && (!titulo || !hora || !dia)) {
     return res.status(400).json({
       success: false,
-      message: "Para inserção, campos obrigatórios faltando: titulo, hora e dia são necessários"
+      message:
+        "Para inserção, campos obrigatórios faltando: titulo, hora e dia são necessários",
     });
   }
 
-  if ((tipo === 'c' || tipo === 'p' || tipo === 'd') && !seq_registro) {
+  if ((tipo === "c" || tipo === "p" || tipo === "d") && !seq_registro) {
     return res.status(400).json({
       success: false,
-      message: "Para atualização/exclusão, seq_registro é obrigatório"
+      message: "Para atualização/exclusão, seq_registro é obrigatório",
     });
   }
 
   try {
     const result = await db.transaction(async (client) => {
       switch (tipo) {
-        case 'i': // Inserção
+        case "i": // Inserção
           const resultados = [];
           const dataBase = new Date(dia); // Data base para calcular os meses
 
           for (let index = 0; index < repeatMonths; index++) {
             // Calcula a data para cada mês CORRETAMENTE
-            const dataEvento = moment(dataBase).add(index, 'months').format('YYYY-MM-DD');
+            const dataEvento = moment(dataBase)
+              .add(index, "months")
+              .format("YYYY-MM-DD");
 
             const insertQuery = `
               INSERT INTO ${schema}.tab_agenda (titulo, hora, dia, descricao, concluido)
@@ -644,7 +701,7 @@ exports.cadastraCompromissoAgenda = async (req, res) => {
               hora,
               dataEvento, // Já está formatado como YYYY-MM-DD
               descricao || null,
-              Boolean(concluido)
+              Boolean(concluido),
             ]);
 
             // Verifica se há resultados antes de acessar
@@ -652,14 +709,14 @@ exports.cadastraCompromissoAgenda = async (req, res) => {
               resultados.push(resultado.rows[0]);
             } else {
               // Log para debug ou lançar erro
-              console.warn('Nenhum registro retornado no INSERT');
+              console.warn("Nenhum registro retornado no INSERT");
             }
           }
 
           return resultados;
 
-        case 'c': // Concluir
-        case 'p': // Pendente
+        case "c": // Concluir
+        case "p": // Pendente
           const updateQuery = `
             UPDATE ${schema}.tab_agenda 
             SET concluido = $1
@@ -667,16 +724,16 @@ exports.cadastraCompromissoAgenda = async (req, res) => {
             RETURNING seq_registro
           `;
           const updateResult = await client.query(updateQuery, [
-            tipo === 'c',
-            seq_registro
+            tipo === "c",
+            seq_registro,
           ]);
 
           if (!updateResult.rows || updateResult.rows.length === 0) {
-            throw new Error('Registro não encontrado para atualização');
+            throw new Error("Registro não encontrado para atualização");
           }
           return updateResult;
 
-        case 'd': // Deletar
+        case "d": // Deletar
           const deleteQuery = `
             DELETE FROM ${schema}.tab_agenda 
             WHERE seq_registro = $1
@@ -685,31 +742,31 @@ exports.cadastraCompromissoAgenda = async (req, res) => {
           const deleteResult = await client.query(deleteQuery, [seq_registro]);
 
           if (!deleteResult.rows || deleteResult.rows.length === 0) {
-            throw new Error('Registro não encontrado para exclusão');
+            throw new Error("Registro não encontrado para exclusão");
           }
           return deleteResult;
 
         default:
-          throw new Error('Tipo de operação inválido');
+          throw new Error("Tipo de operação inválido");
       }
     });
 
     const operationMessages = {
-      'i': `Compromissos inseridos com sucesso (${repeatMonths} meses)`,
-      'c': 'Compromisso marcado como concluído',
-      'p': 'Compromisso marcado como pendente',
-      'd': 'Compromisso removido com sucesso'
+      i: `Compromissos inseridos com sucesso (${repeatMonths} meses)`,
+      c: "Compromisso marcado como concluído",
+      p: "Compromisso marcado como pendente",
+      d: "Compromisso removido com sucesso",
     };
 
     // RESPOSTA CORRIGIDA - Trata diferentes tipos de retorno
-    if (tipo === 'i') {
+    if (tipo === "i") {
       // Para inserção: result é um array
       res.status(200).json({
         success: true,
         message: operationMessages[tipo],
         tipo: tipo,
         registros: result, // Array com todos os registros inseridos
-        total_inseridos: result.length
+        total_inseridos: result.length,
       });
     } else {
       // Para outros tipos: result é um objeto com rows
@@ -717,27 +774,26 @@ exports.cadastraCompromissoAgenda = async (req, res) => {
         success: true,
         message: operationMessages[tipo],
         tipo: tipo,
-        seq_registro: result.rows[0].seq_registro
+        seq_registro: result.rows[0].seq_registro,
       });
     }
-
   } catch (error) {
     console.error("Erro ao processar compromisso:", error);
     res.status(500).json({
       success: false,
       message: "Erro ao processar compromisso",
-      error: error.message
+      error: error.message,
     });
   }
 };
 
 exports.buscaCompromissosAgenda = async (req, res) => {
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   if (!schema) {
     return res.status(400).json({
       success: false,
-      message: "Schema não especificado nos headers"
+      message: "Schema não especificado nos headers",
     });
   }
 
@@ -767,7 +823,7 @@ exports.buscaCompromissosAgenda = async (req, res) => {
     const { rows } = await db.query(query);
 
     const result = {};
-    rows.forEach(row => {
+    rows.forEach((row) => {
       // Agora row.date virá corretamente como 'dia'
       result[row.date] = row.appointments;
     });
@@ -776,20 +832,18 @@ exports.buscaCompromissosAgenda = async (req, res) => {
       success: true,
       message: result,
     });
-
   } catch (error) {
     console.error("Erro ao buscar compromissos:", error);
     res.status(500).json({
       success: false,
       message: "Erro ao buscar compromissos",
-      error: error.message
+      error: error.message,
     });
   }
 };
 
 exports.buscaIntegradoresAtivos = async (req, res) => {
-
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const result = await db.transaction(async (client) => {
@@ -799,18 +853,18 @@ exports.buscaIntegradoresAtivos = async (req, res) => {
         const insertQuery = `SELECT seq_registro, nome_integrador from ${schema}.tab_integradores
                               WHERE ind_status = $1`;
 
-        const values = [true]
+        const values = [true];
 
         const queryResult = await client.query(insertQuery, values);
 
         return {
           rows: queryResult.rows,
-          rowCount: queryResult.rowCount
+          rowCount: queryResult.rowCount,
         };
 
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -818,25 +872,24 @@ exports.buscaIntegradoresAtivos = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: result
+      message: "Operação realizada com sucesso",
+      data: result,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.cadastraParceiros = async (req, res) => {
-
   const { nom_parceiro, ind_tipo, percentual_lucro } = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -846,17 +899,17 @@ exports.cadastraParceiros = async (req, res) => {
         const insertQuery = `INSERT INTO ${schema}.tab_parceiros (nom_parceiro, ind_tipo, percentual_lucro)
                              VALUES ($1, $2, $3)`;
 
-        const values = [nom_parceiro, ind_tipo, percentual_lucro]
+        const values = [nom_parceiro, ind_tipo, percentual_lucro];
 
         const result = await client.query(insertQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -864,23 +917,22 @@ exports.cadastraParceiros = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.buscaParceiros = async (req, res) => {
-
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -889,17 +941,17 @@ exports.buscaParceiros = async (req, res) => {
 
         const insertQuery = `select * from ${schema}.tab_parceiros WHERE ind_status = $1`;
 
-        const values = [true]
+        const values = [true];
 
         const result = await client.query(insertQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -907,25 +959,24 @@ exports.buscaParceiros = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.editaParceiros = async (req, res) => {
-
   const { seq_registro } = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -934,17 +985,17 @@ exports.editaParceiros = async (req, res) => {
 
         const insertQuery = `UPDATE ${schema}.tab_parceiros SET ind_status = $1 where seq_registro = $2`;
 
-        const values = [false, seq_registro]
+        const values = [false, seq_registro];
 
         const result = await client.query(insertQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -952,25 +1003,24 @@ exports.editaParceiros = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.cadastraBanco = async (req, res) => {
-
   const { des_banco, agencia, conta_corrente } = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -980,17 +1030,17 @@ exports.cadastraBanco = async (req, res) => {
         const insertQuery = `INSERT INTO ${schema}.tab_conta_banco (des_banco, agencia, conta_corrente)
                              VALUES ($1, $2, $3)`;
 
-        const values = [des_banco, agencia, conta_corrente]
+        const values = [des_banco, agencia, conta_corrente];
 
         const result = await client.query(insertQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -998,23 +1048,22 @@ exports.cadastraBanco = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.buscaBanco = async (req, res) => {
-
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -1023,17 +1072,17 @@ exports.buscaBanco = async (req, res) => {
 
         const insertQuery = `select * from ${schema}.tab_conta_banco WHERE ind_status = $1`;
 
-        const values = [true]
+        const values = [true];
 
         const result = await client.query(insertQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -1041,25 +1090,24 @@ exports.buscaBanco = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.editaBanco = async (req, res) => {
-
   const { seq_registro } = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -1068,17 +1116,17 @@ exports.editaBanco = async (req, res) => {
 
         const insertQuery = `UPDATE ${schema}.tab_conta_banco SET ind_status = $1 where seq_registro = $2`;
 
-        const values = [false, seq_registro]
+        const values = [false, seq_registro];
 
         const result = await client.query(insertQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -1086,25 +1134,24 @@ exports.editaBanco = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.cadastraCartao = async (req, res) => {
-
   const { bandeira, final_cartao, vencimento, fechamento } = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -1114,17 +1161,17 @@ exports.cadastraCartao = async (req, res) => {
         const insertQuery = `INSERT INTO ${schema}.tab_cartao (bandeira, final_cartao, vencimento, fechamento)
                              VALUES ($1, $2, $3, $4)`;
 
-        const values = [bandeira, final_cartao, vencimento, fechamento]
+        const values = [bandeira, final_cartao, vencimento, fechamento];
 
         const result = await client.query(insertQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -1132,23 +1179,22 @@ exports.cadastraCartao = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.buscaCartao = async (req, res) => {
-
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -1157,17 +1203,17 @@ exports.buscaCartao = async (req, res) => {
 
         const insertQuery = `select * from ${schema}.tab_cartao WHERE ind_status = $1`;
 
-        const values = [true]
+        const values = [true];
 
         const result = await client.query(insertQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -1175,25 +1221,24 @@ exports.buscaCartao = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.editaCartao = async (req, res) => {
-
   const { seq_registro } = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -1202,17 +1247,17 @@ exports.editaCartao = async (req, res) => {
 
         const insertQuery = `UPDATE ${schema}.tab_cartao SET ind_status = $1 where seq_registro = $2`;
 
-        const values = [false, seq_registro]
+        const values = [false, seq_registro];
 
         const result = await client.query(insertQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -1220,19 +1265,19 @@ exports.editaCartao = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.inserirMovimento = async (req, res) => {
   const {
@@ -1258,32 +1303,33 @@ exports.inserirMovimento = async (req, res) => {
     seq_despesa,
     cartao,
     seq_fatura,
-    ind_cartao_pago
+    ind_cartao_pago,
   } = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
         let lastResult;
 
-        if (totalParcelas && totalParcelas > 1) { // Verifica se há parcelamento
+        if (totalParcelas && totalParcelas > 1) {
+          // Verifica se há parcelamento
           for (let index = 0; index < totalParcelas; index++) {
             const numeroParcela = index + 1;
             let dataMovimento = moment(inputDtaMovimento); // Cria uma cópia modificável
 
             // Ajusta a data conforme o fechamento do cartão
-            const diaMesFechamento = moment(cartao.fechamento).format('MM-DD');
-            const diaMesMovimento = dataMovimento.format('MM-DD');
+            const diaMesFechamento = moment(cartao.fechamento).format("MM-DD");
+            const diaMesMovimento = dataMovimento.format("MM-DD");
 
             if (diaMesMovimento > diaMesFechamento) {
-              dataMovimento.add(30, 'days');
+              dataMovimento.add(30, "days");
             }
 
             // Adiciona 30 dias para cada parcela após a primeira
             if (index > 0) {
-              dataMovimento.add(30 * index, 'days');
+              dataMovimento.add(30 * index, "days");
             }
 
             // Calcula o valor da parcela (sem modificar a constante original)
@@ -1302,7 +1348,7 @@ exports.inserirMovimento = async (req, res) => {
 
             const values = [
               tipo_movimento,
-              dataMovimento.format('YYYY-MM-DD'), // Usa a data ajustada
+              dataMovimento.format("YYYY-MM-DD"), // Usa a data ajustada
               des_movimento,
               ind_conciliado,
               dta_conciliado,
@@ -1322,18 +1368,19 @@ exports.inserirMovimento = async (req, res) => {
               numeroParcela,
               seq_despesa,
               seq_fatura,
-              ind_cartao_pago
+              ind_cartao_pago,
             ];
 
             lastResult = await client.query(insertQuery, values);
 
-            if (seq_veiculo) { // Simplificado (null/undefined são falsy)
+            if (seq_veiculo) {
+              // Simplificado (null/undefined são falsy)
               const seq_registro = lastResult.rows[0].seq_registro;
               await client.query(
                 `UPDATE ${schema}.tab_veiculo 
                  SET cod_movimentacao = $1, financeiro_incluso = true
                  WHERE seq_veiculo = $2`,
-                [seq_registro, seq_veiculo]
+                [seq_registro, seq_veiculo],
               );
             }
           }
@@ -1372,7 +1419,7 @@ exports.inserirMovimento = async (req, res) => {
             totalParcelas,
             seq_despesa,
             seq_fatura,
-            ind_cartao_pago
+            ind_cartao_pago,
           ];
           lastResult = await client.query(insertQuery, values);
 
@@ -1389,35 +1436,42 @@ exports.inserirMovimento = async (req, res) => {
 
         return {
           rows: lastResult.rows,
-          rowCount: lastResult.rowCount
+          rowCount: lastResult.rowCount,
         };
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError;
       }
     });
 
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
 };
 
 exports.alteraMovimento = async (req, res) => {
+  const {
+    seq_registro,
+    ind_excluido,
+    ind_alterado,
+    val_movimento,
+    cod_banco,
+    cod_cartao,
+    dta_movimento,
+  } = req.body;
 
-  const { seq_registro, ind_excluido, ind_alterado, val_movimento, cod_banco, cod_cartao, dta_movimento } = req.body;
-
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -1428,17 +1482,25 @@ exports.alteraMovimento = async (req, res) => {
                              SET ind_excluido = $1, ind_alterado = $2, val_movimento = $3, cod_banco = $4, cod_cartao = $5, dta_movimento = $6
                              where seq_registro = $7`;
 
-        const values = [ind_excluido, ind_alterado, val_movimento, cod_banco, cod_cartao, dta_movimento, seq_registro]
+        const values = [
+          ind_excluido,
+          ind_alterado,
+          val_movimento,
+          cod_banco,
+          cod_cartao,
+          dta_movimento,
+          seq_registro,
+        ];
 
         const result = await client.query(updateQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -1446,26 +1508,37 @@ exports.alteraMovimento = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.inserirDespesaVeiculo = async (req, res) => {
-  const { cod_banco, cod_cartao, des_despesa, cod_tipo_despesa,
-    des_tipo_despesa, des_veiculo_garantia, dta_despesa,
-    ind_excluido, seq_veiculo, seq_veiculo_garantia, val_despesa, parcela } = req.body;
+  const {
+    cod_banco,
+    cod_cartao,
+    des_despesa,
+    cod_tipo_despesa,
+    des_tipo_despesa,
+    des_veiculo_garantia,
+    dta_despesa,
+    ind_excluido,
+    seq_veiculo,
+    seq_veiculo_garantia,
+    val_despesa,
+    parcela,
+  } = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -1479,9 +1552,20 @@ exports.inserirDespesaVeiculo = async (req, res) => {
                              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                              RETURNING seq_registro`;
 
-        const values = [cod_banco, cod_cartao, des_despesa, cod_tipo_despesa,
-          des_tipo_despesa, des_veiculo_garantia, dta_despesa,
-          ind_excluido, seq_veiculo, seq_veiculo_garantia, val_despesa, parcela]
+        const values = [
+          cod_banco,
+          cod_cartao,
+          des_despesa,
+          cod_tipo_despesa,
+          des_tipo_despesa,
+          des_veiculo_garantia,
+          dta_despesa,
+          ind_excluido,
+          seq_veiculo,
+          seq_veiculo_garantia,
+          val_despesa,
+          parcela,
+        ];
 
         const result = await client.query(insertQuery, values);
 
@@ -1490,11 +1574,11 @@ exports.inserirDespesaVeiculo = async (req, res) => {
         return {
           rows: result.rows,
           rowCount: result.rowCount,
-          registro: seq_registro
+          registro: seq_registro,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -1502,24 +1586,24 @@ exports.inserirDespesaVeiculo = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.buscaDespesaVeiculo = async (req, res) => {
   const { seq_veiculo } = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -1529,17 +1613,17 @@ exports.buscaDespesaVeiculo = async (req, res) => {
         const insertQuery = ` select * from ${schema}.tab_despesa_veiculo
                               where seq_veiculo = $1 `;
 
-        const values = [seq_veiculo]
+        const values = [seq_veiculo];
 
         const result = await client.query(insertQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -1547,24 +1631,22 @@ exports.buscaDespesaVeiculo = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.buscaMovimentoFinanceiro = async (req, res) => {
-
-
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -1573,24 +1655,27 @@ exports.buscaMovimentoFinanceiro = async (req, res) => {
 
         const selectQuery = `SELECT a.* from ${schema}.tab_movimentacao a order by a.seq_registro desc LIMIT $1 `;
 
-        const values = [1000]
+        const values = [1000];
 
         const records = await client.query(selectQuery, values);
 
-        const result = records.rows.map(row => {
+        const result = records.rows.map((row) => {
           return {
             ...row,
-            val_movimento: row.tipo_movimento === 'S' ? -Math.abs(row.val_movimento) : row.val_movimento
+            val_movimento:
+              row.tipo_movimento === "S"
+                ? -Math.abs(row.val_movimento)
+                : row.val_movimento,
           };
         });
 
         return {
           rows: result,
-          rowCount: records.rowCount
+          rowCount: records.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -1598,57 +1683,57 @@ exports.buscaMovimentoFinanceiro = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.importarFinanceiroOFX = async (req, res) => {
   const { movimentosSelecionados, banco } = req.body;
 
-  console.log(movimentosSelecionados)
-  const schema = req.headers['schema'];
+  console.log(movimentosSelecionados);
+  const schema = req.headers["schema"];
 
-  const dtaAtual = moment().format()
+  const dtaAtual = moment().format();
 
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
         // Verifica se há movimentos para inserir
         if (!movimentosSelecionados || movimentosSelecionados.length === 0) {
-          throw new Error('Nenhum movimento selecionado para importação');
+          throw new Error("Nenhum movimento selecionado para importação");
         }
 
         // Prepara os valores para inserção em lote
-        const values = movimentosSelecionados.map(mov => [
-          mov.tipo === 'E' ? 'E' : 'S',  // tipo_movimento
-          mov.data,                      // dta_movimento
-          mov.descricao,                 // des_movimento
-          true,                          // ind_conciliado (padrão false)
-          dtaAtual,                      // dta_conciliado (null inicialmente)
-          false,                         // ind_excluido (padrão false)
-          false,                         // ind_alterado (padrão false)
-          null,                          // seq_veiculo (pode ser ajustado)
-          'Importação OFX',              // des_origem
-          banco.seq_registro,                         // cod_banco
-          mov.descricao,                 // des_movimento_detalhado
-          null,                          // cod_cartao (ajuste conforme necessário)
-          `Movimento Importado via OFX em: ${moment(dtaAtual).format('DD/MM/YYYY')}`, // des_observacao
-          mov.valor,                     // val_movimento
-          mov.descricao,                 // descricao_mov_ofx
-          parseInt(mov.codigoBanco),     // cod_banco_ofx
-          mov.idUnico,                    // id_unico
-          mov.cod_categoria_movimento,    //categoruia
-          mov.des_categoria_movimento     //des_categoria
+        const values = movimentosSelecionados.map((mov) => [
+          mov.tipo === "E" ? "E" : "S", // tipo_movimento
+          mov.data, // dta_movimento
+          mov.descricao, // des_movimento
+          true, // ind_conciliado (padrão false)
+          dtaAtual, // dta_conciliado (null inicialmente)
+          false, // ind_excluido (padrão false)
+          false, // ind_alterado (padrão false)
+          null, // seq_veiculo (pode ser ajustado)
+          "Importação OFX", // des_origem
+          banco.seq_registro, // cod_banco
+          mov.descricao, // des_movimento_detalhado
+          null, // cod_cartao (ajuste conforme necessário)
+          `Movimento Importado via OFX em: ${moment(dtaAtual).format("DD/MM/YYYY")}`, // des_observacao
+          mov.valor, // val_movimento
+          mov.descricao, // descricao_mov_ofx
+          parseInt(mov.codigoBanco), // cod_banco_ofx
+          mov.idUnico, // id_unico
+          mov.cod_categoria_movimento, //categoruia
+          mov.des_categoria_movimento, //des_categoria
         ]);
 
         // Monta a query de inserção em lote
@@ -1660,11 +1745,14 @@ exports.importarFinanceiroOFX = async (req, res) => {
           cod_banco, des_movimento_detalhado, cod_cartao, 
           des_observacao, val_movimento, descricao_mov_ofx, 
           cod_banco_ofx, id_unico, cod_categoria_movimento, des_categoria_movimento
-        ) VALUES ${movimentosSelecionados.map((_, i) =>
-          `($${i * 19 + 1}, $${i * 19 + 2}, $${i * 19 + 3}, $${i * 19 + 4}, $${i * 19 + 5}, $${i * 19 + 6}, 
+        ) VALUES ${movimentosSelecionados
+          .map(
+            (_, i) =>
+              `($${i * 19 + 1}, $${i * 19 + 2}, $${i * 19 + 3}, $${i * 19 + 4}, $${i * 19 + 5}, $${i * 19 + 6}, 
            $${i * 19 + 7}, $${i * 19 + 8}, $${i * 19 + 9}, $${i * 19 + 10}, $${i * 19 + 11}, $${i * 19 + 12}, 
-           $${i * 19 + 13}, $${i * 19 + 14}, $${i * 19 + 15}, $${i * 19 + 16}, $${i * 19 + 17}, $${i * 19 + 18}, $${i * 19 + 19})`
-        ).join(', ')}
+           $${i * 19 + 13}, $${i * 19 + 14}, $${i * 19 + 15}, $${i * 19 + 16}, $${i * 19 + 17}, $${i * 19 + 18}, $${i * 19 + 19})`,
+          )
+          .join(", ")}
         RETURNING *
       `;
 
@@ -1673,10 +1761,10 @@ exports.importarFinanceiroOFX = async (req, res) => {
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError;
       }
     });
@@ -1684,13 +1772,13 @@ exports.importarFinanceiroOFX = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: `${queryResult.rowCount} movimentos importados com sucesso`,
-      data: queryResult.rows
+      data: queryResult.rows,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao importar movimentos OFX',
+      message: "Erro ao importar movimentos OFX",
       details: error.message,
       //errorDetails: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
@@ -1700,13 +1788,13 @@ exports.importarFinanceiroOFX = async (req, res) => {
 exports.conciliarEncontrados = async (req, res) => {
   const { movimentosEncontrados } = req.body; // Agora recebe um array
   const dtaAtual = moment().format();
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   // Validação básica
   if (!movimentosEncontrados || !Array.isArray(movimentosEncontrados)) {
     return res.status(400).json({
       success: false,
-      message: 'Dados inválidos: movimentosEntrados deve ser um array'
+      message: "Dados inválidos: movimentosEntrados deve ser um array",
     });
   }
 
@@ -1718,7 +1806,9 @@ exports.conciliarEncontrados = async (req, res) => {
           movimentosEncontrados.map(async (movimento) => {
             // Validação dos campos obrigatórios
             if (!movimento.seq_registro) {
-              throw new Error(`Movimento sem seq_registro: ${JSON.stringify(movimento)}`);
+              throw new Error(
+                `Movimento sem seq_registro: ${JSON.stringify(movimento)}`,
+              );
             }
 
             const updateQuery = `
@@ -1739,20 +1829,20 @@ exports.conciliarEncontrados = async (req, res) => {
               movimento.cod_banco_ofx,
               movimento.id_unico,
               true, // ind_conciliado
-              movimento.seq_registro
+              movimento.seq_registro,
             ];
 
             const result = await client.query(updateQuery, values);
             return result.rows[0]; // Retorna o registro atualizado
-          })
+          }),
         );
 
         return {
-          rows: resultados.filter(r => r), // Filtra resultados nulos
-          rowCount: resultados.length
+          rows: resultados.filter((r) => r), // Filtra resultados nulos
+          rowCount: resultados.length,
         };
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError;
       }
     });
@@ -1760,13 +1850,13 @@ exports.conciliarEncontrados = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: `${queryResult.rowCount} movimentos conciliados com sucesso`,
-      data: queryResult.rows
+      data: queryResult.rows,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao conciliar movimentos',
+      message: "Erro ao conciliar movimentos",
       details: error.message,
       //errorDetails: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
@@ -1777,10 +1867,10 @@ async function apurarSaldosBancarios() {
   const client = await pool.connect();
 
   try {
-    await client.query('BEGIN');
+    await client.query("BEGIN");
 
     // 1. Obter a data atual no formato YYYY-MM-DD
-    const hoje = new Date().toISOString().split('T')[0];
+    const hoje = new Date().toISOString().split("T")[0];
 
     // 2. Query para calcular saldos por banco
     const calculoSaldoQuery = `
@@ -1809,7 +1899,7 @@ async function apurarSaldosBancarios() {
     const insertQuery = `
       INSERT INTO teste.tab_apuracao_saldo_banco 
         (seq_banco, des_banco, saldo_dia, dta_saldo)
-      VALUES ${rows.map((_, i) => `($${i * 4 + 1}, $${i * 4 + 2}, $${i * 4 + 3}, $${i * 4 + 4})`).join(', ')}
+      VALUES ${rows.map((_, i) => `($${i * 4 + 1}, $${i * 4 + 2}, $${i * 4 + 3}, $${i * 4 + 4})`).join(", ")}
       ON CONFLICT (seq_banco, dta_saldo) 
       DO UPDATE SET 
         des_banco = EXCLUDED.des_banco,
@@ -1817,21 +1907,21 @@ async function apurarSaldosBancarios() {
     `;
 
     // 5. Preparar valores para inserção
-    const values = rows.flatMap(row => [
+    const values = rows.flatMap((row) => [
       row.seq_banco,
       row.des_banco,
       row.saldo_dia,
-      hoje
+      hoje,
     ]);
 
     // 6. Executar inserção/atualização
     await client.query(insertQuery, values);
-    await client.query('COMMIT');
+    await client.query("COMMIT");
 
     console.log(`Saldo apurado para ${rows.length} bancos em ${hoje}`);
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Erro na apuração de saldos:', error);
+    await client.query("ROLLBACK");
+    console.error("Erro na apuração de saldos:", error);
     throw error;
   } finally {
     client.release();
@@ -1839,20 +1929,32 @@ async function apurarSaldosBancarios() {
 }
 
 // Agendar para rodar todo dia às 23h
-cron.schedule('0 23 * * *', () => {
-  console.log('Iniciando apuração automática de saldos bancários...');
-  apurarSaldosBancarios()
-    .catch(err => console.error('Erro no agendamento:', err));
+cron.schedule("0 23 * * *", () => {
+  console.log("Iniciando apuração automática de saldos bancários...");
+  apurarSaldosBancarios().catch((err) =>
+    console.error("Erro no agendamento:", err),
+  );
 });
 
-console.log('Agendador de apuração de saldos iniciado. Será executado diariamente às 23h.');
+console.log(
+  "Agendador de apuração de saldos iniciado. Será executado diariamente às 23h.",
+);
 
 exports.cadastraDespesaOperacional = async (req, res) => {
-  const { des_despesa, val_despesa, dta_despesa, cod_tipo_despesa, des_tipo_despesa, cod_banco, cod_cartao, parcela } = req.body;
+  const {
+    des_despesa,
+    val_despesa,
+    dta_despesa,
+    cod_tipo_despesa,
+    des_tipo_despesa,
+    cod_banco,
+    cod_cartao,
+    parcela,
+  } = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
-  console.log(req.body)
+  console.log(req.body);
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
@@ -1864,7 +1966,16 @@ exports.cadastraDespesaOperacional = async (req, res) => {
                               ($1, $2, $3, $4, $5, $6, $7, $8)
                               RETURNing seq_registro`;
 
-        const values = [des_despesa, val_despesa, dta_despesa, cod_tipo_despesa, des_tipo_despesa, cod_banco, cod_cartao, parcela]
+        const values = [
+          des_despesa,
+          val_despesa,
+          dta_despesa,
+          cod_tipo_despesa,
+          des_tipo_despesa,
+          cod_banco,
+          cod_cartao,
+          parcela,
+        ];
 
         const result = await client.query(insertQuery, values);
 
@@ -1873,11 +1984,11 @@ exports.cadastraDespesaOperacional = async (req, res) => {
         return {
           rows: result.rows,
           rowCount: result.rowCount,
-          registro: seq_registro
+          registro: seq_registro,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -1885,24 +1996,24 @@ exports.cadastraDespesaOperacional = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.buscaDespesaOperacional = async (req, res) => {
-  const { } = req.body;
+  const {} = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -1913,17 +2024,17 @@ exports.buscaDespesaOperacional = async (req, res) => {
                             ORDER BY seq_registro desc
                              LIMIT 30`;
 
-        const values = []
+        const values = [];
 
         const result = await client.query(insertQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -1931,24 +2042,24 @@ exports.buscaDespesaOperacional = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.buscaMovimentoCartao = async (req, res) => {
-  const { } = req.body;
+  const {} = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -1959,17 +2070,17 @@ exports.buscaMovimentoCartao = async (req, res) => {
                             ORDER BY seq_registro desc
                              LIMIT 30`;
 
-        const values = []
+        const values = [];
 
         const result = await client.query(insertQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -1977,31 +2088,31 @@ exports.buscaMovimentoCartao = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.faturaCartao = async (req, res) => {
   const { total, seqMovimentos, dataVencimento, codCartao } = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
         // Sua lógica de transação aqui
 
-        const seqMovimentosStr = seqMovimentos.join(',');
+        const seqMovimentosStr = seqMovimentos.join(",");
 
         const insertQuery = `INSERT INTO ${schema}.tab_fatura_cartao
                              (cod_cartao, val_fatura, dta_vencimento, dta_pagamento, cod_banco, ind_pago, val_pago, seq_movimento_cartao)
@@ -2009,7 +2120,16 @@ exports.faturaCartao = async (req, res) => {
                              ($1, $2, $3, $4, $5, $6, $7, $8)
                              RETURNING seq_registro`;
 
-        const values = [codCartao, total, dataVencimento, null, null, false, null, seqMovimentosStr]
+        const values = [
+          codCartao,
+          total,
+          dataVencimento,
+          null,
+          null,
+          false,
+          null,
+          seqMovimentosStr,
+        ];
 
         const result = await client.query(insertQuery, values);
 
@@ -2020,17 +2140,17 @@ exports.faturaCartao = async (req, res) => {
                                   ind_faturado = $2
                               where seq_registro in (${seqMovimentos})`;
 
-        const valuesUpdate = [seq_registro, true]
+        const valuesUpdate = [seq_registro, true];
 
         await client.query(updateQuery, valuesUpdate);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -2038,25 +2158,24 @@ exports.faturaCartao = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.buscafaturaCartao = async (req, res) => {
+  const {} = req.body;
 
-  const { } = req.body;
-
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -2067,17 +2186,17 @@ exports.buscafaturaCartao = async (req, res) => {
                               order by a.seq_registro
                               `;
 
-        const values = []
+        const values = [];
 
         const result = await client.query(insertQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -2085,27 +2204,36 @@ exports.buscafaturaCartao = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.liquidarFaturaCartao = async (req, res) => {
+  const {
+    cod_banco,
+    cod_cartao,
+    dta_pagamento,
+    dta_vencimento,
+    ind_pago,
+    seq_movimento_cartao,
+    seq_registro,
+    val_fatura,
+    val_pago,
+  } = req.body;
 
-  const { cod_banco, cod_cartao, dta_pagamento, dta_vencimento, ind_pago, seq_movimento_cartao, seq_registro, val_fatura, val_pago } = req.body;
+  console.log(req.body);
 
-  console.log(req.body)
-
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -2117,17 +2245,17 @@ exports.liquidarFaturaCartao = async (req, res) => {
                                   cod_banco = $2
                               WHERE seq_registro = $3 `;
 
-        const values = [true, cod_banco, seq_registro]
+        const values = [true, cod_banco, seq_registro];
 
         const result = await client.query(insertQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -2135,24 +2263,24 @@ exports.liquidarFaturaCartao = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.buscaFinanceiras = async (req, res) => {
-  const { } = req.body;
+  const {} = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -2163,17 +2291,17 @@ exports.buscaFinanceiras = async (req, res) => {
                               LEFT JOIN ${schema}.tab_conta_banco b on (a.cod_banco = b.seq_registro)
                               order by a.seq_registro`;
 
-        const values = []
+        const values = [];
 
         const result = await client.query(insertQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -2181,24 +2309,24 @@ exports.buscaFinanceiras = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.vinculaBancoFinanceiras = async (req, res) => {
   const { seq_registro, cod_banco } = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -2209,17 +2337,17 @@ exports.vinculaBancoFinanceiras = async (req, res) => {
                               SET cod_banco = $1
                               WHERE seq_registro = $2 `;
 
-        const values = [cod_banco, seq_registro]
+        const values = [cod_banco, seq_registro];
 
         const result = await client.query(insertQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -2227,24 +2355,24 @@ exports.vinculaBancoFinanceiras = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.buscaCliente = async (req, res) => {
   const { valor } = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -2254,17 +2382,17 @@ exports.buscaCliente = async (req, res) => {
         const insertQuery = `SELECT * from ${schema}.tab_cliente
                             WHERE num_cpf_cnpj like $1 `;
 
-        const values = [valor]
+        const values = [valor];
 
         const result = await client.query(insertQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -2272,26 +2400,37 @@ exports.buscaCliente = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.cadastrarCliente = async (req, res) => {
-  const { nom_cliente, num_cnpj_cpf, des_logradouro, complemento, cep, telefone, dta_nascimento, bairro, cidade, uf } = req.body;
+  const {
+    nom_cliente,
+    num_cnpj_cpf,
+    des_logradouro,
+    complemento,
+    cep,
+    telefone,
+    dta_nascimento,
+    bairro,
+    cidade,
+    uf,
+  } = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
-  dtaAtual = moment().format()
+  dtaAtual = moment().format();
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -2304,7 +2443,19 @@ exports.cadastrarCliente = async (req, res) => {
                               ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                               RETURNing seq_registro`;
 
-        const values = [nom_cliente, num_cnpj_cpf, des_logradouro, complemento, cep, telefone, dta_nascimento, dtaAtual, bairro, cidade, uf]
+        const values = [
+          nom_cliente,
+          num_cnpj_cpf,
+          des_logradouro,
+          complemento,
+          cep,
+          telefone,
+          dta_nascimento,
+          dtaAtual,
+          bairro,
+          cidade,
+          uf,
+        ];
 
         const result = await client.query(insertQuery, values);
 
@@ -2313,11 +2464,11 @@ exports.cadastrarCliente = async (req, res) => {
         return {
           rows: result.rows,
           rowCount: result.rowCount,
-          registro: seq_registro
+          registro: seq_registro,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -2325,24 +2476,24 @@ exports.cadastrarCliente = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.vinculaVeiculoCliente = async (req, res) => {
   const { seq_registro, seq_veiculo } = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -2353,17 +2504,17 @@ exports.vinculaVeiculoCliente = async (req, res) => {
                               SET cod_usuario_vinculado = $1
                               WHERE seq_veiculo = $2 `;
 
-        const values = [seq_registro, seq_veiculo]
+        const values = [seq_registro, seq_veiculo];
 
         const result = await client.query(insertQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -2371,25 +2522,24 @@ exports.vinculaVeiculoCliente = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.vinculaContratoVeiculo = async (req, res) => {
-
   const { seq_veiculo, contrato } = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -2400,17 +2550,17 @@ exports.vinculaContratoVeiculo = async (req, res) => {
                             set img_contrato = $1
                             WHERE seq_veiculo = $2 `;
 
-        const values = [contrato, seq_veiculo]
+        const values = [contrato, seq_veiculo];
 
         const result = await client.query(insertQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -2418,37 +2568,65 @@ exports.vinculaContratoVeiculo = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.finalizaVendaVeiculo = async (req, res) => {
-  const { des_veiculo, cod_banco_entrada, cod_financeira, des_financeira, cod_banco_financeira, dados_consorcio, des_veiculo_entrada, ind_troca, observacao_venda, ind_tipo_veiculo,
-    seq_veiculo, val_compra, total_prazo, dta_primeiro_venc_prazo, val_consorcio, val_entrada_cartao, val_entrada_especie, val_financiado, val_veiculo_entrada, val_venda, valor_prazo,
-    indTroca, indPrazo, indFinanciado, indConsorcio, entradaEspecie, entradaCartao, cod_vendedor, cod_cliente } = req.body;
+  const {
+    des_veiculo,
+    cod_banco_entrada,
+    cod_financeira,
+    des_financeira,
+    cod_banco_financeira,
+    dados_consorcio,
+    des_veiculo_entrada,
+    ind_troca,
+    observacao_venda,
+    ind_tipo_veiculo,
+    seq_veiculo,
+    val_compra,
+    total_prazo,
+    dta_primeiro_venc_prazo,
+    val_consorcio,
+    val_entrada_cartao,
+    val_entrada_especie,
+    val_financiado,
+    val_veiculo_entrada,
+    val_venda,
+    valor_prazo,
+    indTroca,
+    indPrazo,
+    indFinanciado,
+    indConsorcio,
+    entradaEspecie,
+    entradaCartao,
+    cod_vendedor,
+    cod_cliente,
+  } = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
-  console.log(req.body)
+  console.log(req.body);
 
-  dtaAtual = moment().format()
+  dtaAtual = moment().format();
 
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
         // Sua lógica de transação aqui
 
-        const lucro = val_venda - val_compra
+        const lucro = val_venda - val_compra;
 
         const insertQuery = `UPDATE ${schema}.tab_veiculo
                              SET des_veiculo_entrada = $1,
@@ -2469,38 +2647,103 @@ exports.finalizaVendaVeiculo = async (req, res) => {
                                  cod_vendedor = $14
                              WHERE seq_veiculo = $15`;
 
-        const values = [des_veiculo_entrada, observacao_venda, total_prazo, val_consorcio, val_entrada_cartao, val_entrada_especie, val_financiado, val_veiculo_entrada,
-          val_venda, valor_prazo, dtaAtual, lucro, val_venda, cod_vendedor, seq_veiculo, ind_troca]
+        const values = [
+          des_veiculo_entrada,
+          observacao_venda,
+          total_prazo,
+          val_consorcio,
+          val_entrada_cartao,
+          val_entrada_especie,
+          val_financiado,
+          val_veiculo_entrada,
+          val_venda,
+          valor_prazo,
+          dtaAtual,
+          lucro,
+          val_venda,
+          cod_vendedor,
+          seq_veiculo,
+          ind_troca,
+        ];
 
         const result = await client.query(insertQuery, values);
 
         if (indTroca) {
-          await processarTroca(client, schema, des_veiculo_entrada, des_veiculo, seq_veiculo);
+          await processarTroca(
+            client,
+            schema,
+            des_veiculo_entrada,
+            des_veiculo,
+            seq_veiculo,
+          );
         }
         if (indPrazo) {
-          await indPrazoF(client, schema, total_prazo, valor_prazo, des_veiculo, dta_primeiro_venc_prazo, seq_veiculo, cod_cliente)
+          await indPrazoF(
+            client,
+            schema,
+            total_prazo,
+            valor_prazo,
+            des_veiculo,
+            dta_primeiro_venc_prazo,
+            seq_veiculo,
+            cod_cliente,
+          );
         }
         if (indFinanciado) {
-          await indFinanciadoF(client, schema, cod_financeira, cod_banco_financeira, val_financiado, seq_veiculo, des_veiculo, des_financeira, cod_cliente)
+          await indFinanciadoF(
+            client,
+            schema,
+            cod_financeira,
+            cod_banco_financeira,
+            val_financiado,
+            seq_veiculo,
+            des_veiculo,
+            des_financeira,
+            cod_cliente,
+          );
         }
         if (indConsorcio) {
-          await indConsorcioF(client, schema, val_consorcio, dados_consorcio, seq_veiculo, des_veiculo, cod_cliente)
+          await indConsorcioF(
+            client,
+            schema,
+            val_consorcio,
+            dados_consorcio,
+            seq_veiculo,
+            des_veiculo,
+            cod_cliente,
+          );
         }
         if (entradaEspecie) {
-          await entradaEspecieF(client, schema, val_entrada_especie, cod_banco_entrada, des_veiculo, seq_veiculo, ind_tipo_veiculo)
+          await entradaEspecieF(
+            client,
+            schema,
+            val_entrada_especie,
+            cod_banco_entrada,
+            des_veiculo,
+            seq_veiculo,
+            ind_tipo_veiculo,
+          );
         }
         if (entradaCartao) {
-          await entradaCartaoF(client, schema, val_entrada_cartao, cod_banco_entrada, des_veiculo, seq_veiculo, ind_tipo_veiculo)
+          await entradaCartaoF(
+            client,
+            schema,
+            val_entrada_cartao,
+            cod_banco_entrada,
+            des_veiculo,
+            seq_veiculo,
+            ind_tipo_veiculo,
+          );
         }
 
         return {
           rows: result.rows,
           rowCount: result.rowCount,
-          seq_veiculo: seq_veiculo
+          seq_veiculo: seq_veiculo,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -2508,30 +2751,35 @@ exports.finalizaVendaVeiculo = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
 
-  async function processarTroca(client, schema, des_veiculo_entrada, des_veiculo, seq_veiculo) {
-
-    const dtaAtual = moment().format('YYYY-MM-DD');
+  async function processarTroca(
+    client,
+    schema,
+    des_veiculo_entrada,
+    des_veiculo,
+    seq_veiculo,
+  ) {
+    const dtaAtual = moment().format("YYYY-MM-DD");
 
     const camposAgenda = {
-      titulo: 'Cadastrar Veículo',
-      hora: '12:00',
+      titulo: "Cadastrar Veículo",
+      hora: "12:00",
       dia: dtaAtual,
       descricao: `Veículo Recebido na troca: ${des_veiculo_entrada} na venda do: ${des_veiculo}`,
       concluido: false,
-      seq_veiculo
+      seq_veiculo,
     };
 
     const insertQuery = `
@@ -2546,25 +2794,35 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       camposAgenda.dia,
       camposAgenda.descricao,
       camposAgenda.concluido,
-      camposAgenda.seq_veiculo
+      camposAgenda.seq_veiculo,
     ]);
   }
 
-  async function indPrazoF(client, schema, total_prazo, valor_prazo, des_veiculo, dta_primeiro_venc_prazo, seq_veiculo, cod_cliente) {
-
+  async function indPrazoF(
+    client,
+    schema,
+    total_prazo,
+    valor_prazo,
+    des_veiculo,
+    dta_primeiro_venc_prazo,
+    seq_veiculo,
+    cod_cliente,
+  ) {
     const parcela = valor_prazo / total_prazo;
     const resultados = [];
 
     for (let index = 0; index < total_prazo; index++) {
       const campos = {
         des_receita: `Parcela ${index + 1} do ${des_veiculo}`,
-        dta_receita: moment(dta_primeiro_venc_prazo).add(index * 30, 'days').format(),
+        dta_receita: moment(dta_primeiro_venc_prazo)
+          .add(index * 30, "days")
+          .format(),
         val_receita: parcela,
         seq_veiculo,
         des_veiculo,
         cod_cliente,
         cod_tipo: 91,
-        cod_banco: 0
+        cod_banco: 0,
       };
 
       const insertQuery = `
@@ -2582,17 +2840,25 @@ exports.finalizaVendaVeiculo = async (req, res) => {
         campos.des_veiculo,
         campos.cod_cliente,
         campos.cod_tipo,
-        campos.cod_banco
+        campos.cod_banco,
       ]);
 
       resultados.push(result.rows[0]);
     }
   }
 
-  async function indFinanciadoF(client, schema, cod_financeira, cod_banco_financeira, val_financiado, seq_veiculo, des_veiculo, des_financeira, cod_cliente) {
-
-
-    const dtaAtual = moment().format()
+  async function indFinanciadoF(
+    client,
+    schema,
+    cod_financeira,
+    cod_banco_financeira,
+    val_financiado,
+    seq_veiculo,
+    des_veiculo,
+    des_financeira,
+    cod_cliente,
+  ) {
+    const dtaAtual = moment().format();
 
     const campos = {
       des_receita: `Aprovar Recebimento do ${des_veiculo} pela Financiado na ${des_financeira}`,
@@ -2602,7 +2868,7 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       cod_banco_financeira,
       cod_tipo: 93, // Recebimento de Financiamentos
       des_veiculo,
-      cod_cliente
+      cod_cliente,
     };
 
     const insertQuery = `
@@ -2620,7 +2886,7 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       campos.cod_banco_financeira,
       campos.cod_tipo,
       campos.des_veiculo,
-      campos.cod_cliente
+      campos.cod_cliente,
     ]);
 
     const camposRetorno = {
@@ -2631,7 +2897,7 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       cod_banco_financeira,
       cod_tipo: 99, // Retorno de Financiamentos
       des_veiculo,
-      cod_cliente
+      cod_cliente,
     };
 
     const insertQueryRetorno = `
@@ -2649,7 +2915,7 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       camposRetorno.cod_banco_financeira,
       camposRetorno.cod_tipo,
       camposRetorno.des_veiculo,
-      camposRetorno.cod_cliente
+      camposRetorno.cod_cliente,
     ]);
 
     const updateQuery = `UPDATE ${schema}.tab_veiculo
@@ -2657,15 +2923,22 @@ exports.finalizaVendaVeiculo = async (req, res) => {
               cod_financeira = $2
           WHERE seq_veiculo = $3`;
 
-    const values = [true, cod_banco_financeira, seq_veiculo]
+    const values = [true, cod_banco_financeira, seq_veiculo];
 
     await client.query(updateQuery, values);
   }
 
-  async function indConsorcioF(client, schema, val_consorcio, dados_consorcio, seq_veiculo, des_veiculo, cod_cliente) {
-
-    console.log('consorcio')
-    const dtaAtual = moment().format()
+  async function indConsorcioF(
+    client,
+    schema,
+    val_consorcio,
+    dados_consorcio,
+    seq_veiculo,
+    des_veiculo,
+    cod_cliente,
+  ) {
+    console.log("consorcio");
+    const dtaAtual = moment().format();
 
     const campos = {
       des_receita: `Aprovar Recebimento do ${des_veiculo} pelo Consórcio ${dados_consorcio}`,
@@ -2675,7 +2948,7 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       cod_banco_financeira: 0,
       cod_tipo: 92, // Recebimento de Financiamentos
       des_veiculo,
-      cod_cliente
+      cod_cliente,
     };
 
     const insertQuery1 = `
@@ -2692,7 +2965,7 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       campos.cod_banco_financeira,
       campos.cod_tipo,
       campos.des_veiculo,
-      campos.cod_cliente
+      campos.cod_cliente,
     ]);
 
     const insertQuery = `UPDATE ${schema}.tab_veiculo
@@ -2700,16 +2973,21 @@ exports.finalizaVendaVeiculo = async (req, res) => {
                                    dados_consorcio = $2
                                WHERE seq_veiculo = $3`;
 
-    const values = [val_consorcio, dados_consorcio, seq_veiculo]
-
+    const values = [val_consorcio, dados_consorcio, seq_veiculo];
 
     await client.query(insertQuery, values);
-
   }
 
-  async function entradaEspecieF(client, schema, val_entrada_especie, cod_banco_entrada, des_veiculo, seq_veiculo, ind_tipo_veiculo) {
-
-    const dtaAtual = moment().format()
+  async function entradaEspecieF(
+    client,
+    schema,
+    val_entrada_especie,
+    cod_banco_entrada,
+    des_veiculo,
+    seq_veiculo,
+    ind_tipo_veiculo,
+  ) {
+    const dtaAtual = moment().format();
 
     const insertQuery = `
           INSERT INTO ${schema}.tab_movimentacao (
@@ -2723,7 +3001,7 @@ exports.finalizaVendaVeiculo = async (req, res) => {
         `;
 
     const values = {
-      tipo_movimento: 'E',
+      tipo_movimento: "E",
       dtaAtual, // Usa a data ajustada
       des_movimento: `Recebimento referente Entrada da venda do veiculo ${des_veiculo}`,
       ind_conciliado: false,
@@ -2731,20 +3009,23 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       ind_excluido: null,
       ind_alterado: false,
       seq_veiculo,
-      des_origem: 'Venda de Veículos',
+      des_origem: "Venda de Veículos",
       cod_banco_entrada,
-      des_movimento_detalhado: 'Entrada em PIX, Transferência ou Dinheiro',
+      des_movimento_detalhado: "Entrada em PIX, Transferência ou Dinheiro",
       cod_cartao: 0,
       val_entrada_especie,
       descricao_mov_ofx: null,
       cod_banco_ofx: null,
       id_unico: null,
-      cod_categoria_movimento: ind_tipo_veiculo === 'P' ? 95 : 94,
-      des_categoria_movimento: ind_tipo_veiculo === 'P' ? 'Venda de Veículos Proprios' : 'Venda de Veiculos de Parceiros',
+      cod_categoria_movimento: ind_tipo_veiculo === "P" ? 95 : 94,
+      des_categoria_movimento:
+        ind_tipo_veiculo === "P"
+          ? "Venda de Veículos Proprios"
+          : "Venda de Veiculos de Parceiros",
       numeroParcela: 0,
       seq_despesa: 0,
       seq_fatura: 0,
-      ind_cartao_pago: false
+      ind_cartao_pago: false,
     };
 
     await client.query(insertQuery, [
@@ -2769,24 +3050,29 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       values.numeroParcela,
       values.seq_despesa,
       values.seq_fatura,
-      values.ind_cartao_pago
-    ]
-    );
+      values.ind_cartao_pago,
+    ]);
 
     const updateQuery = `UPDATE ${schema}.tab_veiculo
                                SET val_entrada_especie = $1,
                                    cod_banco_entrada = $2
                                WHERE seq_veiculo = $3`;
 
-    const valuesUpdate = [val_entrada_especie, cod_banco_entrada, seq_veiculo]
+    const valuesUpdate = [val_entrada_especie, cod_banco_entrada, seq_veiculo];
 
     await client.query(updateQuery, valuesUpdate);
-
   }
 
-  async function entradaCartaoF(client, schema, val_entrada_cartao, cod_banco_entrada, des_veiculo, seq_veiculo, ind_tipo_veiculo) {
-
-    const dtaAtual = moment().format()
+  async function entradaCartaoF(
+    client,
+    schema,
+    val_entrada_cartao,
+    cod_banco_entrada,
+    des_veiculo,
+    seq_veiculo,
+    ind_tipo_veiculo,
+  ) {
+    const dtaAtual = moment().format();
 
     const insertQuery = `
           INSERT INTO ${schema}.tab_movimentacao (
@@ -2800,7 +3086,7 @@ exports.finalizaVendaVeiculo = async (req, res) => {
         `;
 
     const values = {
-      tipo_movimento: 'E',
+      tipo_movimento: "E",
       dataAtual: dtaAtual, // Usa a data ajustada
       des_movimento: `Recebimento referente Entrada em Cartão da venda do veiculo ${des_veiculo}`,
       ind_conciliado: false,
@@ -2808,20 +3094,23 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       ind_excluido: false,
       ind_alterado: false,
       seq_veiculo,
-      des_origem: 'Venda de Veículos em Cartão',
+      des_origem: "Venda de Veículos em Cartão",
       cod_banco_entrada,
-      des_movimento_detalhado: 'Transação realizada no nosso terminal',
+      des_movimento_detalhado: "Transação realizada no nosso terminal",
       cod_cartao: 0,
       val_entrada_cartao,
       descricao_mov_ofx: null,
       cod_banco_ofx: null,
       id_unico: null,
-      cod_categoria_movimento: ind_tipo_veiculo === 'P' ? 95 : 94,
-      des_categoria_movimento: ind_tipo_veiculo === 'P' ? 'Venda de Veículos Proprios' : 'Venda de Veiculos de Parceiros',
+      cod_categoria_movimento: ind_tipo_veiculo === "P" ? 95 : 94,
+      des_categoria_movimento:
+        ind_tipo_veiculo === "P"
+          ? "Venda de Veículos Proprios"
+          : "Venda de Veiculos de Parceiros",
       numeroParcela: 0,
       seq_despesa: 0,
       seq_fatura: 0,
-      ind_cartao_pago: false
+      ind_cartao_pago: false,
     };
 
     await client.query(insertQuery, [
@@ -2846,26 +3135,24 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       values.numeroParcela,
       values.seq_despesa,
       values.seq_fatura,
-      values.ind_cartao_pago
-    ]
-    );
+      values.ind_cartao_pago,
+    ]);
 
     const updateQuery = `UPDATE ${schema}.tab_veiculo
                                SET val_entrada_cartao = $1,
                                    cod_banco_entrada = $2
                                WHERE seq_veiculo = $3`;
 
-    const valuesUpdate = [val_entrada_cartao, cod_banco_entrada, seq_veiculo]
+    const valuesUpdate = [val_entrada_cartao, cod_banco_entrada, seq_veiculo];
 
     await client.query(updateQuery, valuesUpdate);
-
   }
-}
+};
 
 exports.buscaDadosEmpresa = async (req, res) => {
-  const { } = req.body;
+  const {} = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -2874,22 +3161,22 @@ exports.buscaDadosEmpresa = async (req, res) => {
 
         const insertQuery = `SELECT * from ${schema}.tab_empresa`;
 
-        const values = []
+        const values = [];
 
         const result = await client.query(insertQuery, values);
 
-        result.rows = result.rows.map(r => ({
+        result.rows = result.rows.map((r) => ({
           ...r,
-          logo_empresa: r.logo_empresa ? r.logo_empresa.toString() : undefined
+          logo_empresa: r.logo_empresa ? r.logo_empresa.toString() : undefined,
         }));
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -2897,27 +3184,47 @@ exports.buscaDadosEmpresa = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.salvaDadosEmpresa = async (req, res) => {
-  const { seq_registro, razao_social, nome_fantasia, cnpj, inscricao_estadual, inscricao_municipal, telefone, email, email_leads, site, whatsapp,
-    observacoes, cep, endereco, numero, complemento, bairro, cidade, estado, logo_empresa } = req.body;
+  const {
+    seq_registro,
+    razao_social,
+    nome_fantasia,
+    cnpj,
+    inscricao_estadual,
+    inscricao_municipal,
+    telefone,
+    email,
+    email_leads,
+    site,
+    whatsapp,
+    observacoes,
+    cep,
+    endereco,
+    numero,
+    complemento,
+    bairro,
+    cidade,
+    estado,
+    logo_empresa,
+  } = req.body;
 
-  console.log(req.body)
+  console.log(req.body);
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   const dtaAtual = moment().format();
 
@@ -2927,7 +3234,6 @@ exports.salvaDadosEmpresa = async (req, res) => {
         // Sua lógica de transação aqui
 
         if (!seq_registro) {
-
           const insertQuery = `INSERT INTO ${schema}.tab_empresa
           (razao_social, nome_fantasia, cnpj, inscricao_estadual, inscricao_municipal, telefone, email, email_leads, site, whatsapp,
            observacoes, cep, endereco, numero, complemento, bairro, cidade, estado, logo_empresa, dta_cadastro)
@@ -2935,17 +3241,36 @@ exports.salvaDadosEmpresa = async (req, res) => {
           ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
           $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`;
 
-          const values = [razao_social, nome_fantasia, cnpj, inscricao_estadual, inscricao_municipal, telefone, email, email_leads, site, whatsapp,
-            observacoes, cep, endereco, numero, complemento, bairro, cidade, estado, logo_empresa, dtaAtual]
+          const values = [
+            razao_social,
+            nome_fantasia,
+            cnpj,
+            inscricao_estadual,
+            inscricao_municipal,
+            telefone,
+            email,
+            email_leads,
+            site,
+            whatsapp,
+            observacoes,
+            cep,
+            endereco,
+            numero,
+            complemento,
+            bairro,
+            cidade,
+            estado,
+            logo_empresa,
+            dtaAtual,
+          ];
 
           const result = await client.query(insertQuery, values);
 
           return {
             rows: result.rows,
-            rowCount: result.rowCount
+            rowCount: result.rowCount,
           };
         } else {
-
           const updateQuery = `UPDATE ${schema}.tab_empresa
                               SET razao_social        = $1,
                                   nome_fantasia       = $2,
@@ -2969,19 +3294,40 @@ exports.salvaDadosEmpresa = async (req, res) => {
                                   dta_alteracao       = $20
                               WHERE seq_registro      = $21;`;
 
-          const values = [razao_social, nome_fantasia, cnpj, inscricao_estadual, inscricao_municipal, telefone, email, email_leads, site, whatsapp,
-            observacoes, cep, endereco, numero, complemento, bairro, cidade, estado, logo_empresa, dtaAtual, seq_registro]
+          const values = [
+            razao_social,
+            nome_fantasia,
+            cnpj,
+            inscricao_estadual,
+            inscricao_municipal,
+            telefone,
+            email,
+            email_leads,
+            site,
+            whatsapp,
+            observacoes,
+            cep,
+            endereco,
+            numero,
+            complemento,
+            bairro,
+            cidade,
+            estado,
+            logo_empresa,
+            dtaAtual,
+            seq_registro,
+          ];
 
           const result = await client.query(updateQuery, values);
 
           return {
             rows: result.rows,
-            rowCount: result.rowCount
+            rowCount: result.rowCount,
           };
         }
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -2989,24 +3335,24 @@ exports.salvaDadosEmpresa = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.buscaModeloContrato = async (req, res) => {
-  const { } = req.body;
+  const {} = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -3015,17 +3361,17 @@ exports.buscaModeloContrato = async (req, res) => {
 
         const insertQuery = ` SELECT * FROM ${schema}.tab_modelo_contrato `;
 
-        const values = []
+        const values = [];
 
         const result = await client.query(insertQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -3033,27 +3379,32 @@ exports.buscaModeloContrato = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.cadastroModeloContrato = async (req, res) => {
+  const {
+    des_contrato,
+    tipo_contrato,
+    clausulas_contrato,
+    observacoes,
+    ind_padrao = true,
+  } = req.body;
 
-  const { des_contrato, tipo_contrato, clausulas_contrato, observacoes, ind_padrao = true } = req.body;
+  console.log(req.body);
 
-  console.log(req.body)
-
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -3066,7 +3417,13 @@ exports.cadastroModeloContrato = async (req, res) => {
                               ($1, $2, $3, $4, $5)
                               RETURNING seq_registro`;
 
-        const values = [des_contrato, tipo_contrato, clausulas_contrato, observacoes, true]
+        const values = [
+          des_contrato,
+          tipo_contrato,
+          clausulas_contrato,
+          observacoes,
+          true,
+        ];
 
         const result = await client.query(insertQuery, values);
 
@@ -3074,19 +3431,19 @@ exports.cadastroModeloContrato = async (req, res) => {
 
         const query = `UPDATE ${schema}.tab_modelo_contrato
                        SET ind_padrao = $1
-                       WHERE seq_registro != $2`
+                       WHERE seq_registro != $2`;
 
-        const values1 = [false, seq_registro]
+        const values1 = [false, seq_registro];
 
         await client.query(query, values1);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -3094,25 +3451,31 @@ exports.cadastroModeloContrato = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.salvaModeloContrato = async (req, res) => {
+  const {
+    seq_registro,
+    des_contrato,
+    tipo_contrato,
+    clausulas_contrato,
+    observacoes,
+    ind_padrao,
+  } = req.body;
 
-  const { seq_registro, des_contrato, tipo_contrato, clausulas_contrato, observacoes, ind_padrao } = req.body;
-
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -3127,13 +3490,20 @@ exports.salvaModeloContrato = async (req, res) => {
                                    ind_padrao          = $5
                              WHERE seq_registro = $6;`;
 
-        const values = [des_contrato, tipo_contrato, clausulas_contrato, observacoes, ind_padrao, seq_registro]
+        const values = [
+          des_contrato,
+          tipo_contrato,
+          clausulas_contrato,
+          observacoes,
+          ind_padrao,
+          seq_registro,
+        ];
 
         const updateQuery = `UPDATE ${schema}.tab_modelo_contrato
                                SET ind_padrao = false
-                             WHERE seq_registro != $1;`
+                             WHERE seq_registro != $1;`;
 
-        const values1 = [seq_registro]
+        const values1 = [seq_registro];
 
         const result = await client.query(insertQuery, values);
 
@@ -3141,11 +3511,11 @@ exports.salvaModeloContrato = async (req, res) => {
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -3153,24 +3523,24 @@ exports.salvaModeloContrato = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.buscaFinanciamentos = async (req, res) => {
-  const { } = req.body;
+  const {} = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -3180,17 +3550,17 @@ exports.buscaFinanciamentos = async (req, res) => {
         const insertQuery = `SELECT * from ${schema}.tab_conta_receber 
                              WHERE ind_pago = $1`;
 
-        const values = [false]
+        const values = [false];
 
         const result = await client.query(insertQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -3198,26 +3568,30 @@ exports.buscaFinanciamentos = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.cadastraVendedor = async (req, res) => {
-  const { nom_vendedor, val_comissao, val_fixo, dta_padrao_pagamento, tipo_pagamento } = req.body;
+  const {
+    nom_vendedor,
+    val_comissao,
+    val_fixo,
+    dta_padrao_pagamento,
+    tipo_pagamento,
+  } = req.body;
 
-
-
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -3229,17 +3603,23 @@ exports.cadastraVendedor = async (req, res) => {
                             VALUES
                             ($1, $2, $3, $4, $5)`;
 
-        const values = [nom_vendedor, val_comissao, val_fixo, dta_padrao_pagamento, tipo_pagamento]
+        const values = [
+          nom_vendedor,
+          val_comissao,
+          val_fixo,
+          dta_padrao_pagamento,
+          tipo_pagamento,
+        ];
 
         const result = await client.query(insertQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -3247,24 +3627,24 @@ exports.cadastraVendedor = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.buscaVendedor = async (req, res) => {
-  const { } = req.body;
+  const {} = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -3273,17 +3653,17 @@ exports.buscaVendedor = async (req, res) => {
 
         const insertQuery = ` SELECT * from ${schema}.tab_vendedores`;
 
-        const values = []
+        const values = [];
 
         const result = await client.query(insertQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -3291,26 +3671,33 @@ exports.buscaVendedor = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.salvaVendedor = async (req, res) => {
-  const { seq_registro, val_comissao, val_fixo, dta_padrao_pagamento, tipo_pagamento, ind_ativo } = req.body;
+  const {
+    seq_registro,
+    val_comissao,
+    val_fixo,
+    dta_padrao_pagamento,
+    tipo_pagamento,
+    ind_ativo,
+  } = req.body;
 
-  console.log(req.body)
+  console.log(req.body);
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -3325,17 +3712,24 @@ exports.salvaVendedor = async (req, res) => {
                                  ind_ativo = $5
                              WHERE seq_registro = $6`;
 
-        const values = [val_comissao, val_fixo, dta_padrao_pagamento, tipo_pagamento, ind_ativo, seq_registro]
+        const values = [
+          val_comissao,
+          val_fixo,
+          dta_padrao_pagamento,
+          tipo_pagamento,
+          ind_ativo,
+          seq_registro,
+        ];
 
         const result = await client.query(insertQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -3343,19 +3737,19 @@ exports.salvaVendedor = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 // exports.desfazerVenda = async (req, res) => {
 //   const { seq_veiculo } = req.body;
@@ -3404,24 +3798,29 @@ exports.salvaVendedor = async (req, res) => {
 exports.crlv = async (req, res) => {
   const { seq_veiculo } = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
         // Sua lógica de transação aqui
 
-        const result = await getbase64Campo(client, schema, 'documento', seq_veiculo); //informando o campod a tabela
+        const result = await getbase64Campo(
+          client,
+          schema,
+          "documento",
+          seq_veiculo,
+        ); //informando o campod a tabela
 
-        console.log(result)
+        console.log(result);
 
         return {
           rows: result,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -3429,39 +3828,44 @@ exports.crlv = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.contrato = async (req, res) => {
   const { seq_veiculo } = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
         // Sua lógica de transação aqui
 
-        const result = await getbase64Campo(client, schema, 'img_contrato', seq_veiculo); //informando o campod a tabela
+        const result = await getbase64Campo(
+          client,
+          schema,
+          "img_contrato",
+          seq_veiculo,
+        ); //informando o campod a tabela
 
         return {
           rows: result,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -3469,19 +3873,19 @@ exports.contrato = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 async function getbase64Campo(client, schema, campo, seq_veiculo) {
   try {
@@ -3490,53 +3894,50 @@ async function getbase64Campo(client, schema, campo, seq_veiculo) {
     const result = await client.query(selectQuery, values);
 
     if (result.rows.length === 0) {
-      throw new Error('Veículo não encontrado');
+      throw new Error("Veículo não encontrado");
     }
 
-    console.log(result)
+    console.log(result);
 
-    const documento = result.rows[0][campo]
+    const documento = result.rows[0][campo];
 
-    console.log(documento)
+    console.log(documento);
     // Verificar o tipo do documento
     if (Buffer.isBuffer(documento)) {
       // Se é Buffer (bytea no PostgreSQL)
       const base64String = documento.toString();
       return base64String;
-    } else if (typeof documento === 'string') {
+    } else if (typeof documento === "string") {
       // Se já é string (texto base64)
-      if (documento.startsWith('data:application/pdf;base64,')) {
+      if (documento.startsWith("data:application/pdf;base64,")) {
         return documento; // Já está formatado
       } else {
         return `data:application/pdf;base64,${documento}`;
       }
     } else {
-      throw new Error('Formato de documento não suportado');
+      throw new Error("Formato de documento não suportado");
     }
-
   } catch (error) {
-    console.error('Erro ao recuperar documento:', error);
+    console.error("Erro ao recuperar documento:", error);
     throw error;
   }
 }
 
 exports.desfazerVenda = async (req, res) => {
-
   const { item } = req.body;
 
-  const indConsorcio = item.val_consorcio !== null
-  const indCartao = item.val_entrada_cartao !== null
-  const indEntradaEspecie = item.val_entrada_especie !== null
-  const indFinanciado = item.val_financiado !== null
-  const indPrazo = item.valor_prazo !== null
-  const indTroca = item.ind_troca !== null
+  const indConsorcio = item.val_consorcio !== null;
+  const indCartao = item.val_entrada_cartao !== null;
+  const indEntradaEspecie = item.val_entrada_especie !== null;
+  const indFinanciado = item.val_financiado !== null;
+  const indPrazo = item.valor_prazo !== null;
+  const indTroca = item.ind_troca !== null;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-
         //tratamento do veiculo aqui
 
         const queryVeiculo = `UPDATE ${schema}.tab_veiculo
@@ -3566,21 +3967,20 @@ exports.desfazerVenda = async (req, res) => {
             valor_prazo = null
         WHERE seq_veiculo = $1`;
 
-        const valuesVeiculo = [item.seq_veiculo]
+        const valuesVeiculo = [item.seq_veiculo];
 
         const insertQuery = `UPDATE ${schema}.tab_movimentacao
                                 SET ind_excluido = true,
                                     des_observacao = 'Venda desfeita'
                                 WHERE seq_veiculo = $1`;
 
-        const values = [item.seq_veiculo]
+        const values = [item.seq_veiculo];
 
         await client.query(queryVeiculo, valuesVeiculo);
 
         await client.query(insertQuery, values);
 
         if (indConsorcio) {
-
           const insertQuery = `
             UPDATE ${schema}.tab_conta_receber
             SET ind_excluido = true,
@@ -3588,79 +3988,66 @@ exports.desfazerVenda = async (req, res) => {
             WHERE seq_veiculo = $1
           `;
 
-          const values = [item.seq_veiculo]
+          const values = [item.seq_veiculo];
 
           await client.query(insertQuery, values);
         }
 
         if (indCartao) {
-
           // const insertQuery = `UPDATE ${schema}.tab_movimentacao
           //                       SET ind_excluido = true,
           //                           des_observacao = 'Venda desfeita'
           //                       WHERE seq_veiculo = $1`;
-
           // const values = [item.seq_veiculo]
-
           // await client.query(insertQuery, values);
-
         }
 
         if (indEntradaEspecie) {
-
           // const insertQuery = `UPDATE ${schema}.tab_movimentacao
           // SET ind_excluido = true,
           //     des_observacao = 'Venda desfeita'
           // WHERE seq_veiculo = $1`;
-
           // const values = [item.seq_veiculo]
-
           // await client.query(insertQuery, values);
-
         }
 
         if (indFinanciado) {
-
           const insertQuery = `UPDATE ${schema}.tab_conta_receber
                                 SET ind_excluido = true,
                                     motivo_exclusao = 'Venda desfeita'
                                 WHERE seq_veiculo = $1
                                 AND ind_pago = false`;
 
-          const values = [item.seq_veiculo]
+          const values = [item.seq_veiculo];
 
           await client.query(insertQuery, values);
-
         }
 
         if (indPrazo) {
-
           const updateQuery = `UPDATE ${schema}.tab_conta_receber
                                 SET ind_excluido = true,
                                     des_observacao = 'Venda desfeita '
                                 WHERE seq_veiculo = $1`;
 
-          const values = [item.seq_veiculo]
+          const values = [item.seq_veiculo];
 
           await client.query(updateQuery, values);
-
         }
 
         if (indTroca) {
-
           const insertQuery = `UPDATE ${schema}.tab_agenda
                                 SET ind_cancelado = true,
                                     motivo_cancelamento = 'Venda desfeita'
                                 WHERE seq_veiculo = $1`;
 
-          const values = [item.seq_veiculo]
+          const values = [item.seq_veiculo];
 
           const insertQuery1 = `UPDATE ${schema}.tab_veiculo
                                  SET ind_status = 'E',
                                      motivo_cancelamento = 'Venda desfeita'
                                  WHERE seq_veiculo_origem = $1`;
 
-          const values1 = [item.seq_veiculo]
+          const values1 = [item.seq_veiculo];
 
           await client.query(insertQuery, values);
 
@@ -3673,7 +4060,7 @@ exports.desfazerVenda = async (req, res) => {
         // };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -3681,29 +4068,35 @@ exports.desfazerVenda = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.receberFinanciamento = async (req, res) => {
+  const {
+    seq_registro,
+    cod_banco,
+    des_receita,
+    val_receita,
+    seq_veiculo,
+    cod_tipo,
+  } = req.body;
 
-  const { seq_registro, cod_banco, des_receita, val_receita, seq_veiculo, cod_tipo } = req.body;
+  const schema = req.headers["schema"];
 
-  const schema = req.headers['schema'];
+  console.log(req.body);
 
-  console.log(req.body)
-
-  const dataAtual = moment().format()
+  const dataAtual = moment().format();
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -3715,14 +4108,31 @@ exports.receberFinanciamento = async (req, res) => {
                                  dta_recebimento = $2
                              WHERE seq_registro = $3`;
 
-        const uValues = [true, dataAtual, seq_registro]
+        const uValues = [true, dataAtual, seq_registro];
 
         const result = await client.query(uQuery, uValues);
 
-        await entradaFinanciamento(client, schema, des_receita, val_receita, cod_banco, seq_veiculo, dataAtual, cod_tipo)
+        await entradaFinanciamento(
+          client,
+          schema,
+          des_receita,
+          val_receita,
+          cod_banco,
+          seq_veiculo,
+          dataAtual,
+          cod_tipo,
+        );
 
-        async function entradaFinanciamento(client, schema, des_receita, val_receita, cod_banco, seq_veiculo, dtaAtual, cod_tipo) {
-
+        async function entradaFinanciamento(
+          client,
+          schema,
+          des_receita,
+          val_receita,
+          cod_banco,
+          seq_veiculo,
+          dtaAtual,
+          cod_tipo,
+        ) {
           const insertQuery = `
           INSERT INTO ${schema}.tab_movimentacao (
             tipo_movimento, dta_movimento, des_movimento, ind_conciliado, dta_conciliado,
@@ -3733,15 +4143,18 @@ exports.receberFinanciamento = async (req, res) => {
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`;
 
           const values = {
-            tipo_movimento: 'E',
+            tipo_movimento: "E",
             dtaAtual, // Usa a data ajustada
-            des_movimento: cod_tipo === 93 ? 'Financiamento Creditado' : 'Retorno de Financiamento',
+            des_movimento:
+              cod_tipo === 93
+                ? "Financiamento Creditado"
+                : "Retorno de Financiamento",
             ind_conciliado: false,
             dta_conciliado: null,
             ind_excluido: null,
             ind_alterado: false,
             seq_veiculo,
-            des_origem: 'Venda de Veículos',
+            des_origem: "Venda de Veículos",
             cod_banco,
             des_movimento_detalhado: des_receita,
             cod_cartao: 0,
@@ -3750,7 +4163,10 @@ exports.receberFinanciamento = async (req, res) => {
             cod_banco_ofx: null,
             id_unico: null,
             cod_categoria_movimento: cod_tipo,
-            des_categoria_movimento: cod_tipo === 93 ? 'Financiamento Creditado' : 'Retorno de Financiamento',
+            des_categoria_movimento:
+              cod_tipo === 93
+                ? "Financiamento Creditado"
+                : "Retorno de Financiamento",
             numeroParcela: 0,
             seq_despesa: 0,
             seq_fatura: 0,
@@ -3779,19 +4195,17 @@ exports.receberFinanciamento = async (req, res) => {
             values.numeroParcela,
             values.seq_despesa,
             values.seq_fatura,
-            values.ind_cartao_pago
-          ]
-          );
-
+            values.ind_cartao_pago,
+          ]);
         }
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -3799,29 +4213,27 @@ exports.receberFinanciamento = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-
-}
+};
 
 exports.registrarOperacaoParceiro = async (req, res) => {
-
   // 1. Validação dos headers e schema
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
   if (!schema) {
     return res.status(400).json({
       success: false,
-      message: 'Schema não especificado nos headers'
+      message: "Schema não especificado nos headers",
     });
   }
 
@@ -3830,17 +4242,27 @@ exports.registrarOperacaoParceiro = async (req, res) => {
   if (!data) {
     return res.status(400).json({
       success: false,
-      message: 'Dados não fornecidos no corpo da requisição'
+      message: "Dados não fornecidos no corpo da requisição",
     });
   }
 
   // 3. Validação dos campos obrigatórios
   // REMOVI cod_banco e des_banco da validação obrigatória pois podem ser opcionais dependendo do seu caso
-  const requiredFields = ['des_movimento', 'dta_movimento', 'val_movimento', 'tipo_movimento', 'nom_parceiro'];
+  const requiredFields = [
+    "des_movimento",
+    "dta_movimento",
+    "val_movimento",
+    "tipo_movimento",
+    "nom_parceiro",
+  ];
   const missingFields = [];
 
-  requiredFields.forEach(field => {
-    if (data[field] === undefined || data[field] === null || data[field] === '') {
+  requiredFields.forEach((field) => {
+    if (
+      data[field] === undefined ||
+      data[field] === null ||
+      data[field] === ""
+    ) {
       missingFields.push(field);
     }
   });
@@ -3848,23 +4270,24 @@ exports.registrarOperacaoParceiro = async (req, res) => {
   if (missingFields.length > 0) {
     return res.status(400).json({
       success: false,
-      message: 'Campos obrigatórios faltando',
-      missingFields: missingFields
+      message: "Campos obrigatórios faltando",
+      missingFields: missingFields,
     });
   }
 
   // 4. Validação de tipos de dados
-  if (typeof data.val_movimento !== 'number' || isNaN(data.val_movimento)) {
+  if (typeof data.val_movimento !== "number" || isNaN(data.val_movimento)) {
     return res.status(400).json({
       success: false,
-      message: 'Valor da movimentação deve ser um número'
+      message: "Valor da movimentação deve ser um número",
     });
   }
 
-  if (!['C', 'D'].includes(data.tipo_movimento)) {
+  if (!["C", "D"].includes(data.tipo_movimento)) {
     return res.status(400).json({
       success: false,
-      message: 'Tipo de movimentação inválido. Use "C" para crédito ou "D" para débito'
+      message:
+        'Tipo de movimentação inválido. Use "C" para crédito ou "D" para débito',
     });
   }
 
@@ -3873,7 +4296,7 @@ exports.registrarOperacaoParceiro = async (req, res) => {
   if (isNaN(dataMovimento.getTime())) {
     return res.status(400).json({
       success: false,
-      message: 'Data da movimentação inválida'
+      message: "Data da movimentação inválida",
     });
   }
 
@@ -3888,15 +4311,17 @@ exports.registrarOperacaoParceiro = async (req, res) => {
 
         if (data.cod_parceiro && !nomeParceiro) {
           const parceiroQuery = `SELECT nom_parceiro FROM ${schema}.tab_parceiros WHERE seq_registro = $1`;
-          const parceiroResult = await client.query(parceiroQuery, [data.cod_parceiro]);
+          const parceiroResult = await client.query(parceiroQuery, [
+            data.cod_parceiro,
+          ]);
 
           if (parceiroResult.rows.length > 0) {
             nomeParceiro = parceiroResult.rows[0].nom_parceiro;
           } else {
-            nomeParceiro = 'Parceiro Desconhecido';
+            nomeParceiro = "Parceiro Desconhecido";
           }
         } else if (!nomeParceiro) {
-          nomeParceiro = 'Todos Parceiros';
+          nomeParceiro = "Todos Parceiros";
         }
 
         // 8. Query de inserção com validação adicional
@@ -3925,18 +4350,19 @@ exports.registrarOperacaoParceiro = async (req, res) => {
           data.tipo_movimento,
           data.observacao ? data.observacao.trim() : null,
           data.cod_banco || null, // Se for opcional
-          data.des_banco || null   // Se for opcional
+          data.des_banco || null, // Se for opcional
         ];
 
         const result = await client.query(insertQuery, values);
 
         // 8.1 - INSERT NA TAB_MOVIMENTACAO DE ACORDO COM O TIPO DE MOVIMENTO
 
-        let resultMov = null
+        let resultMov = null;
 
-        if(tipo === 'N'){  //N de normal, processo normal de inclusao pela propria tela e I de importaçao ofx
+        if (tipo === "N") {
+          //N de normal, processo normal de inclusao pela propria tela e I de importaçao ofx
 
-        const insertQueryMov = `
+          const insertQueryMov = `
           INSERT INTO ${schema}.tab_movimentacao (
             tipo_movimento, dta_movimento, des_movimento, ind_conciliado, dta_conciliado,
             ind_excluido, ind_alterado, seq_veiculo, des_origem, cod_banco, 
@@ -3946,33 +4372,37 @@ exports.registrarOperacaoParceiro = async (req, res) => {
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
           RETURNING seq_registro`;
 
-        // CORREÇÃO: Os valores precisam ser passados como ARRAY
-        const valuesMov = [
-          data.tipo_movimento === 'C' ? 'E' : 'S', // 1. tipo_movimento
-          data.dta_movimento, // 2. dta_movimento (não dtaAtual)
-          data.tipo_movimento === 'C' ? 'Recebimento de Conta de Parceiros' : 'Pagamento de Conta de Parceiros', // 3. des_movimento
-          false, // 4. ind_conciliado
-          null, // 5. dta_conciliado
-          null, // 6. ind_excluido
-          false, // 7. ind_alterado
-          0, // 8. seq_veiculo
-          `Conta de Parceiros: ${nomeParceiro}`, // 9. des_origem
-          data.cod_banco || null, // 10. cod_banco
-          data.des_movimento.trim(), // 11. des_movimento_detalhado
-          0, // 12. cod_cartao
-          valorMovimento, // 13. val_movimento
-          null, // 14. descricao_mov_ofx
-          null, // 15. cod_banco_ofx
-          null, // 16. id_unico
-          data.tipo_movimento === 'C' ? 90 : 10, // 17. cod_categoria_movimento
-          data.tipo_movimento === 'C' ? 'Recebimento de Conta de Parceiros' : 'Pagamento de Conta de Parceiros', // 18. des_categoria_movimento
-          0, // 19. parcela
-          0, // 20. seq_despesa
-          0, // 21. seq_fatura
-          false // 22. ind_cartao_pago
-        ];
+          // CORREÇÃO: Os valores precisam ser passados como ARRAY
+          const valuesMov = [
+            data.tipo_movimento === "C" ? "E" : "S", // 1. tipo_movimento
+            data.dta_movimento, // 2. dta_movimento (não dtaAtual)
+            data.tipo_movimento === "C"
+              ? "Recebimento de Conta de Parceiros"
+              : "Pagamento de Conta de Parceiros", // 3. des_movimento
+            false, // 4. ind_conciliado
+            null, // 5. dta_conciliado
+            null, // 6. ind_excluido
+            false, // 7. ind_alterado
+            0, // 8. seq_veiculo
+            `Conta de Parceiros: ${nomeParceiro}`, // 9. des_origem
+            data.cod_banco || null, // 10. cod_banco
+            data.des_movimento.trim(), // 11. des_movimento_detalhado
+            0, // 12. cod_cartao
+            valorMovimento, // 13. val_movimento
+            null, // 14. descricao_mov_ofx
+            null, // 15. cod_banco_ofx
+            null, // 16. id_unico
+            data.tipo_movimento === "C" ? 90 : 10, // 17. cod_categoria_movimento
+            data.tipo_movimento === "C"
+              ? "Recebimento de Conta de Parceiros"
+              : "Pagamento de Conta de Parceiros", // 18. des_categoria_movimento
+            0, // 19. parcela
+            0, // 20. seq_despesa
+            0, // 21. seq_fatura
+            false, // 22. ind_cartao_pago
+          ];
 
-         resultMov = await client.query(insertQueryMov, valuesMov);
+          resultMov = await client.query(insertQueryMov, valuesMov);
         }
 
         // 9. Se for uma transação de parceiro específico, atualizar saldo total
@@ -3982,77 +4412,81 @@ exports.registrarOperacaoParceiro = async (req, res) => {
             FROM ${schema}.tab_conta_parceiro 
             WHERE cod_parceiro = $1
           `;
-          const saldoResult = await client.query(saldoQuery, [data.cod_parceiro]);
+          const saldoResult = await client.query(saldoQuery, [
+            data.cod_parceiro,
+          ]);
 
           return {
             registro_conta_parceiro: result.rows[0],
             registro_movimentacao: resultMov?.rows[0] || 0,
-            saldo_atual: parseFloat(saldoResult.rows[0].saldo_total)
+            saldo_atual: parseFloat(saldoResult.rows[0].saldo_total),
           };
         }
 
         return {
           registro_conta_parceiro: result.rows[0],
-          registro_movimentacao: resultMov.rows[0]
+          registro_movimentacao: resultMov.rows[0],
         };
-
       } catch (innerError) {
-        console.error('Erro na transação:', {
+        console.error("Erro na transação:", {
           error: innerError.message,
           stack: innerError.stack,
           data: data,
-          schema: schema
+          schema: schema,
         });
         throw innerError;
       }
     });
 
     // 10. Log de sucesso (opcional, para auditoria)
-    console.log('Operação registrada com sucesso:', {
+    console.log("Operação registrada com sucesso:", {
       schema: schema,
-      parceiro: data.cod_parceiro || 'Todos',
+      parceiro: data.cod_parceiro || "Todos",
       tipo: data.tipo_movimento,
       valor: valorMovimento,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
 
     // 11. Resposta formatada
     return res.status(201).json({
       success: true,
-      message: data.tipo_movimento === 'C'
-        ? 'Recebimento registrado com sucesso!'
-        : 'Débito registrado com sucesso!',
+      message:
+        data.tipo_movimento === "C"
+          ? "Recebimento registrado com sucesso!"
+          : "Débito registrado com sucesso!",
       data: queryResult,
       metadata: {
         timestamp: new Date().toISOString(),
-        valor_formatado: new Intl.NumberFormat('pt-BR', {
-          style: 'currency',
-          currency: 'BRL'
+        valor_formatado: new Intl.NumberFormat("pt-BR", {
+          style: "currency",
+          currency: "BRL",
         }).format(valorMovimento),
-        tipo_operacao: data.tipo_movimento === 'C' ? 'Crédito' : 'Débito'
-      }
+        tipo_operacao: data.tipo_movimento === "C" ? "Crédito" : "Débito",
+      },
     });
-
   } catch (error) {
-    console.error('Erro na operação:', {
+    console.error("Erro na operação:", {
       error: error.message,
       stack: error.stack,
-      endpoint: 'registrarOperacaoParceiro',
-      timestamp: new Date().toISOString()
+      endpoint: "registrarOperacaoParceiro",
+      timestamp: new Date().toISOString(),
     });
 
     // 12. Tratamento de erros específicos do PostgreSQL
-    let errorMessage = 'Erro ao processar a requisição';
+    let errorMessage = "Erro ao processar a requisição";
     let statusCode = 500;
 
-    if (error.code === '23505') { // Violação de chave única
-      errorMessage = 'Registro duplicado';
+    if (error.code === "23505") {
+      // Violação de chave única
+      errorMessage = "Registro duplicado";
       statusCode = 409;
-    } else if (error.code === '23503') { // Violação de chave estrangeira
-      errorMessage = 'Parceiro não encontrado';
+    } else if (error.code === "23503") {
+      // Violação de chave estrangeira
+      errorMessage = "Parceiro não encontrado";
       statusCode = 404;
-    } else if (error.code === '22003') { // Valor numérico fora do intervalo
-      errorMessage = 'Valor fora do intervalo permitido';
+    } else if (error.code === "22003") {
+      // Valor numérico fora do intervalo
+      errorMessage = "Valor fora do intervalo permitido";
       statusCode = 400;
     }
 
@@ -4061,19 +4495,18 @@ exports.registrarOperacaoParceiro = async (req, res) => {
       message: errorMessage,
       details: error.message,
       errorCode: error.code,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   }
 };
 
 exports.buscaContaParceiro = async (req, res) => {
-
   // 1. Validação básica
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
   if (!schema) {
     return res.status(400).json({
       success: false,
-      message: 'Schema não especificado'
+      message: "Schema não especificado",
     });
   }
 
@@ -4100,15 +4533,15 @@ exports.buscaContaParceiro = async (req, res) => {
 
       return res.status(200).json({
         success: true,
-        message: 'Lista de parceiros com saldo carregada',
+        message: "Lista de parceiros com saldo carregada",
         data: {
-          parceiros: result.rows.map(row => ({
+          parceiros: result.rows.map((row) => ({
             cod_parceiro: row.cod_parceiro,
             nom_parceiro: row.nom_parceiro,
             saldo_total: parseFloat(row.saldo_total),
-            total_movimentacoes: parseInt(row.total_movimentacoes)
-          }))
-        }
+            total_movimentacoes: parseInt(row.total_movimentacoes),
+          })),
+        },
       });
     }
 
@@ -4150,39 +4583,41 @@ exports.buscaContaParceiro = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: 'Histórico do parceiro carregado',
+      message: "Histórico do parceiro carregado",
       data: {
         parceiro: {
           cod_parceiro: cod_parceiro,
           saldo_total: parseFloat(saldoResult.rows[0].saldo_total),
-          total_movimentacoes: parseInt(saldoResult.rows[0].total_movimentacoes)
+          total_movimentacoes: parseInt(
+            saldoResult.rows[0].total_movimentacoes,
+          ),
         },
-        movimentacoes: result.rows.map(row => ({
+        movimentacoes: result.rows.map((row) => ({
           ...row,
           val_movimento: parseFloat(row.val_movimento),
           // CORREÇÃO: Formatação de data sem moment
-          dta_formatada: new Date(row.dta_movimento).toLocaleDateString('pt-BR')
+          dta_formatada: new Date(row.dta_movimento).toLocaleDateString(
+            "pt-BR",
+          ),
           // OU se preferir: dta_formatada: row.dta_movimento.split('T')[0].split('-').reverse().join('/')
-        }))
-      }
+        })),
+      },
     });
-
   } catch (error) {
-    console.error('Erro ao buscar conta parceiro:', error);
+    console.error("Erro ao buscar conta parceiro:", error);
 
     return res.status(500).json({
       success: false,
-      message: 'Erro ao buscar informações do parceiro',
-      details: error.message
+      message: "Erro ao buscar informações do parceiro",
+      details: error.message,
     });
   }
 };
 
 exports.cadastraDespesaFixa = async (req, res) => {
-
   const { data } = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -4193,17 +4628,24 @@ exports.cadastraDespesaFixa = async (req, res) => {
                              VALUES
                              ($1, $2, $3, $4, $5, $6)`;
 
-        const values = [data.des_despesa, data.val_despesa, data.dta_despesa, data.cod_tipo_despesa, data.des_tipo_despesa, data.ind_status]
+        const values = [
+          data.des_despesa,
+          data.val_despesa,
+          data.dta_despesa,
+          data.cod_tipo_despesa,
+          data.des_tipo_despesa,
+          data.ind_status,
+        ];
 
         const result = await client.query(insertQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -4211,25 +4653,24 @@ exports.cadastraDespesaFixa = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.buscaDespesasFixas = async (req, res) => {
+  const {} = req.body;
 
-  const { } = req.body;
-
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -4238,17 +4679,17 @@ exports.buscaDespesasFixas = async (req, res) => {
 
         const insertQuery = `SELECT * FROM ${schema}.tab_despesa_fixas`;
 
-        const values = []
+        const values = [];
 
         const result = await client.query(insertQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
@@ -4256,36 +4697,38 @@ exports.buscaDespesasFixas = async (req, res) => {
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};
 
 exports.editaDespesaFixa = async (req, res) => {
   const { item, acao } = req.body;
-  const schema = req.headers['schema'];
+  const schema = req.headers["schema"];
 
-  console.log(item)
+  console.log(item);
 
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        if (acao === 'E') {
+        if (acao === "E") {
           // Verifica se o registro existe (opcional, mas recomendado)
           const checkQuery = `SELECT seq_registro FROM ${schema}.tab_despesa_fixas WHERE seq_registro = $1`;
-          const checkResult = await client.query(checkQuery, [item.seq_registro]);
-          
+          const checkResult = await client.query(checkQuery, [
+            item.seq_registro,
+          ]);
+
           if (checkResult.rowCount === 0) {
-            throw new Error('Registro não encontrado para exclusão');
+            throw new Error("Registro não encontrado para exclusão");
           }
 
           const deleteQuery = `DELETE FROM ${schema}.tab_despesa_fixas WHERE seq_registro = $1`;
@@ -4293,16 +4736,17 @@ exports.editaDespesaFixa = async (req, res) => {
 
           return {
             rows: result.rows,
-            rowCount: result.rowCount
+            rowCount: result.rowCount,
           };
-
-        } else if (acao === 'A') {
+        } else if (acao === "A") {
           // Verifica se o registro existe (opcional)
           const checkQuery = `SELECT seq_registro FROM ${schema}.tab_despesa_fixas WHERE seq_registro = $1`;
-          const checkResult = await client.query(checkQuery, [item.seq_registro]);
-          
+          const checkResult = await client.query(checkQuery, [
+            item.seq_registro,
+          ]);
+
           if (checkResult.rowCount === 0) {
-            throw new Error('Registro não encontrado para atualização');
+            throw new Error("Registro não encontrado para atualização");
           }
 
           // CORREÇÃO AQUI: sintaxe correta do UPDATE
@@ -4313,92 +4757,98 @@ exports.editaDespesaFixa = async (req, res) => {
                 dta_despesa = $3 
             WHERE seq_registro = $4
           `;
-          
+
           const valuesUpdate = [
-            item.des_despesa, 
-            item.val_despesa, 
-            item.dta_despesa, 
-            item.seq_registro
+            item.des_despesa,
+            item.val_despesa,
+            item.dta_despesa,
+            item.seq_registro,
           ];
 
           const result = await client.query(updateQuery, valuesUpdate);
 
           return {
             rows: result.rows,
-            rowCount: result.rowCount
+            rowCount: result.rowCount,
           };
-
         } else {
-          throw new Error('Ação inválida. Use "E" para excluir ou "A" para atualizar');
+          throw new Error(
+            'Ação inválida. Use "E" para excluir ou "A" para atualizar',
+          );
         }
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
 
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro geral:', error);
+    console.error("Erro geral:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
-      details: error.message
+      message: "Erro ao processar a requisição",
+      details: error.message,
       // Não exponha o stack em produção: errorDetails: error.stack
     });
   }
 };
 
-exports.updateMovimentoFinanceiro = async (req, res) =>{
-
+exports.updateMovimentoFinanceiro = async (req, res) => {
   const { movimento } = req.body;
-  
-  const schema = req.headers['schema'];
-  
+
+  const schema = req.headers["schema"];
+
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
         // Sua lógica de transação aqui
-        
+
         const insertQuery = `UPDATE ${schema}.tab_movimentacao 
                              SET COD_CATEGORIA_MOVIMENTO = $1,
                                  des_categoria_movimento = $2,
                                  ind_conciliado = $3,
                                  dta_conciliado = $4
                              WHERE seq_registro = $5 `;
-        
-        const values =  [ movimento.cod_categoria_movimento, movimento.des_categoria_movimento, true, moment().format(), movimento.seq_registro ]
-        
+
+        const values = [
+          movimento.cod_categoria_movimento,
+          movimento.des_categoria_movimento,
+          true,
+          moment().format(),
+          movimento.seq_registro,
+        ];
+
         const result = await client.query(insertQuery, values);
-        
+
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error('Erro na transação:', innerError);
+        console.error("Erro na transação:", innerError);
         throw innerError; // Força o rollback
       }
     });
-    
+
     // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'Operação realizada com sucesso',
-      data: queryResult
+      message: "Operação realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operação:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisição',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
-}
+};

@@ -34,6 +34,7 @@
     "axios": "^1.6.7",
     "cheerio": "^1.2.0",
     "cjs": "^0.0.11",
+    "cloudinary": "^2.9.0",
     "cors": "^2.8.5",
     "dotenv": "^16.0.0",
     "dotenv-safe": "^8.2.0",
