@@ -534,7 +534,7 @@ class Lead {
         SELECT
           CASE
             WHEN lower(COALESCE(NULLIF(meta->>'plataforma',''), origem, '')) IN ('BV','napista') THEN 'BV/NaPista'
-            WHEN lower(COALESCE(NULLIF(meta->>'plataforma',''), origem, '')) IN ('mobiauto', 'Mobiauto') THEN 'MobiAuto'
+            WHEN lower(COALESCE(NULLIF(meta->>'plataforma',''), origem, '')) IN ('mobiauto', 'Mobiauto') THEN 'Mobiauto'
             WHEN lower(COALESCE(NULLIF(meta->>'plataforma',''), origem, '')) IN ('icarros','i carros','i-carros') THEN 'iCarros'
             WHEN lower(COALESCE(NULLIF(meta->>'plataforma',''), origem, '')) IN ('olx') THEN 'OLX'
             WHEN lower(COALESCE(NULLIF(meta->>'plataforma',''), origem, '')) IN ('mercado livre','mercadolivre','ml','mercado_livre') THEN 'Mercado Livre'
