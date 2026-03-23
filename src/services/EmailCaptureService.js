@@ -292,6 +292,7 @@ class EmailCaptureService {
         const classification = this.shouldTreatAsRegularEmail(
           emailData,
           platformData.platform,
+          platformData.kind || null,
         );
 
         const treatAsRegularEmail = classification === "email";
@@ -446,18 +447,44 @@ class EmailCaptureService {
 
   detectAndParsePlatform(emailData) {
     const { subject, from, text, html } = emailData;
-    const fullText = text || this.htmlToText(html);
+    const textContent = text || "";
+    const htmlContent = html || "";
+    const fullText = [textContent, this.htmlToText(htmlContent)]
+      .filter(Boolean)
+      .join("\n");
     const senderEmail = (from?.value?.[0]?.address || "").toLowerCase();
     const senderName = from?.text || "";
 
     console.log(`🔍 Analisando email de: ${senderEmail}`);
     console.log(`   Assunto: "${subject}"`);
 
+    // BV / NaPista — entra antes das demais detecções
+    const bvKind = this.getBvNapistaKind(emailData);
+    if (bvKind) {
+      console.log(`🎯 Detectado: BV (${bvKind})`);
+
+      let parsed;
+      if (bvKind === "email") {
+        parsed = this.parseBvCommonEmail(fullText, subject, emailData);
+      } else if (bvKind === "commercial") {
+        parsed = this.parseBvCommercialEmail(fullText, subject, emailData);
+      } else {
+        parsed = this.parseBvEmail(fullText, subject, emailData);
+      }
+
+      return {
+        platform: "BV",
+        kind: bvKind,
+        parsed,
+        rawData: { subject, senderEmail, senderName },
+      };
+    }
+
     if (
       senderEmail.includes("mobiauto.com.br") ||
       senderEmail.includes("contato@mobiauto") ||
-      text?.includes("mobiauto.com.br") ||
-      html?.includes("mobiauto.com.br")
+      textContent.toLowerCase().includes("mobiauto") ||
+      htmlContent.toLowerCase().includes("mobiauto")
     ) {
       console.log("🎯 Detectado: Mobiauto");
       return {
@@ -471,8 +498,8 @@ class EmailCaptureService {
       senderEmail.includes("olx.com.br") ||
       senderEmail.includes("email@email.olx.com.br") ||
       senderEmail.includes("newsolx.com.br") ||
-      text?.includes("olx.com.br") ||
-      html?.includes("olx.com.br") ||
+      textContent.toLowerCase().includes("olx") ||
+      htmlContent.toLowerCase().includes("olx") ||
       subject?.toLowerCase().includes("olx")
     ) {
       console.log("🎯 Detectado: OLX");
@@ -485,8 +512,8 @@ class EmailCaptureService {
 
     if (
       senderEmail.includes("webmotors.com.br") ||
-      text?.includes("webmotors.com.br") ||
-      html?.includes("webmotors.com.br") ||
+      textContent.toLowerCase().includes("webmotors") ||
+      htmlContent.toLowerCase().includes("webmotors") ||
       subject?.toLowerCase().includes("webmotors")
     ) {
       console.log("🎯 Detectado: Webmotors");
@@ -500,8 +527,8 @@ class EmailCaptureService {
     if (
       senderEmail.includes("icarros.com.br") ||
       senderEmail.includes("em.icarros.com.br") ||
-      text?.toLowerCase().includes("icarros") ||
-      html?.toLowerCase().includes("icarros")
+      textContent.toLowerCase().includes("icarros") ||
+      htmlContent.toLowerCase().includes("icarros")
     ) {
       console.log("🎯 Detectado: iCarros");
       return {
@@ -513,8 +540,8 @@ class EmailCaptureService {
 
     if (
       senderEmail.includes("mercadolivre") ||
-      text?.includes("mercadolivre") ||
-      html?.includes("mercadolivre")
+      textContent.toLowerCase().includes("mercadolivre") ||
+      htmlContent.toLowerCase().includes("mercadolivre")
     ) {
       const isPergunta =
         /Pergunta feita no an/i.test(fullText) ||
@@ -542,8 +569,8 @@ class EmailCaptureService {
     if (
       senderEmail.includes("facebookmail.com") ||
       senderEmail.includes("facebook.com") ||
-      text?.includes("facebook.com/marketplace") ||
-      html?.includes("facebook.com/marketplace") ||
+      textContent.includes("facebook.com/marketplace") ||
+      htmlContent.includes("facebook.com/marketplace") ||
       subject?.toLowerCase().includes("marketplace")
     ) {
       console.log("🎯 Detectado: Facebook Marketplace");
@@ -556,8 +583,8 @@ class EmailCaptureService {
 
     if (
       senderEmail.includes("instagram.com") ||
-      text?.includes("instagram.com") ||
-      html?.includes("instagram.com") ||
+      textContent.includes("instagram.com") ||
+      htmlContent.includes("instagram.com") ||
       subject?.toLowerCase().includes("instagram")
     ) {
       console.log("🎯 Detectado: Instagram");
@@ -570,8 +597,8 @@ class EmailCaptureService {
 
     if (
       senderEmail.includes("whatsapp.com") ||
-      text?.includes("whatsapp") ||
-      html?.includes("whatsapp") ||
+      textContent.toLowerCase().includes("whatsapp") ||
+      htmlContent.toLowerCase().includes("whatsapp") ||
       subject?.toLowerCase().includes("whatsapp")
     ) {
       console.log("🎯 Detectado: WhatsApp Business");
@@ -586,11 +613,67 @@ class EmailCaptureService {
     return { platform: null, parsed: null };
   }
 
-  shouldTreatAsRegularEmail(emailData, platform) {
+  isBvNapistaSender(senderEmail = "") {
+    return String(senderEmail || "").toLowerCase() === "noreply@napista.com.br";
+  }
+
+  getBvNapistaKind(emailData = {}) {
+    const senderEmail = String(
+      emailData?.from?.value?.[0]?.address || "",
+    ).toLowerCase();
+    const subject = String(emailData?.subject || "").toLowerCase();
+
+    if (!this.isBvNapistaSender(senderEmail)) {
+      return null;
+    }
+
+    const commonEmailSubjects = [
+      "seu boleto agora vence todo",
+      "seu boleto chegou!",
+      "recebemos seu pagamento, obrigado",
+    ];
+
+    if (commonEmailSubjects.some((s) => subject.includes(s))) {
+      return "email";
+    }
+
+    if (
+      subject.includes("você já falou com") ||
+      subject.includes("voce ja falou com")
+    ) {
+      return "commercial";
+    }
+
+    if (
+      subject.includes("cliente com crédito pré-aprovado no bv") ||
+      subject.includes("cliente com credito pré-aprovado no bv") ||
+      subject.includes("cliente com credito pre-aprovado no bv") ||
+      subject.includes("está interessado na sua oferta") ||
+      subject.includes("esta interessado na sua oferta")
+    ) {
+      return "lead";
+    }
+
+    return "lead";
+  }
+
+  shouldTreatAsRegularEmail(emailData, platform, platformKind = null) {
     const subject = String(emailData?.subject || "").toLowerCase();
     const senderEmail = String(
       emailData?.from?.value?.[0]?.address || "",
     ).toLowerCase();
+
+    if (platform === "BV") {
+      if (platformKind === "email") {
+        return "email";
+      }
+
+      if (platformKind === "commercial") {
+        return "lead";
+      }
+
+      return "lead";
+    }
 
     if (platform === "OLX") {
       if (senderEmail === "dicas@newsolx.com.br") {
@@ -627,7 +710,7 @@ class EmailCaptureService {
     }
 
     if (platform === "Mobiauto") {
-      if (subject.includes("BOLETO EM ABERTO")) {
+      if (subject.includes("boleto em aberto")) {
         return "email";
       }
       if (senderEmail === "mailer@vindi.com.br") {
@@ -636,6 +719,227 @@ class EmailCaptureService {
     }
 
     return "lead";
+  }
+
+  parseBvCommonEmail(text, subject, emailData = {}) {
+    return {
+      nome: null,
+      email: emailData?.from?.value?.[0]?.address || null,
+      telefone: null,
+      veiculo: null,
+      mensagem: subject || "Email operacional BV",
+      preco: null,
+      placa: null,
+      extras: {
+        origemPortal: "BV",
+        tipoMensagem: "email-comum",
+        administrativo: true,
+      },
+    };
+  }
+
+  parseBvCommercialEmail(text, subject, emailData = {}) {
+    const parsed = this.parseBvEmail(text, subject, emailData);
+
+    return {
+      ...parsed,
+      mensagem:
+        parsed?.mensagem ||
+        subject ||
+        "Lembrete comercial BV para retomada de contato.",
+      extras: {
+        ...(parsed?.extras || {}),
+        origemPortal: "BV",
+        tipoMensagem: "comercial",
+        reminderComercial: true,
+      },
+    };
+  }
+
+  parseBvEmail(text, subject, emailData = {}) {
+    const clean = String(text || "")
+      .replace(/\r/g, "")
+      .replace(/=\n/g, "")
+      .replace(/=20/g, " ")
+      .replace(/=09/g, " ")
+      .replace(/=3D/g, "=")
+      .replace(/\u00A0/g, " ")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&ccedil;/gi, "ç")
+      .replace(/&atilde;/gi, "ã")
+      .replace(/&aacute;/gi, "á")
+      .replace(/&eacute;/gi, "é")
+      .replace(/&iacute;/gi, "í")
+      .replace(/&oacute;/gi, "ó")
+      .replace(/&uacute;/gi, "ú")
+      .replace(/&ecirc;/gi, "ê")
+      .replace(/&ocirc;/gi, "ô")
+      .replace(/&agrave;/gi, "à")
+      .replace(/&bull;/gi, " • ")
+      .replace(/&quot;/gi, '"')
+      .replace(/&#039;/g, "'")
+      .replace(/&#8203;/g, " ")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/p>/gi, "\n")
+      .replace(/<\/div>/gi, "\n")
+      .replace(/<[^>]*>/g, " ")
+      .replace(/[ \t]+/g, " ")
+      .replace(/\n\s+/g, "\n")
+      .replace(/\n{2,}/g, "\n")
+      .trim();
+
+    const html = String(emailData?.html || "");
+    const htmlText = this.htmlToText(html);
+    const combined = [clean, htmlText].filter(Boolean).join("\n");
+
+    const normalizeMoney = (value) => {
+      if (!value) return null;
+      return value.replace(/\./g, "").replace(",", ".").replace(/\s/g, "");
+    };
+
+    const pickBlock = (startLabel, endLabel = null) => {
+      if (!startLabel) return null;
+
+      const pattern = endLabel
+        ? new RegExp(`${startLabel}\\s*\\n([\\s\\S]*?)\\n${endLabel}`, "i")
+        : new RegExp(`${startLabel}\\s*\\n([\\s\\S]*?)$`, "i");
+
+      return combined.match(pattern)?.[1]?.trim() || null;
+    };
+
+    const replyToEmail =
+      emailData?.replyTo?.value?.[0]?.address ||
+      emailData?.headers?.get?.("reply-to") ||
+      emailData?.headers?.get?.("Reply-To") ||
+      null;
+
+    let nome =
+      pickBlock("Dados do cliente", "Mensagem")
+        ?.split("\n")
+        ?.map((l) => l.trim())
+        ?.find(
+          (l) =>
+            /^[A-ZÀ-Ú][A-ZÀ-Úa-zà-ú\s]{8,}$/.test(l) &&
+            !l.includes("CPF") &&
+            !l.includes("Telefone") &&
+            !l.includes("E-mail"),
+        ) ||
+      combined
+        .match(
+          /CPF:\s*\d{3}\.\d{3}\.\d{3}-\d{2}\s*\n([A-ZÀ-Ú][A-Za-zÀ-ÿ\s]+)$/im,
+        )?.[1]
+        ?.trim() ||
+      combined
+        .match(/([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s]+)\s+está interessado na sua oferta/i)?.[1]
+        ?.trim() ||
+      combined
+        .match(/([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s]+)\s+esta interessado na sua oferta/i)?.[1]
+        ?.trim() ||
+      subject?.match(/^(.+?)\s+está interessado na sua oferta/i)?.[1]?.trim() ||
+      subject?.match(/^(.+?)\s+esta interessado na sua oferta/i)?.[1]?.trim() ||
+      null;
+
+    const cpf = combined.match(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/)?.[0] || null;
+
+    let telefone =
+      combined.match(/api\.whatsapp\.com\/send\?phone=55(\d{10,11})/i)?.[1] ||
+      combined.match(/wa\.me\/55(\d{10,11})/i)?.[1] ||
+      combined.match(/\(?\d{2}\)?\s*9?\d{4,5}-?\d{4}/)?.[0]?.replace(/\D/g, "") ||
+      null;
+
+    const email =
+      replyToEmail ||
+      combined.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] ||
+      null;
+
+    let entrada = null;
+    let parcelas = null;
+
+    const financiamentoMatch = combined.match(
+      /R\$\s*([\d\.,]+)\s*\+\s*(\d{1,3})x\s+de\s+R\$\s*([\d\.,]+)/i,
+    );
+
+    if (financiamentoMatch) {
+      entrada = normalizeMoney(financiamentoMatch[1]);
+      parcelas = {
+        qtd: financiamentoMatch[2],
+        valor: normalizeMoney(financiamentoMatch[3]),
+      };
+    }
+
+    const simulacaoAprovada =
+      /simula(?:ç|c)[aã]o aprovada no banco bv/i.test(combined) ||
+      /crédito pré-aprovado no bv/i.test(combined) ||
+      /credito pré-aprovado no bv/i.test(combined) ||
+      /credito pre-aprovado no bv/i.test(combined) ||
+      /pode ser aprovado no banco bv/i.test(combined);
+
+    let veiculo =
+      pickBlock("Veículo de interesse", "Com interesse em financiar no BV")
+        ?.split("\n")
+        ?.map((l) => l.trim())
+        ?.filter(Boolean)?.[0] ||
+      combined.match(/Veículo de interesse\s*\n([^\n]+)/i)?.[1]?.trim() ||
+      combined.match(/Veiculo de interesse\s*\n([^\n]+)/i)?.[1]?.trim() ||
+      null;
+
+    let veiculoDetalhes =
+      pickBlock("Veículo de interesse", "Com interesse em financiar no BV")
+        ?.split("\n")
+        ?.map((l) => l.trim())
+        ?.filter(Boolean)?.[1] ||
+      combined.match(
+        /\b(19|20)\d{2}\s*•\s*[\d\.,]+\s*km\s*•\s*R\$\s*[\d\.,]+/i,
+      )?.[0] ||
+      null;
+
+    const preco = veiculoDetalhes?.match(/R\$\s*([\d\.,]+)/i)?.[1]
+      ? normalizeMoney(veiculoDetalhes.match(/R\$\s*([\d\.,]+)/i)[1])
+      : null;
+
+    const ano = veiculoDetalhes?.match(/\b(19|20)\d{2}\b/)?.[0] || null;
+
+    const km =
+      veiculoDetalhes
+        ?.match(/([\d\.,]+)\s*km/i)?.[1]
+        ?.replace(/\./g, "")
+        .replace(",", "") || null;
+
+    const placa =
+      veiculoDetalhes
+        ?.match(/\b[A-Z]{3}-?[0-9A-Z][A-Z0-9][0-9]{2}\b/i)?.[0]
+        ?.toUpperCase() ||
+      combined
+        .match(/\b[A-Z]{3}-?[0-9A-Z][A-Z0-9][0-9]{2}\b/i)?.[0]
+        ?.toUpperCase() ||
+      null;
+
+    const mensagem =
+      pickBlock("Mensagem", "Veículo de interesse") ||
+      combined.match(/Lead BV:[^\n]+/i)?.[0] ||
+      combined.match(/Cliente interessado na sua oferta/i)?.[0] ||
+      subject ||
+      null;
+
+    return {
+      nome,
+      email,
+      telefone,
+      veiculo,
+      mensagem,
+      preco,
+      placa,
+      extras: {
+        origemFinanceira: "BV",
+        simulacaoAprovada,
+        cpf,
+        entrada,
+        parcelas,
+        veiculoDetalhes,
+        ano,
+        km,
+      },
+    };
   }
 
   parseMobiautoEmail(text, subject) {
@@ -805,6 +1109,7 @@ class EmailCaptureService {
     };
   }
 
+  // iCarros limpo — sem regras de BV
   parseIcarrosEmail(text, subject, emailData = {}) {
     const clean = String(text || "")
       .replace(/\r/g, "")
@@ -864,13 +1169,6 @@ class EmailCaptureService {
     const isPossibleProposal =
       lowerSubject.includes("temos uma possível proposta pra você") ||
       lowerSubject.includes("temos uma possivel proposta pra você");
-
-    const isReminderBV =
-      lowerSubject.includes("pode ser aprovado no banco bv") ||
-      lowerSubject.includes("já falou com") ||
-      lowerSubject.includes("está interessado na sua oferta.") ||
-      lowerSubject.includes("interesse na sua oferta") ||
-      lowerSubject.includes("ja falou com");
 
     const isPreAnalise =
       /pré-analisado/i.test(subjectNorm) || /pre-analisado/i.test(subjectNorm);
@@ -957,68 +1255,6 @@ class EmailCaptureService {
           fonte: "icarros",
           tipoLead: "possivel-proposta",
           cidade,
-          superQuente: false,
-          preAnalisado: false,
-        },
-      };
-    }
-
-    if (isReminderBV) {
-      const nome =
-        combined
-          .match(/CPF:\s*[\d\.\-]+\s*\n\s*([A-Za-zÀ-ÿ\s]+)$/im)?.[1]
-          ?.trim() ||
-        combined
-          .match(
-            /CPF:\s*[\d\.\-]+[\s\S]*?\n([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s]+)\s*$/im,
-          )?.[1]
-          ?.trim() ||
-        combined
-          .match(
-            /([A-Za-zÀ-ÿ]+\s+[A-Za-zÀ-ÿ\s]+)\s+pode ser aprovado no banco BV/i,
-          )?.[1]
-          ?.trim() ||
-        null;
-
-      const cpf = combined.match(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/)?.[0] || null;
-
-      const telefone =
-        combined
-          .match(/api\.whatsapp\.com.*?phone=55(\d{10,11})/i)?.[1]
-          ?.replace(/\D/g, "") || null;
-
-      const financiamento = combined.match(
-        /R\$\s*([\d\.\,]+)\s*\+\s*(\d{1,3})x\s*de\s*R\$\s*([\d\.\,]+)/i,
-      );
-
-      let veiculo = null;
-      const blocoVeiculo =
-        combined.match(
-          /Simula(?:ç|c)[aã]o de financiamento[\s\S]*?([A-Z0-9À-ÿ][^\n]+)\n([^\n]+(?:R\$[^\n]+)?)/i,
-        ) || null;
-
-      if (blocoVeiculo) {
-        veiculo = `${blocoVeiculo[1]} ${blocoVeiculo[2]}`
-          .replace(/\s+/g, " ")
-          .trim();
-      }
-
-      return {
-        nome: nome || "Não informado",
-        email: null,
-        telefone,
-        veiculo: veiculo || "Veículo não especificado",
-        mensagem:
-          "Lead BV/NaPista com possibilidade de aprovação de financiamento.",
-        preco: null,
-        placa: null,
-        extras: {
-          fonte: "icarros-bv-reminder",
-          cpf,
-          entrada: financiamento ? financiamento[1] : null,
-          parcelas: financiamento
-            ? { qtd: financiamento[2], valor: financiamento[3] }
-            : null,
           superQuente: false,
           preAnalisado: false,
         },
@@ -1448,6 +1684,9 @@ class EmailCaptureService {
     const fullText =
       `${subject || ""} ${text || ""} ${this.htmlToText(html || "")}`.toLowerCase();
 
+    if (fullText.includes("banco bv") || fullText.includes("napista")) {
+      return "BV";
+    }
     if (fullText.includes("olx")) return "OLX";
     if (fullText.includes("webmotors")) return "Webmotors";
     if (fullText.includes("icarros")) return "iCarros";
