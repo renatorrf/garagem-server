@@ -27,4 +27,6 @@ router.get('/leads', leads.getLeads);
 
 router.get('/leads/dashboard', leads.getDashboardStats);
 
+router.post('/leads/:id/retry-whatsapp', leads.retryWhatsApp);
+
 module.exports = router;

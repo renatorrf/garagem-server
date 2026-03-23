@@ -218,6 +218,43 @@ class LeadController {
     }
   }
 
+  async retryWhatsApp(req, res) {
+    try {
+      const { id } = req.params;
+      const { mode = 'initial' } = req.body || {};
+
+      const allowedModes = ['initial', 'reminder', 'feedback'];
+
+      if (!allowedModes.includes(mode)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Modo inválido. Use: initial, reminder ou feedback',
+        });
+      }
+
+      const result = await Lead.requeueWhatsApp(id, mode);
+
+      if (mode === 'initial') {
+        await LeadWorkflowService.onNewLead(result.lead);
+      }
+
+      res.json({
+        success: true,
+        message: `Fluxo WhatsApp rearmado com sucesso (${mode})`,
+        data: {
+          id,
+          mode,
+        },
+      });
+    } catch (error) {
+      console.error('Erro ao reprocessar WhatsApp:', error);
+      res.status(400).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  }
+
   async deleteLead(req, res) {
     try {
       const { id } = req.params;

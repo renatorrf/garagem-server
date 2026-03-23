@@ -364,19 +364,20 @@ class Lead {
 
     if (search) {
       whereConditions.push(`
-        (
-          to_tsvector('portuguese',
-            COALESCE(assunto, '') || ' ' ||
-            COALESCE(mensagem, '') || ' ' ||
-            COALESCE(veiculo_interesse, '') || ' ' ||
-            COALESCE(result_text, '')
-          ) @@ to_tsquery('portuguese', $${paramCount})
-          OR email_remetente ILIKE $${paramCount + 1}
-          OR telefone ILIKE $${paramCount + 1}
-          OR nome ILIKE $${paramCount + 1}
-          OR vendedor_whatsapp ILIKE $${paramCount + 1}
-        )
-      `);
+      (
+        to_tsvector('portuguese',
+          COALESCE(assunto, '') || ' ' ||
+          COALESCE(mensagem, '') || ' ' ||
+          COALESCE(veiculo_interesse, '') || ' ' ||
+          COALESCE(result_text, '')
+        ) @@ to_tsquery('portuguese', $${paramCount})
+        OR email_remetente ILIKE $${paramCount + 1}
+        OR telefone ILIKE $${paramCount + 1}
+        OR nome ILIKE $${paramCount + 1}
+        OR vendedor_whatsapp ILIKE $${paramCount + 1}
+      )
+    `);
+
       const searchTerm = search.trim().split(/\s+/).join(" & ");
       params.push(searchTerm, `%${search}%`);
       paramCount += 2;
@@ -389,13 +390,55 @@ class Lead {
     params.push(limit, offset);
 
     const query = `
-      SELECT *, COUNT(*) OVER() as total_count
-      FROM ${Lead.tableName}
-      ${whereClause}
-      ${orderBy}
-      LIMIT $${paramCount}
-      OFFSET $${paramCount + 1}
-    `;
+    SELECT
+      *,
+      COUNT(*) OVER() as total_count,
+
+      metadata->'wa'->>'sellerName' as wa_seller_name,
+      metadata->'wa'->>'lastStatus' as wa_last_status,
+      metadata->'wa'->>'claimedAt' as wa_claimed_at,
+      metadata->'wa'->>'attendanceStartedAt' as wa_attendance_started_at,
+      metadata->'wa'->>'feedbackRequestedAt' as wa_feedback_requested_at,
+      metadata->'wa'->>'outcome' as wa_outcome,
+
+      CASE
+        WHEN regexp_replace(COALESCE(telefone, ''), '\\D', '', 'g') ~ '^(55)?\\d{10,11}$'
+        THEN true
+        ELSE false
+      END as wa_phone_valid,
+
+      CASE
+        WHEN COALESCE(NULLIF(trim(nome), ''), NULL) IS NOT NULL
+         AND regexp_replace(COALESCE(telefone, ''), '\\D', '', 'g') ~ '^(55)?\\d{10,11}$'
+         AND COALESCE(metadata->'wa'->>'claimedAt', '') = ''
+        THEN true
+        ELSE false
+      END as wa_can_retry_initial,
+
+      CASE
+        WHEN status = 'novo'
+         AND COALESCE(metadata->'wa'->>'claimedAt', '') = ''
+         AND regexp_replace(COALESCE(telefone, ''), '\\D', '', 'g') ~ '^(55)?\\d{10,11}$'
+        THEN true
+        ELSE false
+      END as wa_can_force_reminder,
+
+      CASE
+        WHEN status IN ('novo', 'contatado')
+         AND (
+           COALESCE(metadata->'wa'->>'attendanceStartedAt', '') <> ''
+           OR COALESCE(metadata->'wa'->>'claimedAt', '') <> ''
+         )
+        THEN true
+        ELSE false
+      END as wa_can_force_feedback
+
+    FROM ${Lead.tableName}
+    ${whereClause}
+    ${orderBy}
+    LIMIT $${paramCount}
+    OFFSET $${paramCount + 1}
+  `;
 
     const result = await db.query(query, params);
 
@@ -819,6 +862,144 @@ class Lead {
     `;
     const result = await db.query(query, [id]);
     return result.rows[0] ? new Lead(result.rows[0]) : null;
+  }
+
+  static async requeueWhatsApp(id, mode = "initial") {
+    const allowedModes = ["initial", "reminder", "feedback"];
+
+    if (!allowedModes.includes(mode)) {
+      throw new Error("Modo de reenvio inválido");
+    }
+
+    const lead = await this.findById(id);
+
+    if (!lead) {
+      throw new Error("Lead não encontrado");
+    }
+
+    const phoneDigits = String(lead.telefone || "").replace(/\D/g, "");
+    const hasValidPhone =
+      phoneDigits.length === 10 ||
+      phoneDigits.length === 11 ||
+      phoneDigits.length === 12 ||
+      phoneDigits.length === 13;
+
+    if (!lead.nome || !lead.nome.trim()) {
+      throw new Error("Lead sem nome válido");
+    }
+
+    if (!hasValidPhone) {
+      throw new Error("Lead sem telefone válido");
+    }
+
+    const currentMetadata =
+      lead.metadata && typeof lead.metadata === "object" ? lead.metadata : {};
+
+    const wa = {
+      ...(currentMetadata.wa || {}),
+    };
+
+    if (mode === "initial") {
+      const newMetadata = {
+        ...currentMetadata,
+        wa: {
+          ...wa,
+          notifyWamid: null,
+          sellerKey: null,
+          sellerId: null,
+          sellerName: null,
+          sellerSelectedBy: null,
+          sellerSelectedAt: null,
+          claimedAt: null,
+          attendanceStartedAt: null,
+          estimatedEndAt: null,
+          reminderCount: 0,
+          nextReminderAt: null,
+          lastReminderAt: null,
+          lastReminderWamid: null,
+          feedbackRequestedAt: null,
+          feedbackRequestWamid: null,
+          outcome: null,
+          closedAt: null,
+          lastStatus: null,
+          lastStatusAt: null,
+          openConversationWamid: null,
+          messageStatuses: [],
+        },
+      };
+
+      const updatedLead = await lead.update({
+        metadata: newMetadata,
+        status: "novo",
+        dataContato: null,
+      });
+
+      return { lead: updatedLead, mode: "initial" };
+    }
+
+    if (mode === "reminder") {
+      const newMetadata = {
+        ...currentMetadata,
+        wa: {
+          ...wa,
+          claimedAt: null,
+          sellerKey: null,
+          sellerId: null,
+          sellerName: null,
+          sellerSelectedBy: null,
+          sellerSelectedAt: null,
+          attendanceStartedAt: null,
+          estimatedEndAt: null,
+          reminderCount: 0,
+          nextReminderAt: new Date(Date.now() - 60 * 1000).toISOString(),
+          lastReminderAt: null,
+          lastReminderWamid: null,
+          feedbackRequestedAt: null,
+          feedbackRequestWamid: null,
+          outcome: null,
+          closedAt: null,
+          lastStatus: null,
+          lastStatusAt: null,
+          openConversationWamid: null,
+        },
+      };
+
+      const updatedLead = await lead.update({
+        metadata: newMetadata,
+        status: "novo",
+        dataContato: null,
+      });
+
+      return { lead: updatedLead, mode: "reminder" };
+    }
+
+    if (mode === "feedback") {
+      const backDate = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+
+      const newMetadata = {
+        ...currentMetadata,
+        wa: {
+          ...wa,
+          claimedAt: wa.claimedAt || backDate,
+          attendanceStartedAt: wa.attendanceStartedAt || backDate,
+          feedbackRequestedAt: null,
+          feedbackRequestWamid: null,
+          outcome: null,
+          closedAt: null,
+          lastStatus: null,
+          lastStatusAt: null,
+        },
+      };
+
+      const updatedLead = await lead.update({
+        metadata: newMetadata,
+        status: "contatado",
+      });
+
+      return { lead: updatedLead, mode: "feedback" };
+    }
+
+    throw new Error("Modo de reenvio inválido");
   }
 }
 
