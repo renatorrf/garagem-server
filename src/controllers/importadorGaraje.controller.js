@@ -151,6 +151,8 @@ async function mapVeiculoToCadastroPayloadAsync(v) {
   const val_venda_esperado = toMoney(v.preco);
   const observacoes = normalizeText("Importado automaticamente do Garage");
 
+   const ind_ajustado_importacao = false;
+
   const fotosNode = v.fotos?.imagem;
   const fotos = Array.isArray(fotosNode)
     ? fotosNode
@@ -200,6 +202,7 @@ async function mapVeiculoToCadastroPayloadAsync(v) {
       dta_compra: null,
       val_venda_esperado,
       observacoes,
+      ind_ajustado_importacao,
       cod_parceiro: 0,
       des_proprietario: "Next Car",
       ind_veiculo_investidor: false,

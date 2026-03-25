@@ -199,6 +199,8 @@ exports.salvaVeiculo = async (req, res) => {
   const { dados_veiculo, imagens_veiculo, img_alterada } = req.body;
   const schema = req.headers["schema"];
 
+  
+
   if (!schema) {
     return res.status(400).json({
       success: false,
@@ -290,6 +292,7 @@ exports.salvaVeiculo = async (req, res) => {
         dta_ultima_alteracao: dataAtual,
         cod_banco,
         financeiro_incluso: true,
+        ind_ajustado_importacao: true
       };
 
       // Só atualiza a capa se as imagens tiverem sido alteradas
@@ -1289,6 +1292,8 @@ exports.inserirMovimento = async (req, res) => {
   const schema = req.headers["schema"];
   const body = req.body;
 
+  console.log(req.body)
+
   if (!schema) {
     return res.status(400).json({
       success: false,
@@ -2144,7 +2149,7 @@ exports.importarFinanceiroOFX = async (req, res) => {
     });
   }
 
-  try {
+  try {   
     const queryResult = await db.transaction(async (client) => {
       if (!movimentosSelecionados || movimentosSelecionados.length === 0) {
         throw new Error("Nenhum movimento selecionado para importação");
