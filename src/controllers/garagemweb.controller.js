@@ -1938,7 +1938,7 @@ exports.alocadorDespesaVeiculo = async (req, res) => {
 
         const insertQuery = `INSERT INTO ${schema}.tab_alocador_despesa_veiculo
                                   (des_movimento, val_movimento, dta_movimento, seq_veiculo, 
-                                  des_observacao, ind_alocato)
+                                  des_observacao, ind_alocato, seq_movimentacao)
                              VALUES ($1, $2, $3, $4, $5, $6, $7)
                              RETURNING seq_registro`;
 
