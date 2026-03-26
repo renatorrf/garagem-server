@@ -57,6 +57,10 @@ router.post("/buscaFinanceiras", garagemWeb.buscaFinanceiras);
 router.post("/inserirMovimento", garagemWeb.inserirMovimento); 
 router.post("/alteraMovimento", garagemWeb.alteraMovimento);  
 
+router.post("/alocadorDespesaVeiculo", garagemWeb.alocadorDespesaVeiculo); 
+router.post("/buscaDespesasAlocador", garagemWeb.buscaDespesasAlocador); 
+router.post("/updateDespesasAlocador", garagemWeb.updateDespesasAlocador); 
+
 router.post("/inserirDespesaVeiculo", garagemWeb.inserirDespesaVeiculo);
 router.post("/buscaDespesaVeiculo", garagemWeb.buscaDespesaVeiculo); 
 

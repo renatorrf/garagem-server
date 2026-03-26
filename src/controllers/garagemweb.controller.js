@@ -64,9 +64,7 @@ exports.cadastraVeiculo = async (req, res) => {
       } = dados_veiculo;
 
       const imagensValidas = Array.isArray(imagens_veiculo)
-        ? imagens_veiculo
-            .filter((img) => img && img.src)
-            .slice(0, 12)
+        ? imagens_veiculo.filter((img) => img && img.src).slice(0, 12)
         : [];
 
       const veiculoFields = {
@@ -148,7 +146,7 @@ exports.cadastraVeiculo = async (req, res) => {
 
       const veiculoResult = await client.query(
         insertVeiculoQuery,
-        veiculoValues
+        veiculoValues,
       );
 
       const seqVeiculo = veiculoResult.rows[0].seq_veiculo;
@@ -175,7 +173,7 @@ exports.cadastraVeiculo = async (req, res) => {
         await client.query(insertImagemQuery, imageValues);
 
         console.log(
-          `Inserido registro com ${imagensValidas.length} imagens para o veículo ${seqVeiculo}`
+          `Inserido registro com ${imagensValidas.length} imagens para o veículo ${seqVeiculo}`,
         );
       }
     });
@@ -198,8 +196,6 @@ exports.salvaVeiculo = async (req, res) => {
   const dataAtual = moment().format();
   const { dados_veiculo, imagens_veiculo, img_alterada } = req.body;
   const schema = req.headers["schema"];
-
-  
 
   if (!schema) {
     return res.status(400).json({
@@ -252,9 +248,7 @@ exports.salvaVeiculo = async (req, res) => {
       }
 
       const imagensValidas = Array.isArray(imagens_veiculo)
-        ? imagens_veiculo
-            .filter((img) => img && img.src)
-            .slice(0, 12)
+        ? imagens_veiculo.filter((img) => img && img.src).slice(0, 12)
         : [];
 
       const veiculoFields = {
@@ -292,7 +286,7 @@ exports.salvaVeiculo = async (req, res) => {
         dta_ultima_alteracao: dataAtual,
         cod_banco,
         financeiro_incluso: true,
-        ind_ajustado_importacao: true
+        ind_ajustado_importacao: true,
       };
 
       // Só atualiza a capa se as imagens tiverem sido alteradas
@@ -301,10 +295,7 @@ exports.salvaVeiculo = async (req, res) => {
       } else {
         // Mantém compatibilidade com o front antigo/novo
         const capaAtual =
-          img_veiculo_capa_url ??
-          imagemCapa ??
-          imgCapaBase64 ??
-          null;
+          img_veiculo_capa_url ?? imagemCapa ?? imgCapaBase64 ?? null;
 
         if (capaAtual) {
           veiculoFields.img_veiculo_capa_url = capaAtual;
@@ -343,7 +334,7 @@ exports.salvaVeiculo = async (req, res) => {
       if (img_alterada === true) {
         await client.query(
           `DELETE FROM ${schema}.tab_veiculo_imagem WHERE seq_veiculo = $1`,
-          [seqVeiculo]
+          [seqVeiculo],
         );
 
         if (imagensValidas.length > 0) {
@@ -1292,7 +1283,7 @@ exports.inserirMovimento = async (req, res) => {
   const schema = req.headers["schema"];
   const body = req.body;
 
-  console.log(req.body)
+  console.log(req.body);
 
   if (!schema) {
     return res.status(400).json({
@@ -1394,7 +1385,7 @@ exports.inserirMovimento = async (req, res) => {
               valorNormalizado || 0,
               des_movimento || "",
               id_unico || "",
-            ].join("|")
+            ].join("|"),
           )
           .digest("hex");
 
@@ -1411,7 +1402,7 @@ exports.inserirMovimento = async (req, res) => {
           case 99: // Retorno Financiamento
             if (!veiculo && !des_movimento_detalhado && !des_observacao) {
               throw new Error(
-                "Esta categoria exige vínculo com veículo ou detalhamento."
+                "Esta categoria exige vínculo com veículo ou detalhamento.",
               );
             }
             break;
@@ -1419,14 +1410,16 @@ exports.inserirMovimento = async (req, res) => {
           case 94: // Venda de Veículos de Parceiros
             if (!veiculo || !parceiro) {
               throw new Error(
-                "Venda de veículo de parceiro exige veículo e parceiro."
+                "Venda de veículo de parceiro exige veículo e parceiro.",
               );
             }
             break;
 
           case 90: // Recebimento Conta de Parceiros
             if (!parceiro) {
-              throw new Error("Recebimento de conta de parceiro exige parceiro.");
+              throw new Error(
+                "Recebimento de conta de parceiro exige parceiro.",
+              );
             }
             break;
 
@@ -1434,7 +1427,7 @@ exports.inserirMovimento = async (req, res) => {
           case 98: // Recebimento de Empréstimos
             if (!parceiro && !nom_parceiro && !des_observacao) {
               throw new Error(
-                "Informe parceiro, nome do terceiro ou observação."
+                "Informe parceiro, nome do terceiro ou observação.",
               );
             }
             break;
@@ -1442,12 +1435,12 @@ exports.inserirMovimento = async (req, res) => {
           case 97: // Entrada por Transferência entre Contas
             if (!bancoDestino) {
               throw new Error(
-                "Entrada por transferência entre contas exige banco destino."
+                "Entrada por transferência entre contas exige banco destino.",
               );
             }
             if (bancoDestino === banco) {
               throw new Error(
-                "O banco de destino deve ser diferente do banco de origem."
+                "O banco de destino deve ser diferente do banco de origem.",
               );
             }
             break;
@@ -1464,12 +1457,12 @@ exports.inserirMovimento = async (req, res) => {
           case 8: // Saída por Transferência entre Contas
             if (!bancoDestino) {
               throw new Error(
-                "Saída por transferência entre contas exige banco destino."
+                "Saída por transferência entre contas exige banco destino.",
               );
             }
             if (bancoDestino === banco) {
               throw new Error(
-                "O banco de destino deve ser diferente do banco de origem."
+                "O banco de destino deve ser diferente do banco de origem.",
               );
             }
             break;
@@ -1478,7 +1471,7 @@ exports.inserirMovimento = async (req, res) => {
           case 6: // Empréstimos Concedidos
             if (!parceiro && !nom_parceiro && !des_observacao) {
               throw new Error(
-                "Informe parceiro, nome do terceiro ou observação."
+                "Informe parceiro, nome do terceiro ou observação.",
               );
             }
             break;
@@ -1493,7 +1486,7 @@ exports.inserirMovimento = async (req, res) => {
           case 12: // Prolabore (Sócio)
             if (!des_observacao && !des_movimento_detalhado) {
               throw new Error(
-                "Informe observação ou detalhamento para esta categoria."
+                "Informe observação ou detalhamento para esta categoria.",
               );
             }
             break;
@@ -1511,11 +1504,13 @@ exports.inserirMovimento = async (req, res) => {
              FROM ${schema}.tab_movimentacao
             WHERE id_unico = $1
             LIMIT 1`,
-          [id_unico]
+          [id_unico],
         );
 
         if (duplicado.rowCount > 0) {
-          throw new Error("Movimento já importado anteriormente (id_unico duplicado).");
+          throw new Error(
+            "Movimento já importado anteriormente (id_unico duplicado).",
+          );
         }
       }
 
@@ -1618,7 +1613,7 @@ exports.inserirMovimento = async (req, res) => {
               SET cod_movimentacao = $1,
                   financeiro_incluso = true
             WHERE seq_veiculo = $2`,
-          [seqRegistro, seqVeiculo]
+          [seqRegistro, seqVeiculo],
         );
       };
 
@@ -1641,7 +1636,7 @@ exports.inserirMovimento = async (req, res) => {
             dta_movimento,
             des_movimento
           ) VALUES ($1, $2, $3, $4)`,
-          [codParceiro, valor, dataMovimento, descricao]
+          [codParceiro, valor, dataMovimento, descricao],
         );
       };
 
@@ -1821,7 +1816,7 @@ exports.inserirMovimento = async (req, res) => {
           `UPDATE ${schema}.tab_movimentacao
               SET seq_movimentacao_relacionada = $1
             WHERE seq_registro = $2`,
-          [seqDestino, principal.seq_registro]
+          [seqDestino, principal.seq_registro],
         );
       }
 
@@ -1919,6 +1914,199 @@ exports.alteraMovimento = async (req, res) => {
       message: "Erro ao processar a requisição",
       details: error.message,
       errorDetails: error.stack,
+    });
+  }
+};
+
+exports.alocadorDespesaVeiculo = async (req, res) => {
+  const {
+    des_movimento,
+    val_movimento,
+    dta_movimento,
+    seq_veiculo,
+    des_observacao,
+    ind_alocato = false,
+    seq_movimentacao,
+  } = req.body;
+
+  const schema = req.headers["schema"];
+
+  try {
+    const queryResult = await db.transaction(async (client) => {
+      try {
+        // Sua lógica de transação aqui
+
+        const insertQuery = `INSERT INTO ${schema}.tab_alocador_despesa_veiculo
+                                  (des_movimento, val_movimento, dta_movimento, seq_veiculo, 
+                                  des_observacao, ind_alocato)
+                             VALUES ($1, $2, $3, $4, $5, $6, $7)
+                             RETURNING seq_registro`;
+
+        const values = [
+          des_movimento,
+          val_movimento,
+          dta_movimento,
+          seq_veiculo,
+          des_observacao,
+          ind_alocato,
+          seq_movimentacao,
+        ];
+
+        const result = await client.query(insertQuery, values);
+
+        const seq_registro = result.rows[0].seq_registro;
+
+        return {
+          rows: result.rows,
+          rowCount: result.rowCount,
+          registro: seq_registro,
+        };
+        // Commit implícito se não houve erro
+      } catch (innerError) {
+        console.error("Erro na transação:", innerError);
+        throw innerError; // Força o rollback
+      }
+    });
+
+    // Se chegou aqui, a transação foi bem-sucedida
+    return res.status(200).json({
+      success: true,
+      message: "Operação realizada com sucesso",
+      data: queryResult,
+    });
+  } catch (error) {
+    console.error("Erro na operação:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Erro ao processar a requisição",
+      details: error.message,
+      errorDetails: error.stack,
+    });
+  }
+};
+
+exports.buscaDespesasAlocador = async (req, res) => {
+  const { ind_alocato } = req.body;
+
+  const schema = req.headers["schema"];
+
+  try {
+    const queryResult = await db.transaction(async (client) => {
+      try {
+        // Sua lógica de transação aqui
+
+        const insertQuery = `SELECT * FROM ${schema}.tab_alocador_despesa_veiculo a
+                              WHERE a.ind_alocato = $1`;
+
+        const values = [ind_alocato];
+
+        const result = await client.query(insertQuery, values);
+
+        const seq_registro = result.rows[0].seq_registro;
+
+        return {
+          rows: result.rows,
+          rowCount: result.rowCount,
+          registro: seq_registro,
+        };
+        // Commit implícito se não houve erro
+      } catch (innerError) {
+        console.error("Erro na transação:", innerError);
+        throw innerError; // Força o rollback
+      }
+    });
+
+    // Se chegou aqui, a transação foi bem-sucedida
+    return res.status(200).json({
+      success: true,
+      message: "Operação realizada com sucesso",
+      data: queryResult,
+    });
+  } catch (error) {
+    console.error("Erro na operação:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Erro ao processar a requisição",
+      details: error.message,
+      errorDetails: error.stack,
+    });
+  }
+};
+
+exports.updateDespesasAlocador = async (req, res) => {
+  const { seq_veiculo, des_veiculo, seq_movimentacao } = req.body;
+  const schema = req.headers["schema"];
+
+  try {
+    // validações básicas
+    if (!schema || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(String(schema))) {
+      return res.status(400).json({
+        success: false,
+        message: "Schema inválido no header",
+      });
+    }
+
+    if (!seq_veiculo || !seq_movimentacao) {
+      return res.status(400).json({
+        success: false,
+        message: "Campos obrigatórios: seq_veiculo, seq_movimentacao",
+      });
+    }
+
+    const queryResult = await db.transaction(async (client) => {
+      // 1) Atualiza alocador_despesa_veiculo
+      const updateDespesaSql = `
+        UPDATE ${schema}.tab_alocador_despesa_veiculo a
+           SET seq_veiculo = $1,
+               ind_alocato = true
+         WHERE seq_movimentacao = $2
+         RETURNING a.seq_movimentacao, a.seq_veiculo
+      `;
+
+      const updateDespesaParams = [seq_veiculo, seq_movimentacao];
+      const r1 = await client.query(updateDespesaSql, updateDespesaParams);
+
+      if (r1.rowCount === 0) {
+        // força rollback
+        throw new Error(`Nenhuma despesa encontrada para seq_movimentacao=${seq_movimentacao}`);
+      }
+
+      // 2) Atualiza movimentacao (append na descrição)
+      const detalhe = ` Alocada ao Veiculo ${des_veiculo ?? ''}`.trimEnd();
+
+      const updateMovSql = `
+        UPDATE ${schema}.tab_movimentacao a
+           SET seq_veiculo = $1,
+               des_movimento_detalhado =
+                 COALESCE(a.des_movimento_detalhado, '') || $2
+         WHERE seq_movimentacao = $3
+         RETURNING a.seq_movimentacao, a.seq_veiculo, a.des_movimento_detalhado
+      `;
+
+      const updateMovParams = [seq_veiculo, detalhe, seq_movimentacao];
+      const r2 = await client.query(updateMovSql, updateMovParams);
+
+      if (r2.rowCount === 0) {
+        throw new Error(`Movimentação não encontrada para seq_movimentacao=${seq_movimentacao}`);
+      }
+
+      return {
+        despesa: r1.rows[0],
+        movimentacao: r2.rows[0],
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Operação realizada com sucesso",
+      data: queryResult,
+    });
+  } catch (error) {
+    console.error("Erro na operação:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Erro ao processar a requisição",
+      details: error.message,
     });
   }
 };
@@ -2109,9 +2297,7 @@ exports.buscaMovimentoFinanceiro = async (req, res) => {
         return {
           ...row,
           val_movimento:
-            row.tipo_movimento === "S"
-              ? -Math.abs(valor)
-              : Math.abs(valor),
+            row.tipo_movimento === "S" ? -Math.abs(valor) : Math.abs(valor),
         };
       });
 
@@ -2149,7 +2335,7 @@ exports.importarFinanceiroOFX = async (req, res) => {
     });
   }
 
-  try {   
+  try {
     const queryResult = await db.transaction(async (client) => {
       if (!movimentosSelecionados || movimentosSelecionados.length === 0) {
         throw new Error("Nenhum movimento selecionado para importação");
@@ -2179,7 +2365,7 @@ exports.importarFinanceiroOFX = async (req, res) => {
               valorNormalizado,
               mov.descricao || "",
               mov.idUnico || "",
-            ].join("|")
+            ].join("|"),
           )
           .digest("hex");
 
@@ -2189,7 +2375,7 @@ exports.importarFinanceiroOFX = async (req, res) => {
                FROM ${schema}.tab_movimentacao
               WHERE id_unico = $1
               LIMIT 1`,
-            [mov.idUnico]
+            [mov.idUnico],
           );
 
           if (dup.rowCount > 0) {
@@ -2318,7 +2504,7 @@ exports.conciliarEncontrados = async (req, res) => {
       for (const movimento of movimentosEncontrados) {
         if (!movimento.seq_registro) {
           throw new Error(
-            `Movimento sem seq_registro: ${JSON.stringify(movimento)}`
+            `Movimento sem seq_registro: ${JSON.stringify(movimento)}`,
           );
         }
 
@@ -2329,12 +2515,12 @@ exports.conciliarEncontrados = async (req, res) => {
               WHERE id_unico = $1
                 AND seq_registro <> $2
               LIMIT 1`,
-            [movimento.id_unico, movimento.seq_registro]
+            [movimento.id_unico, movimento.seq_registro],
           );
 
           if (dup.rowCount > 0) {
             throw new Error(
-              `id_unico já vinculado a outro lançamento: ${movimento.id_unico}`
+              `id_unico já vinculado a outro lançamento: ${movimento.id_unico}`,
             );
           }
         }
@@ -5353,8 +5539,12 @@ exports.updateMovimentoFinanceiro = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       const categoria = Number(movimento.cod_categoria_movimento || 0);
-      const seqVeiculo = movimento.seq_veiculo ? Number(movimento.seq_veiculo) : null;
-      const codParceiro = movimento.cod_parceiro ? Number(movimento.cod_parceiro) : null;
+      const seqVeiculo = movimento.seq_veiculo
+        ? Number(movimento.seq_veiculo)
+        : null;
+      const codParceiro = movimento.cod_parceiro
+        ? Number(movimento.cod_parceiro)
+        : null;
       const codBancoDestino = movimento.cod_banco_destino
         ? Number(movimento.cod_banco_destino)
         : null;
@@ -5375,7 +5565,9 @@ exports.updateMovimentoFinanceiro = async (req, res) => {
 
           case 94:
             if (!seqVeiculo || !codParceiro) {
-              throw new Error("Venda de veículo de parceiro exige veículo e parceiro.");
+              throw new Error(
+                "Venda de veículo de parceiro exige veículo e parceiro.",
+              );
             }
             break;
 
@@ -5389,7 +5581,9 @@ exports.updateMovimentoFinanceiro = async (req, res) => {
           case 97:
           case 8:
             if (!codBancoDestino) {
-              throw new Error("Transferência entre contas exige banco destino.");
+              throw new Error(
+                "Transferência entre contas exige banco destino.",
+              );
             }
             break;
         }
@@ -5429,7 +5623,9 @@ exports.updateMovimentoFinanceiro = async (req, res) => {
         movimento.des_observacao || null,
         movimento.des_movimento_detalhado || null,
         movimento.criterio_conciliacao || null,
-        movimento.ind_conciliado === true ? "VALIDADO_E_CONCILIADO" : "VALIDADO",
+        movimento.ind_conciliado === true
+          ? "VALIDADO_E_CONCILIADO"
+          : "VALIDADO",
         movimento.seq_registro,
       ];
 
@@ -5445,7 +5641,7 @@ exports.updateMovimentoFinanceiro = async (req, res) => {
               SET cod_movimentacao = $1,
                   financeiro_incluso = true
             WHERE seq_veiculo = $2`,
-          [movimento.seq_registro, seqVeiculo]
+          [movimento.seq_registro, seqVeiculo],
         );
       }
 
@@ -5473,7 +5669,6 @@ exports.updateMovimentoFinanceiro = async (req, res) => {
 
 //helpers Conciliacao
 
-
 function normalizeValorPorTipo(tipo, valor) {
   const n = Number(valor || 0);
   if (Number.isNaN(n) || n === 0) {
@@ -5482,7 +5677,13 @@ function normalizeValorPorTipo(tipo, valor) {
   return tipo === "E" ? Math.abs(n) : -Math.abs(n);
 }
 
-function gerarHashConciliacao({ cod_banco, dta_movimento, val_movimento, des_movimento, id_unico }) {
+function gerarHashConciliacao({
+  cod_banco,
+  dta_movimento,
+  val_movimento,
+  des_movimento,
+  id_unico,
+}) {
   return crypto
     .createHash("md5")
     .update(
@@ -5492,7 +5693,7 @@ function gerarHashConciliacao({ cod_banco, dta_movimento, val_movimento, des_mov
         val_movimento || 0,
         des_movimento || "",
         id_unico || "",
-      ].join("|")
+      ].join("|"),
     )
     .digest("hex");
 }
@@ -5526,7 +5727,9 @@ function validarCategoriaFinanceira({
 
     case 94: // Venda de Veículos de Parceiros
       if (!seq_veiculo || !cod_parceiro) {
-        throw new Error("Venda de veículo de parceiro exige veículo e parceiro.");
+        throw new Error(
+          "Venda de veículo de parceiro exige veículo e parceiro.",
+        );
       }
       break;
 
@@ -5539,20 +5742,22 @@ function validarCategoriaFinanceira({
 
     case 96: // Recebimento de Terceiros
     case 98: // Recebimento de Empréstimos
-    case 9:  // Pagamento a Terceiros
-    case 6:  // Empréstimos Concedidos
+    case 9: // Pagamento a Terceiros
+    case 6: // Empréstimos Concedidos
       if (!cod_parceiro && !nom_parceiro && !des_observacao) {
         throw new Error("Informe parceiro, nome do terceiro ou observação.");
       }
       break;
 
     case 97: // Entrada por Transferência entre Contas
-    case 8:  // Saída por Transferência entre Contas
+    case 8: // Saída por Transferência entre Contas
       if (!cod_banco_destino) {
         throw new Error("Transferência entre contas exige banco destino.");
       }
       if (Number(cod_banco_destino) === Number(cod_banco)) {
-        throw new Error("Banco de destino deve ser diferente do banco de origem.");
+        throw new Error(
+          "Banco de destino deve ser diferente do banco de origem.",
+        );
       }
       break;
 
@@ -5567,9 +5772,10 @@ function validarCategoriaFinanceira({
     case 11: // Despesas à reembolsar (Sócio)
     case 12: // Prolabore (Sócio)
       if (!des_observacao && !des_movimento_detalhado) {
-        throw new Error("Informe observação ou detalhamento para esta categoria.");
+        throw new Error(
+          "Informe observação ou detalhamento para esta categoria.",
+        );
       }
       break;
   }
 }
-
