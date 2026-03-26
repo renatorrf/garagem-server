@@ -2102,12 +2102,14 @@ exports.updateDespesasAlocador = async (req, res) => {
         UPDATE ${schema}.tab_movimentacao a
            SET seq_veiculo = $1,
                des_movimento_detalhado =
-                 COALESCE(a.des_movimento_detalhado, '') || $2
+                 COALESCE(a.des_movimento_detalhado, '') || $2,
+                cod_categoria_movimento = $3,
+                des_categoria_movimento = $4
          WHERE seq_registro = $3
          RETURNING a.seq_registro, a.seq_veiculo, a.des_movimento_detalhado
       `;
 
-      const updateMovParams = [seq_veiculo, detalhe, seq_movimentacao];
+      const updateMovParams = [seq_veiculo, detalhe, seq_movimentacao, 4, 'Despesas Veículos'];
       const r2 = await client.query(updateMovSql, updateMovParams);
 
       if (r2.rowCount === 0) {
