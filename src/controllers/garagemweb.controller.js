@@ -387,10 +387,16 @@ exports.buscaVeiculo = async (req, res) => {
 
   try {
     const veiculos = await db.getMany(`
-      SELECT *
-      FROM ${schema}.tab_veiculo
-      WHERE ind_status != 'E'
-      ORDER BY seq_veiculo DESC
+      SELECT
+        a.*,
+        COALESCE(SUM(b.val_despesa), 0) AS val_despesa_veiculo
+      FROM ${schema}.tab_veiculo a
+      LEFT JOIN ${schema}.tab_despesa_veiculo b
+        ON b.seq_veiculo = a.seq_veiculo
+        AND COALESCE(b.ind_excluido, false) = false
+      WHERE a.ind_status <> 'E'
+      GROUP BY a.seq_veiculo
+      ORDER BY a.seq_veiculo DESC;
     `);
 
     const veiculosTratados = veiculos.map((veiculo) => {
