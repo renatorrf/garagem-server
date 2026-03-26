@@ -2002,12 +2002,9 @@ exports.buscaDespesasAlocador = async (req, res) => {
 
         const result = await client.query(insertQuery, values);
 
-        const seq_registro = result.rows[0].seq_registro || null;
-
         return {
           rows: result.rows,
-          rowCount: result.rowCount,
-          registro: seq_registro,
+          rowCount: result.rowCount
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
