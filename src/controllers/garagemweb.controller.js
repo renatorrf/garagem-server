@@ -2219,12 +2219,27 @@ exports.buscaDespesaVeiculo = async (req, res) => {
       try {
         // Sua lógica de transação aqui
 
-        const insertQuery = ` select * from ${schema}.tab_despesa_veiculo
-                              where seq_veiculo = $1 `;
+        let query = '';
+        let values = [];
 
-        const values = [seq_veiculo];
+        if (Number(seq_veiculo) === -1) {
+          query = `
+            SELECT COALESCE(SUM(val_despesa), 0) AS val_despesa_veiculo
+            FROM ${schema}.tab_despesa_veiculo
+            WHERE COALESCE(ind_excluido, false) = false
+          `;
+        } else {
+          query = `
+            SELECT *
+            FROM ${schema}.tab_despesa_veiculo
+            WHERE seq_veiculo = $1
+              AND COALESCE(ind_excluido, false) = false
+            ORDER BY dta_despesa DESC NULLS LAST
+          `;
+          values = [seq_veiculo];
+        }
 
-        const result = await client.query(insertQuery, values);
+        const result = await db.query(query, values);
 
         return {
           rows: result.rows,
