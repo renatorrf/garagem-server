@@ -2010,7 +2010,7 @@ exports.buscaDespesasAlocador = async (req, res) => {
                               a.seq_movimentacao AS seq_movimentacao,
                               a.ind_alocato AS ind_alocato,
                               m.seq_registro AS seq_registro,
-                              m.des_origem AS des_origem
+                              a.des_observacao AS des_observacao
                             FROM ${schema}.tab_alocador_despesa_veiculo a
                             INNER JOIN ${schema}.tab_movimentacao m
                                     ON m.seq_registro = a.seq_movimentacao
