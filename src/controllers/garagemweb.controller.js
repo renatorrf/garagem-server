@@ -2098,7 +2098,7 @@ exports.updateDespesasAlocador = async (req, res) => {
                des_movimento_detalhado =
                  COALESCE(a.des_movimento_detalhado, '') || $2
          WHERE seq_registro = $3
-         RETURNING a.registro, a.seq_veiculo, a.des_movimento_detalhado
+         RETURNING a.seq_registro, a.seq_veiculo, a.des_movimento_detalhado
       `;
 
       const updateMovParams = [seq_veiculo, detalhe, seq_movimentacao];
