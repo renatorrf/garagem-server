@@ -1995,16 +1995,35 @@ exports.buscaDespesasAlocador = async (req, res) => {
       try {
         // Sua lógica de transação aqui
 
-        const insertQuery = `SELECT * FROM ${schema}.tab_alocador_despesa_veiculo a
-                              WHERE a.ind_alocato = $1`;
+        const selectQuery = `
+                            SELECT
+                              m.cod_banco AS cod_banco,
+                              m.cod_cartao AS cod_cartao,
+                              COALESCE(NULLIF(m.des_movimento_detalhado, ''), m.des_movimento) AS des_despesa,
+                              m.cod_categoria_movimento AS cod_tipo_despesa,
+                              m.des_categoria_movimento AS des_tipo_despesa,
+                              m.dta_movimento AS dta_despesa,
+                              m.ind_excluido AS ind_excluido,
+                              a.seq_veiculo AS seq_veiculo,
+                              m.val_movimento AS val_despesa,
+                              m.parcela AS parcela,
+                              a.seq_movimentacao AS seq_movimentacao,
+                              a.ind_alocato AS ind_alocato,
+                              m.seq_registro AS seq_registro,
+                              m.des_origem AS des_origem
+                            FROM ${schema}.tab_alocador_despesa_veiculo a
+                            INNER JOIN ${schema}.tab_movimentacao m
+                                    ON m.seq_registro = a.seq_movimentacao
+                            WHERE a.ind_alocato = $1
+                            ORDER BY m.dta_movimento DESC, m.seq_registro DESC
+                          `;
 
-        const values = [ind_alocato];
-
-        const result = await client.query(insertQuery, values);
+        const values = [ind_alocato]; // true/false
+        const result = await client.query(selectQuery, values);
 
         return {
           rows: result.rows,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
         };
         // Commit implícito se não houve erro
       } catch (innerError) {
@@ -2065,11 +2084,13 @@ exports.updateDespesasAlocador = async (req, res) => {
 
       if (r1.rowCount === 0) {
         // força rollback
-        throw new Error(`Nenhuma despesa encontrada para seq_movimentacao=${seq_movimentacao}`);
+        throw new Error(
+          `Nenhuma despesa encontrada para seq_movimentacao=${seq_movimentacao}`,
+        );
       }
 
       // 2) Atualiza movimentacao (append na descrição)
-      const detalhe = ` Alocada ao Veiculo ${des_veiculo ?? ''}`.trimEnd();
+      const detalhe = ` Alocada ao Veiculo ${des_veiculo ?? ""}`.trimEnd();
 
       const updateMovSql = `
         UPDATE ${schema}.tab_movimentacao a
@@ -2084,7 +2105,9 @@ exports.updateDespesasAlocador = async (req, res) => {
       const r2 = await client.query(updateMovSql, updateMovParams);
 
       if (r2.rowCount === 0) {
-        throw new Error(`Movimentação não encontrada para seq_movimentacao=${seq_movimentacao}`);
+        throw new Error(
+          `Movimentação não encontrada para seq_movimentacao=${seq_movimentacao}`,
+        );
       }
 
       return {
