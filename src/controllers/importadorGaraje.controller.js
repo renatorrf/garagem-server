@@ -180,7 +180,7 @@ async function mapVeiculoToCadastroPayloadAsync(v) {
 
   return {
     dados_veiculo: {
-      ind_tipo_veiculo: "P",
+      ind_tipo_veiculo: "I",
       nome_documento: null,
       des_veiculo_personalizado: null,
       documento: null,
