@@ -1,4 +1,4 @@
-const db = require("../config/database");
+﻿const db = require("../config/database");
 if (process.env.NODE_ENV !== "production") {
   require("dotenv-safe").config({ example: ".env.example" });
 }
@@ -11,11 +11,11 @@ exports.verifyTokenSim = async (req, res, next) => {
   const tokenValido = process.env.AUTHTOKEN;
 
   if (token === tokenValido) {
-    next(); // Chama o próximo middleware se o token for válido
+    next(); // Chama o prÃ³ximo middleware se o token for vÃ¡lido
   } else {
     return res
       .status(401)
-      .json({ auth: false, message: "Auth-Token inválido." });
+      .json({ auth: false, message: "Auth-Token invÃ¡lido." });
   }
 };
 
@@ -27,7 +27,7 @@ exports.cadastraVeiculo = async (req, res) => {
   if (!schema) {
     return res.status(400).json({
       success: false,
-      message: "Schema não especificado nos headers",
+      message: "Schema nÃ£o especificado nos headers",
     });
   }
 
@@ -72,7 +72,7 @@ exports.cadastraVeiculo = async (req, res) => {
         des_veiculo_personalizado,
         observacoes:
           observacoes == null
-            ? `Cor: ${cor ?? ""}, Combustível: ${combustivel ?? ""}, Motor: ${motorizacao ?? ""}, Portas: ${portas ?? ""}, Câmbio: ${cambio ?? ""}, KM: ${km ?? ""}`
+            ? `Cor: ${cor ?? ""}, CombustÃ­vel: ${combustivel ?? ""}, Motor: ${motorizacao ?? ""}, Portas: ${portas ?? ""}, CÃ¢mbio: ${cambio ?? ""}, KM: ${km ?? ""}`
             : observacoes,
         dta_compra,
         img_veiculo_capa_url: imagensValidas?.[0]?.src ?? null,
@@ -173,20 +173,20 @@ exports.cadastraVeiculo = async (req, res) => {
         await client.query(insertImagemQuery, imageValues);
 
         console.log(
-          `Inserido registro com ${imagensValidas.length} imagens para o veículo ${seqVeiculo}`,
+          `Inserido registro com ${imagensValidas.length} imagens para o veÃ­culo ${seqVeiculo}`,
         );
       }
     });
 
     res.status(200).json({
       success: true,
-      message: "Veículo cadastrado com sucesso.",
+      message: "VeÃ­culo cadastrado com sucesso.",
     });
   } catch (error) {
-    console.error("Erro ao cadastrar veículo:", error);
+    console.error("Erro ao cadastrar veÃ­culo:", error);
     res.status(500).json({
       success: false,
-      message: "Falha ao cadastrar o veículo",
+      message: "Falha ao cadastrar o veÃ­culo",
       error: error.message,
     });
   }
@@ -200,7 +200,7 @@ exports.salvaVeiculo = async (req, res) => {
   if (!schema) {
     return res.status(400).json({
       success: false,
-      message: "Schema não especificado nos headers",
+      message: "Schema nÃ£o especificado nos headers",
     });
   }
 
@@ -244,7 +244,7 @@ exports.salvaVeiculo = async (req, res) => {
       } = dados_veiculo;
 
       if (!seq_veiculo) {
-        throw new Error("seq_veiculo é obrigatório para atualização");
+        throw new Error("seq_veiculo Ã© obrigatÃ³rio para atualizaÃ§Ã£o");
       }
 
       const imagensValidas = Array.isArray(imagens_veiculo)
@@ -289,11 +289,11 @@ exports.salvaVeiculo = async (req, res) => {
         ind_ajustado_importacao: true,
       };
 
-      // Só atualiza a capa se as imagens tiverem sido alteradas
+      // SÃ³ atualiza a capa se as imagens tiverem sido alteradas
       if (img_alterada === true) {
         veiculoFields.img_veiculo_capa_url = imagensValidas?.[0]?.src ?? null;
       } else {
-        // Mantém compatibilidade com o front antigo/novo
+        // MantÃ©m compatibilidade com o front antigo/novo
         const capaAtual =
           img_veiculo_capa_url ?? imagemCapa ?? imgCapaBase64 ?? null;
 
@@ -326,7 +326,7 @@ exports.salvaVeiculo = async (req, res) => {
       const veiculoResult = await client.query(updateVeiculoQuery, values);
 
       if (veiculoResult.rowCount === 0) {
-        throw new Error("Nenhum veículo encontrado para atualização");
+        throw new Error("Nenhum veÃ­culo encontrado para atualizaÃ§Ã£o");
       }
 
       const seqVeiculo = veiculoResult.rows[0].seq_veiculo;
@@ -363,13 +363,13 @@ exports.salvaVeiculo = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: "Veículo atualizado com sucesso.",
+      message: "VeÃ­culo atualizado com sucesso.",
     });
   } catch (error) {
-    console.error("Erro ao atualizar veículo:", error);
+    console.error("Erro ao atualizar veÃ­culo:", error);
     res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição no servidor",
+      message: "Erro ao processar a requisiÃ§Ã£o no servidor",
       details: error.message,
     });
   }
@@ -381,7 +381,7 @@ exports.buscaVeiculo = async (req, res) => {
   if (!schema) {
     return res.status(400).json({
       success: false,
-      message: "Schema não especificado nos headers",
+      message: "Schema nÃ£o especificado nos headers",
     });
   }
 
@@ -427,10 +427,10 @@ exports.buscaVeiculo = async (req, res) => {
       count: veiculosTratados.length,
     });
   } catch (error) {
-    console.error("Erro ao buscar veículos:", error);
+    console.error("Erro ao buscar veÃ­culos:", error);
     res.status(500).json({
       success: false,
-      message: "Falha ao buscar veículos",
+      message: "Falha ao buscar veÃ­culos",
       error: error.message,
     });
   }
@@ -444,7 +444,7 @@ exports.excluirVeiculo = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = ` UPDATE ${schema}.tab_veiculo 
                               SET ind_status = $1,
@@ -459,24 +459,24 @@ exports.excluirVeiculo = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -490,14 +490,14 @@ exports.buscaImgVeiculo = async (req, res) => {
   if (!schema) {
     return res.status(400).json({
       success: false,
-      message: "Schema não especificado nos headers",
+      message: "Schema nÃ£o especificado nos headers",
     });
   }
 
   if (!seq_veiculo) {
     return res.status(400).json({
       success: false,
-      message: "seq_veiculo não informado",
+      message: "seq_veiculo nÃ£o informado",
     });
   }
 
@@ -560,7 +560,7 @@ exports.buscaImgVeiculo = async (req, res) => {
     console.error("Erro ao buscar imagens:", error);
     return res.status(500).json({
       success: false,
-      message: "Falha ao recuperar imagens do veículo",
+      message: "Falha ao recuperar imagens do veÃ­culo",
       details: error.message,
     });
   }
@@ -573,7 +573,7 @@ exports.atualizarImagemVeiculo = async (req, res) => {
 
   imagens_veiculo.forEach((image, index) => {
     if (index < 10) {
-      // Para não exceder img_10
+      // Para nÃ£o exceder img_10
       setClauses.push(`img_${index + 1} = $${paramIndex}`);
       values.push(image);
       paramIndex++;
@@ -659,12 +659,12 @@ exports.cadastraCompromissoAgenda = async (req, res) => {
 
   console.log(req.body);
 
-  // Validação dos campos obrigatórios
+  // ValidaÃ§Ã£o dos campos obrigatÃ³rios
   if (!tipo) {
     return res.status(400).json({
       success: false,
       message:
-        "Tipo de operação não especificado (i=inserir, c=concluir, p=pendente, d=deletar)",
+        "Tipo de operaÃ§Ã£o nÃ£o especificado (i=inserir, c=concluir, p=pendente, d=deletar)",
     });
   }
 
@@ -672,26 +672,26 @@ exports.cadastraCompromissoAgenda = async (req, res) => {
     return res.status(400).json({
       success: false,
       message:
-        "Para inserção, campos obrigatórios faltando: titulo, hora e dia são necessários",
+        "Para inserÃ§Ã£o, campos obrigatÃ³rios faltando: titulo, hora e dia sÃ£o necessÃ¡rios",
     });
   }
 
   if ((tipo === "c" || tipo === "p" || tipo === "d") && !seq_registro) {
     return res.status(400).json({
       success: false,
-      message: "Para atualização/exclusão, seq_registro é obrigatório",
+      message: "Para atualizaÃ§Ã£o/exclusÃ£o, seq_registro Ã© obrigatÃ³rio",
     });
   }
 
   try {
     const result = await db.transaction(async (client) => {
       switch (tipo) {
-        case "i": // Inserção
+        case "i": // InserÃ§Ã£o
           const resultados = [];
           const dataBase = new Date(dia); // Data base para calcular os meses
 
           for (let index = 0; index < repeatMonths; index++) {
-            // Calcula a data para cada mês CORRETAMENTE
+            // Calcula a data para cada mÃªs CORRETAMENTE
             const dataEvento = moment(dataBase)
               .add(index, "months")
               .format("YYYY-MM-DD");
@@ -705,16 +705,16 @@ exports.cadastraCompromissoAgenda = async (req, res) => {
             const resultado = await client.query(insertQuery, [
               titulo,
               hora,
-              dataEvento, // Já está formatado como YYYY-MM-DD
+              dataEvento, // JÃ¡ estÃ¡ formatado como YYYY-MM-DD
               descricao || null,
               Boolean(concluido),
             ]);
 
-            // Verifica se há resultados antes de acessar
+            // Verifica se hÃ¡ resultados antes de acessar
             if (resultado.rows && resultado.rows.length > 0) {
               resultados.push(resultado.rows[0]);
             } else {
-              // Log para debug ou lançar erro
+              // Log para debug ou lanÃ§ar erro
               console.warn("Nenhum registro retornado no INSERT");
             }
           }
@@ -735,7 +735,7 @@ exports.cadastraCompromissoAgenda = async (req, res) => {
           ]);
 
           if (!updateResult.rows || updateResult.rows.length === 0) {
-            throw new Error("Registro não encontrado para atualização");
+            throw new Error("Registro nÃ£o encontrado para atualizaÃ§Ã£o");
           }
           return updateResult;
 
@@ -748,25 +748,25 @@ exports.cadastraCompromissoAgenda = async (req, res) => {
           const deleteResult = await client.query(deleteQuery, [seq_registro]);
 
           if (!deleteResult.rows || deleteResult.rows.length === 0) {
-            throw new Error("Registro não encontrado para exclusão");
+            throw new Error("Registro nÃ£o encontrado para exclusÃ£o");
           }
           return deleteResult;
 
         default:
-          throw new Error("Tipo de operação inválido");
+          throw new Error("Tipo de operaÃ§Ã£o invÃ¡lido");
       }
     });
 
     const operationMessages = {
       i: `Compromissos inseridos com sucesso (${repeatMonths} meses)`,
-      c: "Compromisso marcado como concluído",
+      c: "Compromisso marcado como concluÃ­do",
       p: "Compromisso marcado como pendente",
       d: "Compromisso removido com sucesso",
     };
 
     // RESPOSTA CORRIGIDA - Trata diferentes tipos de retorno
     if (tipo === "i") {
-      // Para inserção: result é um array
+      // Para inserÃ§Ã£o: result Ã© um array
       res.status(200).json({
         success: true,
         message: operationMessages[tipo],
@@ -775,7 +775,7 @@ exports.cadastraCompromissoAgenda = async (req, res) => {
         total_inseridos: result.length,
       });
     } else {
-      // Para outros tipos: result é um objeto com rows
+      // Para outros tipos: result Ã© um objeto com rows
       res.status(200).json({
         success: true,
         message: operationMessages[tipo],
@@ -799,7 +799,7 @@ exports.buscaCompromissosAgenda = async (req, res) => {
   if (!schema) {
     return res.status(400).json({
       success: false,
-      message: "Schema não especificado nos headers",
+      message: "Schema nÃ£o especificado nos headers",
     });
   }
 
@@ -830,7 +830,7 @@ exports.buscaCompromissosAgenda = async (req, res) => {
 
     const result = {};
     rows.forEach((row) => {
-      // Agora row.date virá corretamente como 'dia'
+      // Agora row.date virÃ¡ corretamente como 'dia'
       result[row.date] = row.appointments;
     });
 
@@ -854,7 +854,7 @@ exports.buscaIntegradoresAtivos = async (req, res) => {
   try {
     const result = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = `SELECT seq_registro, nome_integrador from ${schema}.tab_integradores
                               WHERE ind_status = $1`;
@@ -868,24 +868,24 @@ exports.buscaIntegradoresAtivos = async (req, res) => {
           rowCount: queryResult.rowCount,
         };
 
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: result,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -900,7 +900,7 @@ exports.cadastraParceiros = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = `INSERT INTO ${schema}.tab_parceiros (nom_parceiro, ind_tipo, percentual_lucro)
                              VALUES ($1, $2, $3)`;
@@ -913,24 +913,24 @@ exports.cadastraParceiros = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -943,7 +943,7 @@ exports.buscaParceiros = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = `select * from ${schema}.tab_parceiros WHERE ind_status = $1`;
 
@@ -955,24 +955,24 @@ exports.buscaParceiros = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -987,7 +987,7 @@ exports.editaParceiros = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = `UPDATE ${schema}.tab_parceiros SET ind_status = $1 where seq_registro = $2`;
 
@@ -999,24 +999,24 @@ exports.editaParceiros = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -1031,7 +1031,7 @@ exports.cadastraBanco = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = `INSERT INTO ${schema}.tab_conta_banco (des_banco, agencia, conta_corrente)
                              VALUES ($1, $2, $3)`;
@@ -1044,24 +1044,24 @@ exports.cadastraBanco = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -1074,7 +1074,7 @@ exports.buscaBanco = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = `select * from ${schema}.tab_conta_banco WHERE ind_status = $1`;
 
@@ -1086,24 +1086,24 @@ exports.buscaBanco = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -1118,7 +1118,7 @@ exports.editaBanco = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = `UPDATE ${schema}.tab_conta_banco SET ind_status = $1 where seq_registro = $2`;
 
@@ -1130,24 +1130,24 @@ exports.editaBanco = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -1162,7 +1162,7 @@ exports.cadastraCartao = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = `INSERT INTO ${schema}.tab_cartao (bandeira, final_cartao, vencimento, fechamento)
                              VALUES ($1, $2, $3, $4)`;
@@ -1175,24 +1175,24 @@ exports.cadastraCartao = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -1205,7 +1205,7 @@ exports.buscaCartao = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = `select * from ${schema}.tab_cartao WHERE ind_status = $1`;
 
@@ -1217,24 +1217,24 @@ exports.buscaCartao = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -1249,7 +1249,7 @@ exports.editaCartao = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = `UPDATE ${schema}.tab_cartao SET ind_status = $1 where seq_registro = $2`;
 
@@ -1261,24 +1261,24 @@ exports.editaCartao = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -1294,7 +1294,7 @@ exports.inserirMovimento = async (req, res) => {
   if (!schema) {
     return res.status(400).json({
       success: false,
-      message: "Schema não especificado nos headers",
+      message: "Schema nÃ£o especificado nos headers",
     });
   }
 
@@ -1347,15 +1347,15 @@ exports.inserirMovimento = async (req, res) => {
       const parceiro = cod_parceiro ? Number(cod_parceiro) : null;
 
       if (!tipo_movimento || !["E", "S"].includes(tipo_movimento)) {
-        throw new Error("tipo_movimento inválido. Use 'E' ou 'S'.");
+        throw new Error("tipo_movimento invÃ¡lido. Use 'E' ou 'S'.");
       }
 
       if (!inputDtaMovimento) {
-        throw new Error("dta_movimento é obrigatória.");
+        throw new Error("dta_movimento Ã© obrigatÃ³ria.");
       }
 
       if (!des_movimento || String(des_movimento).trim() === "") {
-        throw new Error("des_movimento é obrigatório.");
+        throw new Error("des_movimento Ã© obrigatÃ³rio.");
       }
 
       if (
@@ -1363,7 +1363,7 @@ exports.inserirMovimento = async (req, res) => {
         inputValMovimento === undefined ||
         Number(inputValMovimento) === 0
       ) {
-        throw new Error("val_movimento inválido.");
+        throw new Error("val_movimento invÃ¡lido.");
       }
 
       if (!banco && !cod_cartao) {
@@ -1372,7 +1372,7 @@ exports.inserirMovimento = async (req, res) => {
 
       let valorNormalizado = Number(inputValMovimento);
       if (Number.isNaN(valorNormalizado)) {
-        throw new Error("val_movimento inválido.");
+        throw new Error("val_movimento invÃ¡lido.");
       }
 
       valorNormalizado =
@@ -1396,27 +1396,27 @@ exports.inserirMovimento = async (req, res) => {
           .digest("hex");
 
       // =========================================================
-      // Validações por categoria
+      // ValidaÃ§Ãµes por categoria
       // =========================================================
       const validarCategoria = () => {
         switch (categoria) {
-          // Crédito
-          case 95: // Venda de Veículos Próprios
+          // CrÃ©dito
+          case 95: // Venda de VeÃ­culos PrÃ³prios
           case 91: // Recebimento de Vendas a Prazo
-          case 92: // Recebimento de Consórcios
+          case 92: // Recebimento de ConsÃ³rcios
           case 93: // Recebimento de Financiamentos
           case 99: // Retorno Financiamento
             if (!veiculo && !des_movimento_detalhado && !des_observacao) {
               throw new Error(
-                "Esta categoria exige vínculo com veículo ou detalhamento.",
+                "Esta categoria exige vÃ­nculo com veÃ­culo ou detalhamento.",
               );
             }
             break;
 
-          case 94: // Venda de Veículos de Parceiros
+          case 94: // Venda de VeÃ­culos de Parceiros
             if (!veiculo || !parceiro) {
               throw new Error(
-                "Venda de veículo de parceiro exige veículo e parceiro.",
+                "Venda de veÃ­culo de parceiro exige veÃ­culo e parceiro.",
               );
             }
             break;
@@ -1430,18 +1430,18 @@ exports.inserirMovimento = async (req, res) => {
             break;
 
           case 96: // Recebimento de Terceiros
-          case 98: // Recebimento de Empréstimos
+          case 98: // Recebimento de EmprÃ©stimos
             if (!parceiro && !nom_parceiro && !des_observacao) {
               throw new Error(
-                "Informe parceiro, nome do terceiro ou observação.",
+                "Informe parceiro, nome do terceiro ou observaÃ§Ã£o.",
               );
             }
             break;
 
-          case 97: // Entrada por Transferência entre Contas
+          case 97: // Entrada por TransferÃªncia entre Contas
             if (!bancoDestino) {
               throw new Error(
-                "Entrada por transferência entre contas exige banco destino.",
+                "Entrada por transferÃªncia entre contas exige banco destino.",
               );
             }
             if (bancoDestino === banco) {
@@ -1451,19 +1451,19 @@ exports.inserirMovimento = async (req, res) => {
             }
             break;
 
-          // Débito
-          case 4: // Despesas Veículos
-          case 5: // Comissões de Venda
-          case 7: // Compra de Veículo
+          // DÃ©bito
+          case 4: // Despesas VeÃ­culos
+          case 5: // ComissÃµes de Venda
+          case 7: // Compra de VeÃ­culo
             if (!veiculo) {
-              throw new Error("Esta categoria exige vínculo com veículo.");
+              throw new Error("Esta categoria exige vÃ­nculo com veÃ­culo.");
             }
             break;
 
-          case 8: // Saída por Transferência entre Contas
+          case 8: // SaÃ­da por TransferÃªncia entre Contas
             if (!bancoDestino) {
               throw new Error(
-                "Saída por transferência entre contas exige banco destino.",
+                "SaÃ­da por transferÃªncia entre contas exige banco destino.",
               );
             }
             if (bancoDestino === banco) {
@@ -1474,10 +1474,10 @@ exports.inserirMovimento = async (req, res) => {
             break;
 
           case 9: // Pagamento a Terceiros
-          case 6: // Empréstimos Concedidos
+          case 6: // EmprÃ©stimos Concedidos
             if (!parceiro && !nom_parceiro && !des_observacao) {
               throw new Error(
-                "Informe parceiro, nome do terceiro ou observação.",
+                "Informe parceiro, nome do terceiro ou observaÃ§Ã£o.",
               );
             }
             break;
@@ -1488,11 +1488,11 @@ exports.inserirMovimento = async (req, res) => {
             }
             break;
 
-          case 11: // Despesas à reembolsar (Sócio)
-          case 12: // Prolabore (Sócio)
+          case 11: // Despesas Ã  reembolsar (SÃ³cio)
+          case 12: // Prolabore (SÃ³cio)
             if (!des_observacao && !des_movimento_detalhado) {
               throw new Error(
-                "Informe observação ou detalhamento para esta categoria.",
+                "Informe observaÃ§Ã£o ou detalhamento para esta categoria.",
               );
             }
             break;
@@ -1515,13 +1515,13 @@ exports.inserirMovimento = async (req, res) => {
 
         if (duplicado.rowCount > 0) {
           throw new Error(
-            "Movimento já importado anteriormente (id_unico duplicado).",
+            "Movimento jÃ¡ importado anteriormente (id_unico duplicado).",
           );
         }
       }
 
       // =========================================================
-      // Função base de insert
+      // FunÃ§Ã£o base de insert
       // =========================================================
       const inserirRegistro = async (params) => {
         const insertQuery = `
@@ -1609,7 +1609,7 @@ exports.inserirMovimento = async (req, res) => {
       };
 
       // =========================================================
-      // Atualiza vínculo financeiro do veículo
+      // Atualiza vÃ­nculo financeiro do veÃ­culo
       // =========================================================
       const atualizarVeiculo = async (seqRegistro, seqVeiculo) => {
         if (!seqVeiculo) return;
@@ -1653,7 +1653,7 @@ exports.inserirMovimento = async (req, res) => {
 
       if (parcelas > 1) {
         if (!cartao || !cartao.fechamento) {
-          throw new Error("Parcelamento exige dados do cartão com fechamento.");
+          throw new Error("Parcelamento exige dados do cartÃ£o com fechamento.");
         }
 
         for (let index = 0; index < parcelas; index++) {
@@ -1768,8 +1768,8 @@ exports.inserirMovimento = async (req, res) => {
       }
 
       // =========================================================
-      // Transferência entre contas: cria contrapartida automática
-      // Só faz isso se NÃO for parcelado
+      // TransferÃªncia entre contas: cria contrapartida automÃ¡tica
+      // SÃ³ faz isso se NÃƒO for parcelado
       // =========================================================
       if ([8, 97].includes(categoria) && parcelas <= 1) {
         const principal = registrosInseridos[0];
@@ -1848,14 +1848,14 @@ exports.inserirMovimento = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -1878,7 +1878,7 @@ exports.alteraMovimento = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const updateQuery = `UPDATE ${schema}.tab_movimentacao 
                              SET ind_excluido = $1, ind_alterado = $2, val_movimento = $3, cod_banco = $4, cod_cartao = $5, dta_movimento = $6
@@ -1900,24 +1900,24 @@ exports.alteraMovimento = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -1940,7 +1940,7 @@ exports.alocadorDespesaVeiculo = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = `INSERT INTO ${schema}.tab_alocador_despesa_veiculo
                                   (des_movimento, val_movimento, dta_movimento, seq_veiculo, 
@@ -1967,24 +1967,24 @@ exports.alocadorDespesaVeiculo = async (req, res) => {
           rowCount: result.rowCount,
           registro: seq_registro,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -1999,7 +1999,7 @@ exports.buscaDespesasAlocador = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const selectQuery = `
                             SELECT
@@ -2031,24 +2031,24 @@ exports.buscaDespesasAlocador = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -2060,18 +2060,18 @@ exports.updateDespesasAlocador = async (req, res) => {
   const schema = req.headers["schema"];
 
   try {
-    // validações básicas
+    // validaÃ§Ãµes bÃ¡sicas
     if (!schema || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(String(schema))) {
       return res.status(400).json({
         success: false,
-        message: "Schema inválido no header",
+        message: "Schema invÃ¡lido no header",
       });
     }
 
     if (!seq_veiculo || !seq_movimentacao) {
       return res.status(400).json({
         success: false,
-        message: "Campos obrigatórios: seq_veiculo, seq_movimentacao",
+        message: "Campos obrigatÃ³rios: seq_veiculo, seq_movimentacao",
       });
     }
 
@@ -2089,13 +2089,13 @@ exports.updateDespesasAlocador = async (req, res) => {
       const r1 = await client.query(updateDespesaSql, updateDespesaParams);
 
       if (r1.rowCount === 0) {
-        // força rollback
+        // forÃ§a rollback
         throw new Error(
           `Nenhuma despesa encontrada para seq_movimentacao=${seq_movimentacao}`,
         );
       }
 
-      // 2) Atualiza movimentacao (append na descrição)
+      // 2) Atualiza movimentacao (append na descriÃ§Ã£o)
       const detalhe = ` Alocada ao Veiculo ${des_veiculo ?? ""}`.trimEnd();
 
       const updateMovSql = `
@@ -2109,12 +2109,12 @@ exports.updateDespesasAlocador = async (req, res) => {
          RETURNING a.seq_registro, a.seq_veiculo, a.des_movimento_detalhado
       `;
 
-      const updateMovParams = [seq_veiculo, detalhe, seq_movimentacao, 4, 'Despesas Veículos'];
+      const updateMovParams = [seq_veiculo, detalhe, seq_movimentacao, 4, 'Despesas VeÃ­culos'];
       const r2 = await client.query(updateMovSql, updateMovParams);
 
       if (r2.rowCount === 0) {
         throw new Error(
-          `Movimentação não encontrada para seq_movimentacao=${seq_movimentacao}`,
+          `MovimentaÃ§Ã£o nÃ£o encontrada para seq_movimentacao=${seq_movimentacao}`,
         );
       }
 
@@ -2126,14 +2126,14 @@ exports.updateDespesasAlocador = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
     });
   }
@@ -2160,7 +2160,7 @@ exports.inserirDespesaVeiculo = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = `INSERT INTO ${schema}.tab_despesa_veiculo
                                   (cod_banco, cod_cartao, des_despesa, cod_tipo_despesa, 
@@ -2193,24 +2193,24 @@ exports.inserirDespesaVeiculo = async (req, res) => {
           rowCount: result.rowCount,
           registro: seq_registro,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -2225,7 +2225,7 @@ exports.buscaDespesaVeiculo = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         let query = '';
         let values = [];
@@ -2253,24 +2253,24 @@ exports.buscaDespesaVeiculo = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -2290,7 +2290,7 @@ exports.buscaMovimentoFinanceiro = async (req, res) => {
   if (!schema) {
     return res.status(400).json({
       success: false,
-      message: "Schema não especificado nos headers",
+      message: "Schema nÃ£o especificado nos headers",
     });
   }
 
@@ -2352,14 +2352,14 @@ exports.buscaMovimentoFinanceiro = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -2374,18 +2374,18 @@ exports.importarFinanceiroOFX = async (req, res) => {
   if (!schema) {
     return res.status(400).json({
       success: false,
-      message: "Schema não especificado nos headers",
+      message: "Schema nÃ£o especificado nos headers",
     });
   }
 
   try {
     const queryResult = await db.transaction(async (client) => {
       if (!movimentosSelecionados || movimentosSelecionados.length === 0) {
-        throw new Error("Nenhum movimento selecionado para importação");
+        throw new Error("Nenhum movimento selecionado para importaÃ§Ã£o");
       }
 
       if (!banco?.seq_registro) {
-        throw new Error("Banco não informado para importação");
+        throw new Error("Banco nÃ£o informado para importaÃ§Ã£o");
       }
 
       const inseridos = [];
@@ -2474,7 +2474,7 @@ exports.importarFinanceiroOFX = async (req, res) => {
           false,
           false,
           null,
-          "Importação OFX",
+          "ImportaÃ§Ã£o OFX",
           banco.seq_registro,
           mov.descricao,
           null,
@@ -2512,7 +2512,7 @@ exports.importarFinanceiroOFX = async (req, res) => {
       ignoradosCount: queryResult.ignoradosCount,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
       message: "Erro ao importar movimentos OFX",
@@ -2529,14 +2529,14 @@ exports.conciliarEncontrados = async (req, res) => {
   if (!schema) {
     return res.status(400).json({
       success: false,
-      message: "Schema não especificado nos headers",
+      message: "Schema nÃ£o especificado nos headers",
     });
   }
 
   if (!movimentosEncontrados || !Array.isArray(movimentosEncontrados)) {
     return res.status(400).json({
       success: false,
-      message: "Dados inválidos: movimentosEncontrados deve ser um array",
+      message: "Dados invÃ¡lidos: movimentosEncontrados deve ser um array",
     });
   }
 
@@ -2563,7 +2563,7 @@ exports.conciliarEncontrados = async (req, res) => {
 
           if (dup.rowCount > 0) {
             throw new Error(
-              `id_unico já vinculado a outro lançamento: ${movimento.id_unico}`,
+              `id_unico jÃ¡ vinculado a outro lanÃ§amento: ${movimento.id_unico}`,
             );
           }
         }
@@ -2617,7 +2617,7 @@ exports.conciliarEncontrados = async (req, res) => {
       data: queryResult.rows,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
       message: "Erro ao conciliar movimentos",
@@ -2650,15 +2650,15 @@ async function apurarSaldosBancarios() {
       GROUP BY m.cod_banco, b.des_banco
     `;
 
-    // 3. Executar cálculo
+    // 3. Executar cÃ¡lculo
     const { rows } = await client.query(calculoSaldoQuery, [hoje]);
 
     if (rows.length === 0) {
-      console.log(`Nenhum movimento encontrado para apuração em ${hoje}`);
+      console.log(`Nenhum movimento encontrado para apuraÃ§Ã£o em ${hoje}`);
       return;
     }
 
-    // 4. Inserir na tabela de apuração
+    // 4. Inserir na tabela de apuraÃ§Ã£o
     const insertQuery = `
       INSERT INTO teste.tab_apuracao_saldo_banco 
         (seq_banco, des_banco, saldo_dia, dta_saldo)
@@ -2669,7 +2669,7 @@ async function apurarSaldosBancarios() {
         saldo_dia = EXCLUDED.saldo_dia
     `;
 
-    // 5. Preparar valores para inserção
+    // 5. Preparar valores para inserÃ§Ã£o
     const values = rows.flatMap((row) => [
       row.seq_banco,
       row.des_banco,
@@ -2677,30 +2677,30 @@ async function apurarSaldosBancarios() {
       hoje,
     ]);
 
-    // 6. Executar inserção/atualização
+    // 6. Executar inserÃ§Ã£o/atualizaÃ§Ã£o
     await client.query(insertQuery, values);
     await client.query("COMMIT");
 
     console.log(`Saldo apurado para ${rows.length} bancos em ${hoje}`);
   } catch (error) {
     await client.query("ROLLBACK");
-    console.error("Erro na apuração de saldos:", error);
+    console.error("Erro na apuraÃ§Ã£o de saldos:", error);
     throw error;
   } finally {
     client.release();
   }
 }
 
-// Agendar para rodar todo dia às 23h
+// Agendar para rodar todo dia Ã s 23h
 cron.schedule("0 23 * * *", () => {
-  console.log("Iniciando apuração automática de saldos bancários...");
+  console.log("Iniciando apuraÃ§Ã£o automÃ¡tica de saldos bancÃ¡rios...");
   apurarSaldosBancarios().catch((err) =>
     console.error("Erro no agendamento:", err),
   );
 });
 
 console.log(
-  "Agendador de apuração de saldos iniciado. Será executado diariamente às 23h.",
+  "Agendador de apuraÃ§Ã£o de saldos iniciado. SerÃ¡ executado diariamente Ã s 23h.",
 );
 
 exports.cadastraDespesaOperacional = async (req, res) => {
@@ -2721,7 +2721,7 @@ exports.cadastraDespesaOperacional = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = `INSERT INTO ${schema}.tab_despesa_operacional 
                               (des_despesa, val_despesa, dta_despesa, cod_tipo_despesa, des_tipo_despesa, cod_banco, cod_cartao, parcela)
@@ -2749,24 +2749,24 @@ exports.cadastraDespesaOperacional = async (req, res) => {
           rowCount: result.rowCount,
           registro: seq_registro,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -2781,7 +2781,7 @@ exports.buscaDespesaOperacional = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = `SELECT * FROM ${schema}.tab_despesa_operacional
                             ORDER BY seq_registro desc
@@ -2795,24 +2795,24 @@ exports.buscaDespesaOperacional = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -2827,7 +2827,7 @@ exports.buscaMovimentoCartao = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = `SELECT * FROM ${schema}.tab_despesa_operacional
                             ORDER BY seq_registro desc
@@ -2841,24 +2841,24 @@ exports.buscaMovimentoCartao = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -2873,7 +2873,7 @@ exports.faturaCartao = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const seqMovimentosStr = seqMovimentos.join(",");
 
@@ -2911,24 +2911,24 @@ exports.faturaCartao = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -2943,7 +2943,7 @@ exports.buscafaturaCartao = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = `select * from ${schema}.tab_fatura_cartao a
                               order by a.seq_registro
@@ -2957,24 +2957,24 @@ exports.buscafaturaCartao = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -3001,7 +3001,7 @@ exports.liquidarFaturaCartao = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = ` update ${schema}.tab_fatura_cartao
                               SET ind_pago = $1,
@@ -3016,24 +3016,24 @@ exports.liquidarFaturaCartao = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -3048,7 +3048,7 @@ exports.buscaFinanceiras = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = ` SELECT a.*, b.seq_registro as cod_banco, b.des_banco FROM ${schema}.tab_financeiras a
                               LEFT JOIN ${schema}.tab_conta_banco b on (a.cod_banco = b.seq_registro)
@@ -3062,24 +3062,24 @@ exports.buscaFinanceiras = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -3094,7 +3094,7 @@ exports.vinculaBancoFinanceiras = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = ` UPDATE ${schema}.tab_financeiras
                               SET cod_banco = $1
@@ -3108,24 +3108,24 @@ exports.vinculaBancoFinanceiras = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -3140,7 +3140,7 @@ exports.buscaCliente = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = `SELECT * from ${schema}.tab_cliente
                             WHERE num_cpf_cnpj like $1 `;
@@ -3153,24 +3153,24 @@ exports.buscaCliente = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -3198,7 +3198,7 @@ exports.cadastrarCliente = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = ` INSERT INTO ${schema}.tab_cliente
                               (nom_cliente, num_cpf_cnpj, des_logradouro, complemento, cep, telefone, dta_nascimento, dta_cadastro, bairro, cidade, uf)
@@ -3229,76 +3229,252 @@ exports.cadastrarCliente = async (req, res) => {
           rowCount: result.rowCount,
           registro: seq_registro,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
   }
 };
 
-exports.vinculaVeiculoCliente = async (req, res) => {
-  const { seq_registro, seq_veiculo } = req.body;
+function normalizaDocumento(valor) {
+  return (valor || '').toString().replace(/\D/g, '');
+}
 
-  const schema = req.headers["schema"];
+function gerarCodigo() {
+  return Math.floor(10000 + Math.random() * 90000);
+}
+
+function obterPrimeiroEUltimoNome(nomeCompleto) {
+  const nomeSeguro = (nomeCompleto || '').trim();
+
+  if (!nomeSeguro) {
+    return 'cliente';
+  }
+
+  const partesNome = nomeSeguro.split(/\s+/);
+  const primeiroNome = partesNome[0];
+  const ultimoNome = partesNome[partesNome.length - 1];
+
+  return `${primeiroNome}.${ultimoNome}`.toLowerCase();
+}
+
+async function localizarClienteVenda(client, schema, clientePayload = {}) {
+  const seqRegistro = clientePayload.seq_registro || clientePayload.cod_cliente || null;
+  const documento = normalizaDocumento(
+    clientePayload.num_cnpj_cpf || clientePayload.num_cpf_cnpj,
+  );
+
+  let clienteRow = null;
+
+  if (seqRegistro) {
+    const result = await client.query(
+      `SELECT seq_registro,
+              nom_cliente,
+              num_cpf_cnpj AS num_cnpj_cpf,
+              des_logradouro,
+              complemento,
+              cep,
+              telefone,
+              dta_nascimento,
+              bairro,
+              cidade,
+              uf
+         FROM ${schema}.tab_cliente
+        WHERE seq_registro = $1
+        LIMIT 1`,
+      [seqRegistro],
+    );
+
+    clienteRow = result.rows[0] || null;
+  }
+
+  if (!clienteRow && documento) {
+    const result = await client.query(
+      `SELECT seq_registro,
+              nom_cliente,
+              num_cpf_cnpj AS num_cnpj_cpf,
+              des_logradouro,
+              complemento,
+              cep,
+              telefone,
+              dta_nascimento,
+              bairro,
+              cidade,
+              uf
+         FROM ${schema}.tab_cliente
+        WHERE num_cpf_cnpj = $1
+        LIMIT 1`,
+      [documento],
+    );
+
+    clienteRow = result.rows[0] || null;
+  }
+
+  if (!clienteRow) {
+    if (!clientePayload.nom_cliente || !documento) {
+      throw new Error('Cliente nÃ£o localizado e dados insuficientes para cadastro.');
+    }
+
+    const dtaAtual = moment().format();
+    const insertQuery = `INSERT INTO ${schema}.tab_cliente
+                        (nom_cliente, num_cpf_cnpj, des_logradouro, complemento, cep, telefone, dta_nascimento, dta_cadastro, bairro, cidade, uf)
+                        VALUES
+                        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                        RETURNING seq_registro,
+                                  nom_cliente,
+                                  num_cpf_cnpj AS num_cnpj_cpf,
+                                  des_logradouro,
+                                  complemento,
+                                  cep,
+                                  telefone,
+                                  dta_nascimento,
+                                  bairro,
+                                  cidade,
+                                  uf`;
+
+    const values = [
+      clientePayload.nom_cliente,
+      documento,
+      clientePayload.des_logradouro || null,
+      clientePayload.complemento || null,
+      clientePayload.cep || null,
+      clientePayload.telefone || null,
+      clientePayload.dta_nascimento || null,
+      dtaAtual,
+      clientePayload.bairro || null,
+      clientePayload.cidade || null,
+      clientePayload.uf || null,
+    ];
+
+    const result = await client.query(insertQuery, values);
+    clienteRow = result.rows[0];
+  }
+
+  return clienteRow;
+}
+
+async function localizarOuCriarUsuarioCliente(client, schema, clienteRow) {
+  const usuarioExistente = await client.query(
+    `SELECT seq_usuario, codigo_usuario
+       FROM ${schema}.tab_usuario
+      WHERE cod_cliente = $1
+      ORDER BY seq_usuario DESC
+      LIMIT 1`,
+    [clienteRow.seq_registro],
+  );
+
+  if (usuarioExistente.rowCount > 0) {
+    return usuarioExistente.rows[0];
+  }
+
+  const nomUsuario = obterPrimeiroEUltimoNome(clienteRow.nom_cliente);
+  const codigoUsuario = gerarCodigo();
+  const insertQuery = `INSERT INTO ${schema}.tab_usuario
+                      (nom_usuario, senha, telefone, ind_tipo, codigo_usuario, dta_nasc, ind_elegivel, nome_completo, cod_cliente)
+                      VALUES
+                      ($1, $2, $3, 'C', $4, $5, 'S', $6, $7)
+                      RETURNING seq_usuario, codigo_usuario`;
+
+  const values = [
+    nomUsuario,
+    'prime2024',
+    clienteRow.telefone || null,
+    codigoUsuario,
+    clienteRow.dta_nascimento || null,
+    clienteRow.nom_cliente || null,
+    clienteRow.seq_registro,
+  ];
+
+  const result = await client.query(insertQuery, values);
+  return result.rows[0];
+}
+
+async function vincularUsuarioAoVeiculo(client, schema, usuarioRow, seq_veiculo) {
+  const insertVinculo = `INSERT INTO ${schema}.tab_usuario_veiculo
+                        (codigo_usuario, seq_veiculo, seq_usuario)
+                        SELECT $1, $2, $3
+                        WHERE NOT EXISTS (
+                          SELECT 1
+                            FROM ${schema}.tab_usuario_veiculo
+                           WHERE seq_veiculo = $2
+                             AND seq_usuario = $3
+                        )`;
+
+  await client.query(insertVinculo, [
+    usuarioRow.codigo_usuario,
+    seq_veiculo,
+    usuarioRow.seq_usuario,
+  ]);
+
+  await client.query(
+    `UPDATE ${schema}.tab_veiculo
+        SET cod_usuario_vinculado = $1
+      WHERE seq_veiculo = $2`,
+    [usuarioRow.seq_usuario, seq_veiculo],
+  );
+
+  return usuarioRow;
+}
+
+exports.vinculaVeiculoCliente = async (req, res) => {
+  const { seq_registro, seq_veiculo, cliente } = req.body;
+
+  const schema = req.headers['schema'];
 
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
-
-        const insertQuery = ` UPDATE ${schema}.tab_veiculo
-                              SET cod_usuario_vinculado = $1
-                              WHERE seq_veiculo = $2 `;
-
-        const values = [seq_registro, seq_veiculo];
-
-        const result = await client.query(insertQuery, values);
+        const clienteResolvido = await localizarClienteVenda(client, schema, {
+          ...(cliente || {}),
+          seq_registro,
+        });
+        const usuario = await localizarOuCriarUsuarioCliente(client, schema, clienteResolvido);
+        await vincularUsuarioAoVeiculo(client, schema, usuario, seq_veiculo);
 
         return {
-          rows: result.rows,
-          rowCount: result.rowCount,
+          rows: [],
+          rowCount: 1,
+          seq_usuario: usuario.seq_usuario,
+          cod_cliente: clienteResolvido.seq_registro,
         };
-        // Commit implícito se não houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error('Erro na transacao:', innerError);
+        throw innerError;
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: 'Operacao realizada com sucesso',
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error('Erro na operacao:', error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: 'Erro ao processar a requisicao',
       details: error.message,
       errorDetails: error.stack,
     });
   }
 };
-
 exports.vinculaContratoVeiculo = async (req, res) => {
   const { seq_veiculo, contrato } = req.body;
 
@@ -3307,7 +3483,7 @@ exports.vinculaContratoVeiculo = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = `update ${schema}.tab_veiculo
                             set img_contrato = $1
@@ -3321,24 +3497,24 @@ exports.vinculaContratoVeiculo = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -3346,50 +3522,26 @@ exports.vinculaContratoVeiculo = async (req, res) => {
 };
 
 exports.finalizaVendaVeiculo = async (req, res) => {
-  const {
-    des_veiculo,
-    cod_banco_entrada,
-    cod_financeira,
-    des_financeira,
-    cod_banco_financeira,
-    dados_consorcio,
-    des_veiculo_entrada,
-    ind_troca,
-    observacao_venda,
-    ind_tipo_veiculo,
-    seq_veiculo,
-    val_compra,
-    total_prazo,
-    dta_primeiro_venc_prazo,
-    val_consorcio,
-    val_entrada_cartao,
-    val_entrada_especie,
-    val_financiado,
-    val_veiculo_entrada,
-    val_venda,
-    valor_prazo,
-    indTroca,
-    indPrazo,
-    indFinanciado,
-    indConsorcio,
-    entradaEspecie,
-    entradaCartao,
-    cod_vendedor,
-    cod_cliente,
-  } = req.body;
+  const { des_veiculo, cod_banco_entrada, cod_financeira, des_financeira, cod_banco_financeira, dados_consorcio, des_veiculo_entrada, ind_troca, observacao_venda, ind_tipo_veiculo,
+    seq_veiculo, val_compra, total_prazo, dta_primeiro_venc_prazo, val_consorcio, val_entrada_cartao, val_entrada_especie, val_financiado, val_veiculo_entrada, val_venda, valor_prazo,
+    indTroca, indPrazo, indFinanciado, indConsorcio, entradaEspecie, entradaCartao, cod_vendedor, cod_cliente, cliente, indClienteNovo } = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = req.headers['schema'];
 
-  console.log(req.body);
-
-  dtaAtual = moment().format();
+  const dtaAtual = moment().format();
 
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        const clienteResolvido = await localizarClienteVenda(client, schema, {
+          ...cliente,
+          seq_registro: cod_cliente || cliente?.seq_registro || null,
+        });
+        const usuarioCliente = await localizarOuCriarUsuarioCliente(client, schema, clienteResolvido);
+        await vincularUsuarioAoVeiculo(client, schema, usuarioCliente, seq_veiculo);
 
-        const lucro = val_venda - val_compra;
+        const lucro = Number(val_venda || 0) - Number(val_compra || 0);
+        const indTrocaValor = indTroca ? 'S' : null;
 
         const insertQuery = `UPDATE ${schema}.tab_veiculo
                              SET des_veiculo_entrada = $1,
@@ -3407,7 +3559,8 @@ exports.finalizaVendaVeiculo = async (req, res) => {
                                  ind_troca = $16,
                                  val_lucro = ($12),
                                  valor_venda_contrato = ($13),
-                                 cod_vendedor = $14
+                                 cod_vendedor = $14,
+                                 cod_usuario_vinculado = $17
                              WHERE seq_veiculo = $15`;
 
         const values = [
@@ -3426,123 +3579,70 @@ exports.finalizaVendaVeiculo = async (req, res) => {
           val_venda,
           cod_vendedor,
           seq_veiculo,
-          ind_troca,
+          indTrocaValor,
+          usuarioCliente.seq_usuario,
         ];
 
         const result = await client.query(insertQuery, values);
 
         if (indTroca) {
-          await processarTroca(
-            client,
-            schema,
-            des_veiculo_entrada,
-            des_veiculo,
-            seq_veiculo,
-          );
+          await processarTroca(client, schema, des_veiculo_entrada, des_veiculo, seq_veiculo);
         }
         if (indPrazo) {
-          await indPrazoF(
-            client,
-            schema,
-            total_prazo,
-            valor_prazo,
-            des_veiculo,
-            dta_primeiro_venc_prazo,
-            seq_veiculo,
-            cod_cliente,
-          );
+          await indPrazoF(client, schema, total_prazo, valor_prazo, des_veiculo, dta_primeiro_venc_prazo, seq_veiculo, cod_cliente)
         }
         if (indFinanciado) {
-          await indFinanciadoF(
-            client,
-            schema,
-            cod_financeira,
-            cod_banco_financeira,
-            val_financiado,
-            seq_veiculo,
-            des_veiculo,
-            des_financeira,
-            cod_cliente,
-          );
+          await indFinanciadoF(client, schema, cod_financeira, cod_banco_financeira, val_financiado, seq_veiculo, des_veiculo, des_financeira, cod_cliente)
         }
         if (indConsorcio) {
-          await indConsorcioF(
-            client,
-            schema,
-            val_consorcio,
-            dados_consorcio,
-            seq_veiculo,
-            des_veiculo,
-            cod_cliente,
-          );
+          await indConsorcioF(client, schema, val_consorcio, dados_consorcio, seq_veiculo, des_veiculo, cod_cliente)
         }
         if (entradaEspecie) {
-          await entradaEspecieF(
-            client,
-            schema,
-            val_entrada_especie,
-            cod_banco_entrada,
-            des_veiculo,
-            seq_veiculo,
-            ind_tipo_veiculo,
-          );
+          await entradaEspecieF(client, schema, val_entrada_especie, cod_banco_entrada, des_veiculo, seq_veiculo, ind_tipo_veiculo)
         }
         if (entradaCartao) {
-          await entradaCartaoF(
-            client,
-            schema,
-            val_entrada_cartao,
-            cod_banco_entrada,
-            des_veiculo,
-            seq_veiculo,
-            ind_tipo_veiculo,
-          );
+          await entradaCartaoF(client, schema, val_entrada_cartao, cod_banco_entrada, des_veiculo, seq_veiculo, ind_tipo_veiculo)
         }
 
         return {
           rows: result.rows,
           rowCount: result.rowCount,
-          seq_veiculo: seq_veiculo,
+          seq_veiculo: seq_veiculo
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error('Erro na transaÃ§Ã£o:', innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
-      data: queryResult,
+      message: 'OperaÃ§Ã£o realizada com sucesso',
+      data: queryResult
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error('Erro na operaÃ§Ã£o:', error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: 'Erro ao processar a requisiÃ§Ã£o',
       details: error.message,
-      errorDetails: error.stack,
+      errorDetails: error.stack
     });
   }
 
-  async function processarTroca(
-    client,
-    schema,
-    des_veiculo_entrada,
-    des_veiculo,
-    seq_veiculo,
-  ) {
-    const dtaAtual = moment().format("YYYY-MM-DD");
+  async function processarTroca(client, schema, des_veiculo_entrada, des_veiculo, seq_veiculo) {
+
+    const dtaAtual = moment().format('YYYY-MM-DD');
 
     const camposAgenda = {
-      titulo: "Cadastrar Veículo",
-      hora: "12:00",
+      titulo: 'Cadastrar VeÃ­culo',
+      hora: '12:00',
       dia: dtaAtual,
-      descricao: `Veículo Recebido na troca: ${des_veiculo_entrada} na venda do: ${des_veiculo}`,
+      descricao: `VeÃ­culo Recebido na troca: ${des_veiculo_entrada} na venda do: ${des_veiculo}`,
       concluido: false,
-      seq_veiculo,
+      seq_veiculo
     };
 
     const insertQuery = `
@@ -3557,41 +3657,31 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       camposAgenda.dia,
       camposAgenda.descricao,
       camposAgenda.concluido,
-      camposAgenda.seq_veiculo,
+      camposAgenda.seq_veiculo
     ]);
   }
 
-  async function indPrazoF(
-    client,
-    schema,
-    total_prazo,
-    valor_prazo,
-    des_veiculo,
-    dta_primeiro_venc_prazo,
-    seq_veiculo,
-    cod_cliente,
-  ) {
+  async function indPrazoF(client, schema, total_prazo, valor_prazo, des_veiculo, dta_primeiro_venc_prazo, seq_veiculo, cod_cliente) {
+
     const parcela = valor_prazo / total_prazo;
     const resultados = [];
 
     for (let index = 0; index < total_prazo; index++) {
       const campos = {
         des_receita: `Parcela ${index + 1} do ${des_veiculo}`,
-        dta_receita: moment(dta_primeiro_venc_prazo)
-          .add(index * 30, "days")
-          .format(),
+        dta_receita: moment(dta_primeiro_venc_prazo).add(index * 30, 'days').format(),
         val_receita: parcela,
         seq_veiculo,
         des_veiculo,
         cod_cliente,
         cod_tipo: 91,
-        cod_banco: 0,
+        cod_banco: 0
       };
 
       const insertQuery = `
             INSERT INTO ${schema}.tab_conta_receber
             (des_receita, dta_receita, val_receita, seq_veiculo, des_veiculo, cod_cliente, cod_tipo, cod_banco)
-            VALUES ($1, $2, $3, $, $5, $6, $7, $8)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING *;
           `;
 
@@ -3603,25 +3693,17 @@ exports.finalizaVendaVeiculo = async (req, res) => {
         campos.des_veiculo,
         campos.cod_cliente,
         campos.cod_tipo,
-        campos.cod_banco,
+        campos.cod_banco
       ]);
 
       resultados.push(result.rows[0]);
     }
   }
 
-  async function indFinanciadoF(
-    client,
-    schema,
-    cod_financeira,
-    cod_banco_financeira,
-    val_financiado,
-    seq_veiculo,
-    des_veiculo,
-    des_financeira,
-    cod_cliente,
-  ) {
-    const dtaAtual = moment().format();
+  async function indFinanciadoF(client, schema, cod_financeira, cod_banco_financeira, val_financiado, seq_veiculo, des_veiculo, des_financeira, cod_cliente) {
+
+
+    const dtaAtual = moment().format()
 
     const campos = {
       des_receita: `Aprovar Recebimento do ${des_veiculo} pela Financiado na ${des_financeira}`,
@@ -3631,7 +3713,7 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       cod_banco_financeira,
       cod_tipo: 93, // Recebimento de Financiamentos
       des_veiculo,
-      cod_cliente,
+      cod_cliente
     };
 
     const insertQuery = `
@@ -3649,7 +3731,7 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       campos.cod_banco_financeira,
       campos.cod_tipo,
       campos.des_veiculo,
-      campos.cod_cliente,
+      campos.cod_cliente
     ]);
 
     const camposRetorno = {
@@ -3660,7 +3742,7 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       cod_banco_financeira,
       cod_tipo: 99, // Retorno de Financiamentos
       des_veiculo,
-      cod_cliente,
+      cod_cliente
     };
 
     const insertQueryRetorno = `
@@ -3678,7 +3760,7 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       camposRetorno.cod_banco_financeira,
       camposRetorno.cod_tipo,
       camposRetorno.des_veiculo,
-      camposRetorno.cod_cliente,
+      camposRetorno.cod_cliente
     ]);
 
     const updateQuery = `UPDATE ${schema}.tab_veiculo
@@ -3686,32 +3768,25 @@ exports.finalizaVendaVeiculo = async (req, res) => {
               cod_financeira = $2
           WHERE seq_veiculo = $3`;
 
-    const values = [true, cod_banco_financeira, seq_veiculo];
+    const values = [true, cod_financeira, seq_veiculo]
 
     await client.query(updateQuery, values);
   }
 
-  async function indConsorcioF(
-    client,
-    schema,
-    val_consorcio,
-    dados_consorcio,
-    seq_veiculo,
-    des_veiculo,
-    cod_cliente,
-  ) {
-    console.log("consorcio");
-    const dtaAtual = moment().format();
+  async function indConsorcioF(client, schema, val_consorcio, dados_consorcio, seq_veiculo, des_veiculo, cod_cliente) {
+
+    console.log('consorcio')
+    const dtaAtual = moment().format()
 
     const campos = {
-      des_receita: `Aprovar Recebimento do ${des_veiculo} pelo Consórcio ${dados_consorcio}`,
+      des_receita: `Aprovar Recebimento do ${des_veiculo} pelo ConsÃ³rcio ${dados_consorcio}`,
       dta_receita: dtaAtual,
       val_receita: val_consorcio,
       seq_veiculo,
       cod_banco_financeira: 0,
       cod_tipo: 92, // Recebimento de Financiamentos
       des_veiculo,
-      cod_cliente,
+      cod_cliente
     };
 
     const insertQuery1 = `
@@ -3728,7 +3803,7 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       campos.cod_banco_financeira,
       campos.cod_tipo,
       campos.des_veiculo,
-      campos.cod_cliente,
+      campos.cod_cliente
     ]);
 
     const insertQuery = `UPDATE ${schema}.tab_veiculo
@@ -3736,21 +3811,16 @@ exports.finalizaVendaVeiculo = async (req, res) => {
                                    dados_consorcio = $2
                                WHERE seq_veiculo = $3`;
 
-    const values = [val_consorcio, dados_consorcio, seq_veiculo];
+    const values = [val_consorcio, dados_consorcio, seq_veiculo]
+
 
     await client.query(insertQuery, values);
+
   }
 
-  async function entradaEspecieF(
-    client,
-    schema,
-    val_entrada_especie,
-    cod_banco_entrada,
-    des_veiculo,
-    seq_veiculo,
-    ind_tipo_veiculo,
-  ) {
-    const dtaAtual = moment().format();
+  async function entradaEspecieF(client, schema, val_entrada_especie, cod_banco_entrada, des_veiculo, seq_veiculo, ind_tipo_veiculo) {
+
+    const dtaAtual = moment().format()
 
     const insertQuery = `
           INSERT INTO ${schema}.tab_movimentacao (
@@ -3764,7 +3834,7 @@ exports.finalizaVendaVeiculo = async (req, res) => {
         `;
 
     const values = {
-      tipo_movimento: "E",
+      tipo_movimento: 'E',
       dtaAtual, // Usa a data ajustada
       des_movimento: `Recebimento referente Entrada da venda do veiculo ${des_veiculo}`,
       ind_conciliado: false,
@@ -3772,23 +3842,20 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       ind_excluido: null,
       ind_alterado: false,
       seq_veiculo,
-      des_origem: "Venda de Veículos",
+      des_origem: 'Venda de VeÃ­culos',
       cod_banco_entrada,
-      des_movimento_detalhado: "Entrada em PIX, Transferência ou Dinheiro",
+      des_movimento_detalhado: 'Entrada em PIX, TransferÃªncia ou Dinheiro',
       cod_cartao: 0,
       val_entrada_especie,
       descricao_mov_ofx: null,
       cod_banco_ofx: null,
       id_unico: null,
-      cod_categoria_movimento: ind_tipo_veiculo === "P" ? 95 : 94,
-      des_categoria_movimento:
-        ind_tipo_veiculo === "P"
-          ? "Venda de Veículos Proprios"
-          : "Venda de Veiculos de Parceiros",
+      cod_categoria_movimento: ind_tipo_veiculo === 'P' ? 95 : 94,
+      des_categoria_movimento: ind_tipo_veiculo === 'P' ? 'Venda de VeÃ­culos Proprios' : 'Venda de Veiculos de Parceiros',
       numeroParcela: 0,
       seq_despesa: 0,
       seq_fatura: 0,
-      ind_cartao_pago: false,
+      ind_cartao_pago: false
     };
 
     await client.query(insertQuery, [
@@ -3813,29 +3880,24 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       values.numeroParcela,
       values.seq_despesa,
       values.seq_fatura,
-      values.ind_cartao_pago,
-    ]);
+      values.ind_cartao_pago
+    ]
+    );
 
     const updateQuery = `UPDATE ${schema}.tab_veiculo
                                SET val_entrada_especie = $1,
                                    cod_banco_entrada = $2
                                WHERE seq_veiculo = $3`;
 
-    const valuesUpdate = [val_entrada_especie, cod_banco_entrada, seq_veiculo];
+    const valuesUpdate = [val_entrada_especie, cod_banco_entrada, seq_veiculo]
 
     await client.query(updateQuery, valuesUpdate);
+
   }
 
-  async function entradaCartaoF(
-    client,
-    schema,
-    val_entrada_cartao,
-    cod_banco_entrada,
-    des_veiculo,
-    seq_veiculo,
-    ind_tipo_veiculo,
-  ) {
-    const dtaAtual = moment().format();
+  async function entradaCartaoF(client, schema, val_entrada_cartao, cod_banco_entrada, des_veiculo, seq_veiculo, ind_tipo_veiculo) {
+
+    const dtaAtual = moment().format()
 
     const insertQuery = `
           INSERT INTO ${schema}.tab_movimentacao (
@@ -3849,31 +3911,28 @@ exports.finalizaVendaVeiculo = async (req, res) => {
         `;
 
     const values = {
-      tipo_movimento: "E",
+      tipo_movimento: 'E',
       dataAtual: dtaAtual, // Usa a data ajustada
-      des_movimento: `Recebimento referente Entrada em Cartão da venda do veiculo ${des_veiculo}`,
+      des_movimento: `Recebimento referente Entrada em CartÃ£o da venda do veiculo ${des_veiculo}`,
       ind_conciliado: false,
       dta_conciliado: null,
       ind_excluido: false,
       ind_alterado: false,
       seq_veiculo,
-      des_origem: "Venda de Veículos em Cartão",
+      des_origem: 'Venda de VeÃ­culos em CartÃ£o',
       cod_banco_entrada,
-      des_movimento_detalhado: "Transação realizada no nosso terminal",
+      des_movimento_detalhado: 'TransaÃ§Ã£o realizada no nosso terminal',
       cod_cartao: 0,
       val_entrada_cartao,
       descricao_mov_ofx: null,
       cod_banco_ofx: null,
       id_unico: null,
-      cod_categoria_movimento: ind_tipo_veiculo === "P" ? 95 : 94,
-      des_categoria_movimento:
-        ind_tipo_veiculo === "P"
-          ? "Venda de Veículos Proprios"
-          : "Venda de Veiculos de Parceiros",
+      cod_categoria_movimento: ind_tipo_veiculo === 'P' ? 95 : 94,
+      des_categoria_movimento: ind_tipo_veiculo === 'P' ? 'Venda de VeÃ­culos Proprios' : 'Venda de Veiculos de Parceiros',
       numeroParcela: 0,
       seq_despesa: 0,
       seq_fatura: 0,
-      ind_cartao_pago: false,
+      ind_cartao_pago: false
     };
 
     await client.query(insertQuery, [
@@ -3898,19 +3957,21 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       values.numeroParcela,
       values.seq_despesa,
       values.seq_fatura,
-      values.ind_cartao_pago,
-    ]);
+      values.ind_cartao_pago
+    ]
+    );
 
     const updateQuery = `UPDATE ${schema}.tab_veiculo
                                SET val_entrada_cartao = $1,
                                    cod_banco_entrada = $2
                                WHERE seq_veiculo = $3`;
 
-    const valuesUpdate = [val_entrada_cartao, cod_banco_entrada, seq_veiculo];
+    const valuesUpdate = [val_entrada_cartao, cod_banco_entrada, seq_veiculo]
 
     await client.query(updateQuery, valuesUpdate);
+
   }
-};
+}
 
 exports.buscaDadosEmpresa = async (req, res) => {
   const {} = req.body;
@@ -3920,7 +3981,7 @@ exports.buscaDadosEmpresa = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = `SELECT * from ${schema}.tab_empresa`;
 
@@ -3937,24 +3998,24 @@ exports.buscaDadosEmpresa = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -3994,7 +4055,7 @@ exports.salvaDadosEmpresa = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         if (!seq_registro) {
           const insertQuery = `INSERT INTO ${schema}.tab_empresa
@@ -4088,24 +4149,24 @@ exports.salvaDadosEmpresa = async (req, res) => {
             rowCount: result.rowCount,
           };
         }
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -4120,7 +4181,7 @@ exports.buscaModeloContrato = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = ` SELECT * FROM ${schema}.tab_modelo_contrato `;
 
@@ -4132,24 +4193,24 @@ exports.buscaModeloContrato = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -4172,7 +4233,7 @@ exports.cadastroModeloContrato = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = ` INSERT INTO ${schema}.tab_modelo_contrato
                               (des_contrato, tipo_contrato, clausulas_contrato, observacoes, ind_padrao)
@@ -4204,24 +4265,24 @@ exports.cadastroModeloContrato = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -4243,7 +4304,7 @@ exports.salvaModeloContrato = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = ` UPDATE ${schema}.tab_modelo_contrato
                                SET des_contrato        = $1,
@@ -4276,24 +4337,24 @@ exports.salvaModeloContrato = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -4308,7 +4369,7 @@ exports.buscaFinanciamentos = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = `SELECT * from ${schema}.tab_conta_receber 
                              WHERE ind_pago = $1`;
@@ -4321,24 +4382,24 @@ exports.buscaFinanciamentos = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -4359,7 +4420,7 @@ exports.cadastraVendedor = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = `INSERT into ${schema}.tab_vendedores
                             (nom_vendedor, val_comissao, val_fixo, dta_padrao_pagamento, tipo_pagamento)
@@ -4380,24 +4441,24 @@ exports.cadastraVendedor = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -4412,7 +4473,7 @@ exports.buscaVendedor = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = ` SELECT * from ${schema}.tab_vendedores`;
 
@@ -4424,24 +4485,24 @@ exports.buscaVendedor = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -4465,7 +4526,7 @@ exports.salvaVendedor = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = `UPDATE ${schema}.tab_vendedores
                              SET val_comissao = $1,
@@ -4490,24 +4551,24 @@ exports.salvaVendedor = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -4522,7 +4583,7 @@ exports.salvaVendedor = async (req, res) => {
 //   try {
 //     const queryResult = await db.transaction(async (client) => {
 //       try {
-//         // Sua lógica de transação aqui
+//         // Sua lÃ³gica de transaÃ§Ã£o aqui
 
 //         const insertQuery = ` `;
 
@@ -4534,24 +4595,24 @@ exports.salvaVendedor = async (req, res) => {
 //           rows: result.rows,
 //           rowCount: result.rowCount
 //         };
-//         // Commit implícito se não houve erro
+//         // Commit implÃ­cito se nÃ£o houve erro
 //       } catch (innerError) {
-//         console.error('Erro na transação:', innerError);
-//         throw innerError; // Força o rollback
+//         console.error('Erro na transaÃ§Ã£o:', innerError);
+//         throw innerError; // ForÃ§a o rollback
 //       }
 //     });
 
-//     // Se chegou aqui, a transação foi bem-sucedida
+//     // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
 //     return res.status(200).json({
 //       success: true,
-//       message: 'Operação realizada com sucesso',
+//       message: 'OperaÃ§Ã£o realizada com sucesso',
 //       data: queryResult
 //     });
 //   } catch (error) {
-//     console.error('Erro na operação:', error);
+//     console.error('Erro na operaÃ§Ã£o:', error);
 //     return res.status(500).json({
 //       success: false,
-//       message: 'Erro ao processar a requisição',
+//       message: 'Erro ao processar a requisiÃ§Ã£o',
 //       details: error.message,
 //       errorDetails: error.stack
 //     });
@@ -4566,7 +4627,7 @@ exports.crlv = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const result = await getbase64Campo(
           client,
@@ -4581,24 +4642,24 @@ exports.crlv = async (req, res) => {
           rows: result,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -4613,7 +4674,7 @@ exports.contrato = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const result = await getbase64Campo(
           client,
@@ -4626,24 +4687,24 @@ exports.contrato = async (req, res) => {
           rows: result,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -4657,7 +4718,7 @@ async function getbase64Campo(client, schema, campo, seq_veiculo) {
     const result = await client.query(selectQuery, values);
 
     if (result.rows.length === 0) {
-      throw new Error("Veículo não encontrado");
+      throw new Error("VeÃ­culo nÃ£o encontrado");
     }
 
     console.log(result);
@@ -4667,18 +4728,18 @@ async function getbase64Campo(client, schema, campo, seq_veiculo) {
     console.log(documento);
     // Verificar o tipo do documento
     if (Buffer.isBuffer(documento)) {
-      // Se é Buffer (bytea no PostgreSQL)
+      // Se Ã© Buffer (bytea no PostgreSQL)
       const base64String = documento.toString();
       return base64String;
     } else if (typeof documento === "string") {
-      // Se já é string (texto base64)
+      // Se jÃ¡ Ã© string (texto base64)
       if (documento.startsWith("data:application/pdf;base64,")) {
-        return documento; // Já está formatado
+        return documento; // JÃ¡ estÃ¡ formatado
       } else {
         return `data:application/pdf;base64,${documento}`;
       }
     } else {
-      throw new Error("Formato de documento não suportado");
+      throw new Error("Formato de documento nÃ£o suportado");
     }
   } catch (error) {
     console.error("Erro ao recuperar documento:", error);
@@ -4821,24 +4882,24 @@ exports.desfazerVenda = async (req, res) => {
         //   rows: result.rows,
         //   rowCount: result.rowCount
         // };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -4864,7 +4925,7 @@ exports.receberFinanciamento = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const uQuery = `UPDATE ${schema}.tab_conta_receber
                              SET ind_pago = $1,
@@ -4917,7 +4978,7 @@ exports.receberFinanciamento = async (req, res) => {
             ind_excluido: null,
             ind_alterado: false,
             seq_veiculo,
-            des_origem: "Venda de Veículos",
+            des_origem: "Venda de VeÃ­culos",
             cod_banco,
             des_movimento_detalhado: des_receita,
             cod_cartao: 0,
@@ -4966,24 +5027,24 @@ exports.receberFinanciamento = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -4991,26 +5052,26 @@ exports.receberFinanciamento = async (req, res) => {
 };
 
 exports.registrarOperacaoParceiro = async (req, res) => {
-  // 1. Validação dos headers e schema
+  // 1. ValidaÃ§Ã£o dos headers e schema
   const schema = req.headers["schema"];
   if (!schema) {
     return res.status(400).json({
       success: false,
-      message: "Schema não especificado nos headers",
+      message: "Schema nÃ£o especificado nos headers",
     });
   }
 
-  // 2. Validação do corpo da requisição
+  // 2. ValidaÃ§Ã£o do corpo da requisiÃ§Ã£o
   const { data, tipo } = req.body;
   if (!data) {
     return res.status(400).json({
       success: false,
-      message: "Dados não fornecidos no corpo da requisição",
+      message: "Dados nÃ£o fornecidos no corpo da requisiÃ§Ã£o",
     });
   }
 
-  // 3. Validação dos campos obrigatórios
-  // REMOVI cod_banco e des_banco da validação obrigatória pois podem ser opcionais dependendo do seu caso
+  // 3. ValidaÃ§Ã£o dos campos obrigatÃ³rios
+  // REMOVI cod_banco e des_banco da validaÃ§Ã£o obrigatÃ³ria pois podem ser opcionais dependendo do seu caso
   const requiredFields = [
     "des_movimento",
     "dta_movimento",
@@ -5033,16 +5094,16 @@ exports.registrarOperacaoParceiro = async (req, res) => {
   if (missingFields.length > 0) {
     return res.status(400).json({
       success: false,
-      message: "Campos obrigatórios faltando",
+      message: "Campos obrigatÃ³rios faltando",
       missingFields: missingFields,
     });
   }
 
-  // 4. Validação de tipos de dados
+  // 4. ValidaÃ§Ã£o de tipos de dados
   if (typeof data.val_movimento !== "number" || isNaN(data.val_movimento)) {
     return res.status(400).json({
       success: false,
-      message: "Valor da movimentação deve ser um número",
+      message: "Valor da movimentaÃ§Ã£o deve ser um nÃºmero",
     });
   }
 
@@ -5050,20 +5111,20 @@ exports.registrarOperacaoParceiro = async (req, res) => {
     return res.status(400).json({
       success: false,
       message:
-        'Tipo de movimentação inválido. Use "C" para crédito ou "D" para débito',
+        'Tipo de movimentaÃ§Ã£o invÃ¡lido. Use "C" para crÃ©dito ou "D" para dÃ©bito',
     });
   }
 
-  // 5. Validação da data
+  // 5. ValidaÃ§Ã£o da data
   const dataMovimento = new Date(data.dta_movimento);
   if (isNaN(dataMovimento.getTime())) {
     return res.status(400).json({
       success: false,
-      message: "Data da movimentação inválida",
+      message: "Data da movimentaÃ§Ã£o invÃ¡lida",
     });
   }
 
-  // 6. Sanitização de valores monetários
+  // 6. SanitizaÃ§Ã£o de valores monetÃ¡rios
   const valorMovimento = parseFloat(data.val_movimento.toFixed(2));
 
   try {
@@ -5087,7 +5148,7 @@ exports.registrarOperacaoParceiro = async (req, res) => {
           nomeParceiro = "Todos Parceiros";
         }
 
-        // 8. Query de inserção com validação adicional
+        // 8. Query de inserÃ§Ã£o com validaÃ§Ã£o adicional
         const insertQuery = `
           INSERT INTO ${schema}.tab_conta_parceiro (
             cod_parceiro, 
@@ -5123,7 +5184,7 @@ exports.registrarOperacaoParceiro = async (req, res) => {
         let resultMov = null;
 
         if (tipo === "N") {
-          //N de normal, processo normal de inclusao pela propria tela e I de importaçao ofx
+          //N de normal, processo normal de inclusao pela propria tela e I de importaÃ§ao ofx
 
           const insertQueryMov = `
           INSERT INTO ${schema}.tab_movimentacao (
@@ -5135,10 +5196,10 @@ exports.registrarOperacaoParceiro = async (req, res) => {
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
           RETURNING seq_registro`;
 
-          // CORREÇÃO: Os valores precisam ser passados como ARRAY
+          // CORREÃ‡ÃƒO: Os valores precisam ser passados como ARRAY
           const valuesMov = [
             data.tipo_movimento === "C" ? "E" : "S", // 1. tipo_movimento
-            data.dta_movimento, // 2. dta_movimento (não dtaAtual)
+            data.dta_movimento, // 2. dta_movimento (nÃ£o dtaAtual)
             data.tipo_movimento === "C"
               ? "Recebimento de Conta de Parceiros"
               : "Pagamento de Conta de Parceiros", // 3. des_movimento
@@ -5168,7 +5229,7 @@ exports.registrarOperacaoParceiro = async (req, res) => {
           resultMov = await client.query(insertQueryMov, valuesMov);
         }
 
-        // 9. Se for uma transação de parceiro específico, atualizar saldo total
+        // 9. Se for uma transaÃ§Ã£o de parceiro especÃ­fico, atualizar saldo total
         if (data.cod_parceiro) {
           const saldoQuery = `
             SELECT COALESCE(SUM(val_movimento), 0) as saldo_total
@@ -5191,7 +5252,7 @@ exports.registrarOperacaoParceiro = async (req, res) => {
           registro_movimentacao: resultMov.rows[0],
         };
       } catch (innerError) {
-        console.error("Erro na transação:", {
+        console.error("Erro na transaÃ§Ã£o:", {
           error: innerError.message,
           stack: innerError.stack,
           data: data,
@@ -5202,7 +5263,7 @@ exports.registrarOperacaoParceiro = async (req, res) => {
     });
 
     // 10. Log de sucesso (opcional, para auditoria)
-    console.log("Operação registrada com sucesso:", {
+    console.log("OperaÃ§Ã£o registrada com sucesso:", {
       schema: schema,
       parceiro: data.cod_parceiro || "Todos",
       tipo: data.tipo_movimento,
@@ -5216,7 +5277,7 @@ exports.registrarOperacaoParceiro = async (req, res) => {
       message:
         data.tipo_movimento === "C"
           ? "Recebimento registrado com sucesso!"
-          : "Débito registrado com sucesso!",
+          : "DÃ©bito registrado com sucesso!",
       data: queryResult,
       metadata: {
         timestamp: new Date().toISOString(),
@@ -5224,31 +5285,31 @@ exports.registrarOperacaoParceiro = async (req, res) => {
           style: "currency",
           currency: "BRL",
         }).format(valorMovimento),
-        tipo_operacao: data.tipo_movimento === "C" ? "Crédito" : "Débito",
+        tipo_operacao: data.tipo_movimento === "C" ? "CrÃ©dito" : "DÃ©bito",
       },
     });
   } catch (error) {
-    console.error("Erro na operação:", {
+    console.error("Erro na operaÃ§Ã£o:", {
       error: error.message,
       stack: error.stack,
       endpoint: "registrarOperacaoParceiro",
       timestamp: new Date().toISOString(),
     });
 
-    // 12. Tratamento de erros específicos do PostgreSQL
-    let errorMessage = "Erro ao processar a requisição";
+    // 12. Tratamento de erros especÃ­ficos do PostgreSQL
+    let errorMessage = "Erro ao processar a requisiÃ§Ã£o";
     let statusCode = 500;
 
     if (error.code === "23505") {
-      // Violação de chave única
+      // ViolaÃ§Ã£o de chave Ãºnica
       errorMessage = "Registro duplicado";
       statusCode = 409;
     } else if (error.code === "23503") {
-      // Violação de chave estrangeira
-      errorMessage = "Parceiro não encontrado";
+      // ViolaÃ§Ã£o de chave estrangeira
+      errorMessage = "Parceiro nÃ£o encontrado";
       statusCode = 404;
     } else if (error.code === "22003") {
-      // Valor numérico fora do intervalo
+      // Valor numÃ©rico fora do intervalo
       errorMessage = "Valor fora do intervalo permitido";
       statusCode = 400;
     }
@@ -5264,20 +5325,20 @@ exports.registrarOperacaoParceiro = async (req, res) => {
 };
 
 exports.buscaContaParceiro = async (req, res) => {
-  // 1. Validação básica
+  // 1. ValidaÃ§Ã£o bÃ¡sica
   const schema = req.headers["schema"];
   if (!schema) {
     return res.status(400).json({
       success: false,
-      message: "Schema não especificado",
+      message: "Schema nÃ£o especificado",
     });
   }
 
-  // CORREÇÃO: Mudar de req.body para req.query para consistência
+  // CORREÃ‡ÃƒO: Mudar de req.body para req.query para consistÃªncia
   const { cod_parceiro } = req.body;
 
   try {
-    // 2. SE não tiver cod_parceiro -> Retorna lista de parceiros com saldo
+    // 2. SE nÃ£o tiver cod_parceiro -> Retorna lista de parceiros com saldo
     if (!cod_parceiro) {
       const query = `
         SELECT 
@@ -5308,7 +5369,7 @@ exports.buscaContaParceiro = async (req, res) => {
       });
     }
 
-    // 3. SE tiver cod_parceiro -> Retorna últimas 20 movimentações
+    // 3. SE tiver cod_parceiro -> Retorna Ãºltimas 20 movimentaÃ§Ãµes
     const query = `
       SELECT 
         seq_registro,
@@ -5322,8 +5383,8 @@ exports.buscaContaParceiro = async (req, res) => {
         cod_banco,
         des_banco,
         CASE 
-          WHEN tipo_movimento = 'C' THEN 'Crédito'
-          ELSE 'Débito'
+          WHEN tipo_movimento = 'C' THEN 'CrÃ©dito'
+          ELSE 'DÃ©bito'
         END as tipo_descricao
       FROM ${schema}.tab_conta_parceiro
       WHERE cod_parceiro = $1
@@ -5333,7 +5394,7 @@ exports.buscaContaParceiro = async (req, res) => {
 
     const result = await db.query(query, [cod_parceiro]);
 
-    // 4. Buscar também o saldo total
+    // 4. Buscar tambÃ©m o saldo total
     const saldoQuery = `
       SELECT 
         COALESCE(SUM(val_movimento), 0) as saldo_total,
@@ -5346,7 +5407,7 @@ exports.buscaContaParceiro = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Histórico do parceiro carregado",
+      message: "HistÃ³rico do parceiro carregado",
       data: {
         parceiro: {
           cod_parceiro: cod_parceiro,
@@ -5358,7 +5419,7 @@ exports.buscaContaParceiro = async (req, res) => {
         movimentacoes: result.rows.map((row) => ({
           ...row,
           val_movimento: parseFloat(row.val_movimento),
-          // CORREÇÃO: Formatação de data sem moment
+          // CORREÃ‡ÃƒO: FormataÃ§Ã£o de data sem moment
           dta_formatada: new Date(row.dta_movimento).toLocaleDateString(
             "pt-BR",
           ),
@@ -5371,7 +5432,7 @@ exports.buscaContaParceiro = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: "Erro ao buscar informações do parceiro",
+      message: "Erro ao buscar informaÃ§Ãµes do parceiro",
       details: error.message,
     });
   }
@@ -5385,7 +5446,7 @@ exports.cadastraDespesaFixa = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = `INSERT INTO ${schema}.tab_despesa_fixas (des_despesa, val_despesa, dta_despesa, cod_tipo_despesa, des_tipo_despesa, ind_status)
                              VALUES
@@ -5406,24 +5467,24 @@ exports.cadastraDespesaFixa = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -5438,7 +5499,7 @@ exports.buscaDespesasFixas = async (req, res) => {
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
-        // Sua lógica de transação aqui
+        // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = `SELECT * FROM ${schema}.tab_despesa_fixas`;
 
@@ -5450,24 +5511,24 @@ exports.buscaDespesasFixas = async (req, res) => {
           rows: result.rows,
           rowCount: result.rowCount,
         };
-        // Commit implícito se não houve erro
+        // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
-    // Se chegou aqui, a transação foi bem-sucedida
+    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -5491,7 +5552,7 @@ exports.editaDespesaFixa = async (req, res) => {
           ]);
 
           if (checkResult.rowCount === 0) {
-            throw new Error("Registro não encontrado para exclusão");
+            throw new Error("Registro nÃ£o encontrado para exclusÃ£o");
           }
 
           const deleteQuery = `DELETE FROM ${schema}.tab_despesa_fixas WHERE seq_registro = $1`;
@@ -5509,10 +5570,10 @@ exports.editaDespesaFixa = async (req, res) => {
           ]);
 
           if (checkResult.rowCount === 0) {
-            throw new Error("Registro não encontrado para atualização");
+            throw new Error("Registro nÃ£o encontrado para atualizaÃ§Ã£o");
           }
 
-          // CORREÇÃO AQUI: sintaxe correta do UPDATE
+          // CORREÃ‡ÃƒO AQUI: sintaxe correta do UPDATE
           const updateQuery = `
             UPDATE ${schema}.tab_despesa_fixas 
             SET des_despesa = $1, 
@@ -5536,27 +5597,27 @@ exports.editaDespesaFixa = async (req, res) => {
           };
         } else {
           throw new Error(
-            'Ação inválida. Use "E" para excluir ou "A" para atualizar',
+            'AÃ§Ã£o invÃ¡lida. Use "E" para excluir ou "A" para atualizar',
           );
         }
       } catch (innerError) {
-        console.error("Erro na transação:", innerError);
-        throw innerError; // Força o rollback
+        console.error("Erro na transaÃ§Ã£o:", innerError);
+        throw innerError; // ForÃ§a o rollback
       }
     });
 
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
     console.error("Erro geral:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
-      // Não exponha o stack em produção: errorDetails: error.stack
+      // NÃ£o exponha o stack em produÃ§Ã£o: errorDetails: error.stack
     });
   }
 };
@@ -5568,14 +5629,14 @@ exports.updateMovimentoFinanceiro = async (req, res) => {
   if (!schema) {
     return res.status(400).json({
       success: false,
-      message: "Schema não especificado nos headers",
+      message: "Schema nÃ£o especificado nos headers",
     });
   }
 
   if (!movimento?.seq_registro) {
     return res.status(400).json({
       success: false,
-      message: "seq_registro é obrigatório",
+      message: "seq_registro Ã© obrigatÃ³rio",
     });
   }
 
@@ -5602,14 +5663,14 @@ exports.updateMovimentoFinanceiro = async (req, res) => {
           case 5:
           case 7:
             if (!seqVeiculo) {
-              throw new Error("Esta categoria exige vínculo com veículo.");
+              throw new Error("Esta categoria exige vÃ­nculo com veÃ­culo.");
             }
             break;
 
           case 94:
             if (!seqVeiculo || !codParceiro) {
               throw new Error(
-                "Venda de veículo de parceiro exige veículo e parceiro.",
+                "Venda de veÃ­culo de parceiro exige veÃ­culo e parceiro.",
               );
             }
             break;
@@ -5625,7 +5686,7 @@ exports.updateMovimentoFinanceiro = async (req, res) => {
           case 8:
             if (!codBancoDestino) {
               throw new Error(
-                "Transferência entre contas exige banco destino.",
+                "TransferÃªncia entre contas exige banco destino.",
               );
             }
             break;
@@ -5675,7 +5736,7 @@ exports.updateMovimentoFinanceiro = async (req, res) => {
       const result = await client.query(updateQuery, values);
 
       if (result.rowCount === 0) {
-        throw new Error("Movimento não encontrado para atualização.");
+        throw new Error("Movimento nÃ£o encontrado para atualizaÃ§Ã£o.");
       }
 
       if (seqVeiculo) {
@@ -5696,14 +5757,14 @@ exports.updateMovimentoFinanceiro = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Operação realizada com sucesso",
+      message: "OperaÃ§Ã£o realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operação:", error);
+    console.error("Erro na operaÃ§Ã£o:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisição",
+      message: "Erro ao processar a requisiÃ§Ã£o",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -5715,7 +5776,7 @@ exports.updateMovimentoFinanceiro = async (req, res) => {
 function normalizeValorPorTipo(tipo, valor) {
   const n = Number(valor || 0);
   if (Number.isNaN(n) || n === 0) {
-    throw new Error("val_movimento inválido.");
+    throw new Error("val_movimento invÃ¡lido.");
   }
   return tipo === "E" ? Math.abs(n) : -Math.abs(n);
 }
@@ -5752,26 +5813,26 @@ function validarCategoriaFinanceira({
   des_movimento_detalhado,
 }) {
   switch (Number(categoria || 0)) {
-    // Crédito com vínculo forte em veículo
-    case 95: // Venda de Veículos Próprios
+    // CrÃ©dito com vÃ­nculo forte em veÃ­culo
+    case 95: // Venda de VeÃ­culos PrÃ³prios
     case 91: // Recebimento de Vendas a Prazo
-    case 92: // Recebimento de Consórcios
+    case 92: // Recebimento de ConsÃ³rcios
     case 93: // Recebimento de Financiamentos
       if (!seq_veiculo) {
-        throw new Error("Esta categoria exige vínculo com veículo.");
+        throw new Error("Esta categoria exige vÃ­nculo com veÃ­culo.");
       }
       break;
 
     case 99: // Retorno Financiamento
       if (!seq_veiculo && !des_movimento_detalhado && !des_observacao) {
-        throw new Error("Informe veículo ou detalhamento para esta categoria.");
+        throw new Error("Informe veÃ­culo ou detalhamento para esta categoria.");
       }
       break;
 
-    case 94: // Venda de Veículos de Parceiros
+    case 94: // Venda de VeÃ­culos de Parceiros
       if (!seq_veiculo || !cod_parceiro) {
         throw new Error(
-          "Venda de veículo de parceiro exige veículo e parceiro.",
+          "Venda de veÃ­culo de parceiro exige veÃ­culo e parceiro.",
         );
       }
       break;
@@ -5784,18 +5845,18 @@ function validarCategoriaFinanceira({
       break;
 
     case 96: // Recebimento de Terceiros
-    case 98: // Recebimento de Empréstimos
+    case 98: // Recebimento de EmprÃ©stimos
     case 9: // Pagamento a Terceiros
-    case 6: // Empréstimos Concedidos
+    case 6: // EmprÃ©stimos Concedidos
       if (!cod_parceiro && !nom_parceiro && !des_observacao) {
-        throw new Error("Informe parceiro, nome do terceiro ou observação.");
+        throw new Error("Informe parceiro, nome do terceiro ou observaÃ§Ã£o.");
       }
       break;
 
-    case 97: // Entrada por Transferência entre Contas
-    case 8: // Saída por Transferência entre Contas
+    case 97: // Entrada por TransferÃªncia entre Contas
+    case 8: // SaÃ­da por TransferÃªncia entre Contas
       if (!cod_banco_destino) {
-        throw new Error("Transferência entre contas exige banco destino.");
+        throw new Error("TransferÃªncia entre contas exige banco destino.");
       }
       if (Number(cod_banco_destino) === Number(cod_banco)) {
         throw new Error(
@@ -5804,21 +5865,23 @@ function validarCategoriaFinanceira({
       }
       break;
 
-    case 4: // Despesas Veículos
-    case 5: // Comissões de Venda
-    case 7: // Compra de Veículo
+    case 4: // Despesas VeÃ­culos
+    case 5: // ComissÃµes de Venda
+    case 7: // Compra de VeÃ­culo
       if (!seq_veiculo) {
-        throw new Error("Esta categoria exige vínculo com veículo.");
+        throw new Error("Esta categoria exige vÃ­nculo com veÃ­culo.");
       }
       break;
 
-    case 11: // Despesas à reembolsar (Sócio)
-    case 12: // Prolabore (Sócio)
+    case 11: // Despesas Ã  reembolsar (SÃ³cio)
+    case 12: // Prolabore (SÃ³cio)
       if (!des_observacao && !des_movimento_detalhado) {
         throw new Error(
-          "Informe observação ou detalhamento para esta categoria.",
+          "Informe observaÃ§Ã£o ou detalhamento para esta categoria.",
         );
       }
       break;
   }
 }
+
+
