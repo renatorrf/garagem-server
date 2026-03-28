@@ -1,17 +1,59 @@
 // db.js
 const { Pool } = require("pg");
 
+const databaseUrl =
+  process.env.DATABASE_URL_NOVA ||
+  process.env.DATABASE_URL_ANTIGA ||
+  process.env.DATABASE_URL;
+
+function resolveSslConfig(connectionString) {
+  try {
+    if (!connectionString) return false;
+
+    const url = new URL(connectionString);
+    const urlMode = String(url.searchParams.get("sslmode") || "").trim().toLowerCase();
+    const explicitSsl = String(url.searchParams.get("ssl") || "").trim().toLowerCase();
+
+    if (explicitSsl === "false" || urlMode === "disable") {
+      return false;
+    }
+
+    if (
+      explicitSsl === "true" ||
+      ["require", "verify-ca", "verify-full", "prefer"].includes(urlMode)
+    ) {
+      return { rejectUnauthorized: false };
+    }
+
+    const host = url.hostname.toLowerCase();
+    const localHosts = new Set(["localhost", "127.0.0.1", "::1"]);
+    if (localHosts.has(host) || host.endsWith(".local")) {
+      return false;
+    }
+
+    if (host.includes("neon.tech")) {
+      return { rejectUnauthorized: false };
+    }
+
+    if (host.includes("supabase.co") || host.includes("render.com")) {
+      return { rejectUnauthorized: false };
+    }
+  } catch (_) {
+    // Mantém o comportamento padrão do pg quando a URL não puder ser analisada.
+  }
+
+  return false;
+}
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: databaseUrl,
   max: parseInt(process.env.DB_POOL_MAX || "10", 10),
   idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT_MS || "30000", 10),
   connectionTimeoutMillis: parseInt(
     process.env.DB_CONNECTION_TIMEOUT_MS || "15000",
     10
   ),
-  ssl: {
-    rejectUnauthorized: false,
-  },
+  ssl: resolveSslConfig(databaseUrl),
 });
 
 /**

@@ -143,8 +143,13 @@ async function startServer() {
   console.log("🚀 Iniciando Garagem Web API...");
   console.log(`🌍 Ambiente: ${process.env.NODE_ENV || "development"}`);
 
-  if (process.env.DATABASE_URL) {
-    console.log(`🗄️ DB host: ${process.env.DATABASE_URL.split("@")[1]}`);
+  const databaseUrl =
+    process.env.DATABASE_URL_NOVA ||
+    process.env.DATABASE_URL_ANTIGA ||
+    process.env.DATABASE_URL;
+
+  if (databaseUrl) {
+    console.log(`🗄️ DB host: ${databaseUrl.split("@")[1]}`);
   }
 
   leadsInitialized = await initializeLeadsSystem();
