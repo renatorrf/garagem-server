@@ -154,7 +154,7 @@ class LeadWorkflowService {
 
     const q = `
       SELECT *
-      FROM teste.leads
+      FROM ${Lead.tableName}
       WHERE deleted_at IS NULL
         AND status = 'novo'
         AND (metadata->'wa'->>'claimedAt') IS NULL
@@ -200,7 +200,7 @@ class LeadWorkflowService {
 
     const q = `
       SELECT *
-      FROM teste.leads
+      FROM ${Lead.tableName}
       WHERE deleted_at IS NULL
         AND status IN ('contatado','novo')
         AND COALESCE(
@@ -349,7 +349,7 @@ class LeadWorkflowService {
   }) {
     const q = `
       SELECT *
-      FROM teste.leads
+      FROM ${Lead.tableName}
       WHERE deleted_at IS NULL
         AND (
           metadata->'wa'->>'notifyWamid' = $1

@@ -39,7 +39,7 @@ class Lead {
   }
 
   static get tableName() {
-    return "teste.leads";
+    return "nextcar.leads";
   }
 
   calculateScore() {
@@ -458,7 +458,7 @@ class Lead {
   }
 
   static async getDashboardStats(dataInicio, dataFim) {
-    const schema = process.env.SCHEMA_PADRAO || "teste";
+    const schema = process.env.SCHEMA_PADRAO || "nextcar";
 
     const leadTable =
       Lead.tableName && String(Lead.tableName).includes(".")
@@ -601,7 +601,7 @@ class Lead {
         SELECT
           c.plataforma,
           ROUND(SUM(c.custo_mensal / dias.dias_no_mes), 2) AS spend_periodo
-        FROM teste.marketing_costs_monthly c
+        FROM ${schema}.marketing_costs_monthly c
         CROSS JOIN dias
         GROUP BY c.plataforma
       )

@@ -23,7 +23,7 @@ const DEFAULT_GARAJE_URL =
   process.env.GARAJE_URL ||
   "https://www.garaje.com.br/parceiros/sites/50/c0c7c76d30bd3dcaefc96f40275bdc0a";
 
-const DEFAULT_SCHEMA = process.env.SCHEMA_PADRAO;
+  const DEFAULT_SCHEMA = process.env.SCHEMA_PADRAO || "nextcar";
 const TIMEZONE = process.env.TZ || "America/Sao_Paulo";
 
 // ------------------------------------

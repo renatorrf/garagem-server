@@ -2643,7 +2643,7 @@ async function apurarSaldosBancarios() {
         COALESCE(SUM(CASE WHEN m.tipo_movimento = 'E' THEN m.val_movimento ELSE 0 END), 0) - 
         COALESCE(SUM(CASE WHEN m.tipo_movimento = 'S' THEN m.val_movimento ELSE 0 END), 0) as saldo_dia,
         $1 as dta_saldo
-      FROM teste.movimentacao m
+        FROM ${schema}.movimentacao m
       JOIN bancos b ON m.cod_banco = b.seq_banco
       WHERE m.dta_movimento::date = $1::date
         AND m.ind_excluido = false
@@ -2660,7 +2660,7 @@ async function apurarSaldosBancarios() {
 
     // 4. Inserir na tabela de apuraÃ§Ã£o
     const insertQuery = `
-      INSERT INTO teste.tab_apuracao_saldo_banco 
+      INSERT INTO ${schema}.tab_apuracao_saldo_banco 
         (seq_banco, des_banco, saldo_dia, dta_saldo)
       VALUES ${rows.map((_, i) => `($${i * 4 + 1}, $${i * 4 + 2}, $${i * 4 + 3}, $${i * 4 + 4})`).join(", ")}
       ON CONFLICT (seq_banco, dta_saldo) 
