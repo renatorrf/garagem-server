@@ -18,7 +18,7 @@ const corsOptions = {
     "http://localhost:8100",
     "https://nextcarltda.web.app",
     "http://localhost:3000",
-    "http://localhost:4200",
+    "http://localhost:4000",
     "http://localhost:8080",
     "https://primecarapp-465cd.web.app",
     "https://primecarapp-465cd.firebaseapp.com",

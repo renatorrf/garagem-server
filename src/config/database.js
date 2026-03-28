@@ -45,6 +45,71 @@ function resolveSslConfig(connectionString) {
   return false;
 }
 
+// Legacy LATIN1 database: normalize unsupported Unicode punctuation before sending values.
+function toLatin1SafeText(value) {
+  const normalized = String(value).normalize("NFC");
+
+  const mapped = normalized
+    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2212]/g, "-")
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+    .replace(/[\u201C\u201D\u201E]/g, '"')
+    .replace(/\u2026/g, "...")
+    .replace(/\u2022/g, "*")
+    .replace(/\u00A0/g, " ")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "");
+
+  let output = "";
+
+  for (const char of mapped) {
+    const codePoint = char.codePointAt(0);
+
+    if (
+      codePoint === 0x09 ||
+      codePoint === 0x0a ||
+      codePoint === 0x0d ||
+      (codePoint >= 0x20 && codePoint <= 0x7e) ||
+      (codePoint >= 0xa0 && codePoint <= 0xff)
+    ) {
+      output += char;
+    }
+  }
+
+  return output;
+}
+
+function sanitizeQueryValue(value) {
+  if (value == null) return value;
+
+  if (typeof value === "string") {
+    return toLatin1SafeText(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeQueryValue(item));
+  }
+
+  if (
+    value instanceof Date ||
+    Buffer.isBuffer(value) ||
+    typeof value !== "object"
+  ) {
+    return value;
+  }
+
+  const output = {};
+  for (const [key, item] of Object.entries(value)) {
+    output[key] = sanitizeQueryValue(item);
+  }
+
+  return output;
+}
+
+function sanitizeQueryParams(params) {
+  if (!Array.isArray(params)) return params;
+
+  return params.map((value) => sanitizeQueryValue(value));
+}
+
 const pool = new Pool({
   connectionString: databaseUrl,
   max: parseInt(process.env.DB_POOL_MAX || "10", 10),
@@ -115,6 +180,7 @@ async function query(text, params, options) {
   const norm = normalizeArgs(params, options);
   params = norm.params;
   options = norm.options;
+  params = sanitizeQueryParams(params);
 
   if (typeof text !== "string" || !text.trim()) {
     throw new Error("db.query: SQL (text) inválido.");
@@ -168,6 +234,43 @@ const db = {
 
   async transaction(callback) {
     const client = await pool.connect();
+    const originalQuery = client.query.bind(client);
+
+    client.query = (...args) => {
+      if (args.length === 0) {
+        return originalQuery();
+      }
+
+      if (typeof args[0] === "string") {
+        if (args.length === 1) {
+          return originalQuery(args[0]);
+        }
+
+        if (args.length === 2) {
+          return originalQuery(args[0], sanitizeQueryValue(args[1]));
+        }
+
+        return originalQuery(args[0], sanitizeQueryValue(args[1]), args[2]);
+      }
+
+      if (args[0] && typeof args[0] === "object") {
+        const config = { ...args[0] };
+
+        if (config.values != null) {
+          config.values = sanitizeQueryParams(
+            Array.isArray(config.values) ? config.values : [config.values],
+          );
+        }
+
+        if (args.length === 1) {
+          return originalQuery(config);
+        }
+
+        return originalQuery(config, args[1]);
+      }
+
+      return originalQuery(...args);
+    };
 
     try {
       await client.query("BEGIN");
@@ -180,6 +283,7 @@ const db = {
       } catch (_) {}
       throw err;
     } finally {
+      client.query = originalQuery;
       client.release();
     }
   },
