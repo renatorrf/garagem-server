@@ -1,4 +1,5 @@
 const db = require("../config/database");
+const { qualifyTable, resolveSchemaValue } = require("../utils/tenantContext");
 
 class Lead {
   constructor(data = {}) {
@@ -36,10 +37,23 @@ class Lead {
     this.tags = data.tags || this.extractTags();
     this.createdAt = data.created_at || data.createdAt || new Date();
     this.updatedAt = data.updated_at || data.updatedAt || new Date();
+    this._schema = data._schema || data.schema || null;
+    this._tenantId = data._tenantId || data.tenantId || null;
   }
 
   static get tableName() {
-    return "nextcar.leads";
+    return this.resolveTableName();
+  }
+
+  static resolveTableName(options = {}) {
+    const schema = resolveSchemaValue(
+      options.schema || process.env.SCHEMA_PADRAO || "nextcar",
+    );
+    return qualifyTable(schema, "leads");
+  }
+
+  get tableName() {
+    return Lead.resolveTableName({ schema: this._schema });
   }
 
   calculateScore() {
@@ -131,7 +145,7 @@ class Lead {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   }
 
-  async save() {
+  async save(options = {}) {
     const errors = this.validate();
     if (errors.length > 0) {
       throw new Error(`Validation failed: ${errors.join(", ")}`);
@@ -165,8 +179,12 @@ class Lead {
       updatedAt: this.updatedAt,
     };
 
+    const tableName = Lead.resolveTableName({
+      schema: options.schema || this._schema,
+    });
+
     const query = `
-      INSERT INTO ${Lead.tableName} (
+      INSERT INTO ${tableName} (
         email_id, remetente, email_remetente, assunto, telefone,
         nome, veiculo_interesse, mensagem, origem, status,
         prioridade, data_recebimento, data_contato, observacoes,
@@ -207,10 +225,16 @@ class Lead {
     ];
 
     const result = await db.query(query, params);
-    return result.rows[0] ? new Lead(result.rows[0]) : null;
+    return result.rows[0]
+      ? new Lead({
+          ...result.rows[0],
+          _schema: options.schema || this._schema,
+          _tenantId: options.tenantId || this._tenantId,
+        })
+      : null;
   }
 
-  async update(updates = {}) {
+  async update(updates = {}, options = {}) {
     Object.assign(this, updates);
     this.updatedAt = new Date();
 
@@ -286,30 +310,56 @@ class Lead {
 
     values.push(this.id);
 
+    const tableName = Lead.resolveTableName({
+      schema: options.schema || this._schema,
+    });
+
     const query = `
-      UPDATE ${Lead.tableName}
+      UPDATE ${tableName}
       SET ${fields.join(", ")}
       WHERE id = $${paramCount}
       RETURNING *;
     `;
 
     const result = await db.query(query, values);
-    return result.rows[0] ? new Lead(result.rows[0]) : null;
+    return result.rows[0]
+      ? new Lead({
+          ...result.rows[0],
+          _schema: options.schema || this._schema,
+          _tenantId: options.tenantId || this._tenantId,
+        })
+      : null;
   }
 
-  static async findById(id) {
-    const query = `SELECT * FROM ${Lead.tableName} WHERE id = $1 AND deleted_at IS NULL`;
+  static async findById(id, options = {}) {
+    const tableName = Lead.resolveTableName(options);
+    const query = `SELECT * FROM ${tableName} WHERE id = $1 AND deleted_at IS NULL`;
     const result = await db.getOne(query, [id]);
-    return result ? new Lead(result) : null;
+    return result
+      ? new Lead({
+          ...result,
+          _schema: options.schema || null,
+          _tenantId: options.tenantId || null,
+        })
+      : null;
   }
 
-  static async findByEmailId(emailId) {
-    const query = `SELECT * FROM ${Lead.tableName} WHERE email_id = $1 AND deleted_at IS NULL`;
+  static async findByEmailId(emailId, options = {}) {
+    const tableName = Lead.resolveTableName(options);
+    const query = `SELECT * FROM ${tableName} WHERE email_id = $1 AND deleted_at IS NULL`;
     const result = await db.getOne(query, [emailId]);
-    return result ? new Lead(result) : null;
+    return result
+      ? new Lead({
+          ...result,
+          _schema: options.schema || null,
+          _tenantId: options.tenantId || null,
+        })
+      : null;
   }
 
   static async findAll({
+    schema,
+    tenantId,
     status,
     origem,
     prioridade,
@@ -389,6 +439,8 @@ class Lead {
     const offset = (page - 1) * limit;
     params.push(limit, offset);
 
+    const tableName = Lead.resolveTableName({ schema });
+
     const query = `
     SELECT
       *,
@@ -433,7 +485,7 @@ class Lead {
         ELSE false
       END as wa_can_force_feedback
 
-    FROM ${Lead.tableName}
+    FROM ${tableName}
     ${whereClause}
     ${orderBy}
     LIMIT $${paramCount}
@@ -442,7 +494,14 @@ class Lead {
 
     const result = await db.query(query, params);
 
-    const leads = result.rows.map((row) => new Lead(row));
+    const leads = result.rows.map(
+      (row) =>
+        new Lead({
+          ...row,
+          _schema: schema || null,
+          _tenantId: tenantId || null,
+        }),
+    );
     const totalCount =
       result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0;
 
@@ -457,13 +516,11 @@ class Lead {
     };
   }
 
-  static async getDashboardStats(dataInicio, dataFim) {
-    const schema = process.env.SCHEMA_PADRAO || "nextcar";
+  static async getDashboardStats(dataInicio, dataFim, schema, options = {}) {
+    const leadTable = Lead.resolveTableName(options);
+    const schemaName = resolveSchemaValue(schema);
 
-    const leadTable =
-      Lead.tableName && String(Lead.tableName).includes(".")
-        ? Lead.tableName
-        : `${schema}.${Lead.tableName || "leads"}`;
+    console.log(leadTable);
 
     const whereConditions = ["deleted_at IS NULL"];
     const params = [];
@@ -513,7 +570,7 @@ class Lead {
     ];
 
     const timelineQuery = `
-      SELECT 
+      SELECT
         DATE(data_recebimento) as date,
         COUNT(*) as total,
         COUNT(CASE WHEN status = 'vendido' THEN 1 END) as vendidos
@@ -601,7 +658,7 @@ class Lead {
         SELECT
           c.plataforma,
           ROUND(SUM(c.custo_mensal / dias.dias_no_mes), 2) AS spend_periodo
-        FROM ${schema}.marketing_costs_monthly c
+        FROM ${schemaName}.marketing_costs_monthly c
         CROSS JOIN dias
         GROUP BY c.plataforma
       )
@@ -734,6 +791,8 @@ class Lead {
   }
 
   static async searchAdvanced({
+    schema,
+    tenantId,
     filters = {},
     page = 1,
     limit = 50,
@@ -741,6 +800,8 @@ class Lead {
     order = "DESC",
   }) {
     return this.findAll({
+      schema,
+      tenantId,
       ...filters,
       page,
       limit,
@@ -749,9 +810,13 @@ class Lead {
     });
   }
 
-  static async assignToSeller(ids, vendedorId) {
+  static async assignToSeller(ids, vendedorId, options = {}) {
+    const tableName = Lead.resolveTableName({
+      schema: options.schema || this._schema,
+    });
+
     const query = `
-      UPDATE ${Lead.tableName}
+      UPDATE ${tableName}
       SET vendedor_id = $1,
           status = 'contatado',
           data_contato = NOW(),
@@ -769,7 +834,14 @@ class Lead {
     };
   }
 
-  static async export({ dataInicio, dataFim, status, origem } = {}) {
+  static async export({
+    schema,
+    tenantId,
+    dataInicio,
+    dataFim,
+    status,
+    origem,
+  } = {}) {
     let whereConditions = ["deleted_at IS NULL"];
     let params = [];
     let paramCount = 1;
@@ -799,10 +871,18 @@ class Lead {
     }
 
     const whereClause = `WHERE ${whereConditions.join(" AND ")}`;
-    const query = `SELECT * FROM ${Lead.tableName} ${whereClause} ORDER BY data_recebimento DESC`;
+    const tableName = Lead.resolveTableName({ schema });
+    const query = `SELECT * FROM ${tableName} ${whereClause} ORDER BY data_recebimento DESC`;
 
     const result = await db.query(query, params);
-    return result.rows.map((row) => new Lead(row));
+    return result.rows.map(
+      (row) =>
+        new Lead({
+          ...row,
+          _schema: schema || null,
+          _tenantId: tenantId || null,
+        }),
+    );
   }
 
   static toCSV(leads) {
@@ -853,9 +933,13 @@ class Lead {
       .join("\n");
   }
 
-  static async delete(id) {
+  static async delete(id, options = {}) {
+    const tableName = Lead.resolveTableName({
+      schema: options.schema || this._schema,
+    });
+
     const query = `
-      UPDATE ${Lead.tableName}
+      UPDATE ${tableName}
       SET deleted_at = NOW(), updated_at = NOW()
       WHERE id = $1
       RETURNING *;
@@ -864,14 +948,14 @@ class Lead {
     return result.rows[0] ? new Lead(result.rows[0]) : null;
   }
 
-  static async requeueWhatsApp(id, mode = "initial") {
+  static async requeueWhatsApp(id, mode = "initial", options = {}) {
     const allowedModes = ["initial", "reminder", "feedback"];
 
     if (!allowedModes.includes(mode)) {
       throw new Error("Modo de reenvio inválido");
     }
 
-    const lead = await this.findById(id);
+    const lead = await this.findById(id, options);
 
     if (!lead) {
       throw new Error("Lead não encontrado");

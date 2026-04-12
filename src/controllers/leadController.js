@@ -1,5 +1,9 @@
-const Lead = require('../models/leads');
-const LeadWorkflowService = require('../services/LeadWorkflowService');
+const Lead = require("../models/leads");
+const LeadWorkflowService = require("../services/LeadWorkflowService");
+const {
+  getSchemaFromReq,
+  getTenantIdFromReq,
+} = require("../utils/tenantContext");
 
 class LeadController {
   async getLeads(req, res) {
@@ -14,11 +18,13 @@ class LeadController {
         dataFim,
         search,
         vendedorId,
-        sortBy = 'dataRecebimento',
-        order = 'DESC',
+        sortBy = "dataRecebimento",
+        order = "DESC",
       } = req.query;
 
+      const schema = getSchemaFromReq(req);
       const result = await Lead.findAll({
+        schema,
         status,
         origem,
         prioridade,
@@ -38,7 +44,7 @@ class LeadController {
         pagination: result.pagination,
       });
     } catch (error) {
-      console.error('Erro ao buscar leads:', error);
+      console.error("Erro ao buscar leads:", error);
       res.status(500).json({
         success: false,
         error: error.message,
@@ -52,11 +58,13 @@ class LeadController {
         filters = {},
         page = 1,
         limit = 50,
-        sortBy = 'dataRecebimento',
-        order = 'DESC',
+        sortBy = "dataRecebimento",
+        order = "DESC",
       } = req.body;
 
+      const schema = getSchemaFromReq(req);
       const result = await Lead.searchAdvanced({
+        schema,
         filters,
         page: parseInt(page, 10),
         limit: parseInt(limit, 10),
@@ -70,7 +78,7 @@ class LeadController {
         pagination: result.pagination,
       });
     } catch (error) {
-      console.error('Erro na busca avanÃƒÂ§ada:', error);
+      console.error("Erro na busca avanÃƒÂ§ada:", error);
       res.status(500).json({
         success: false,
         error: error.message,
@@ -81,12 +89,13 @@ class LeadController {
   async getLeadById(req, res) {
     try {
       const { id } = req.params;
-      const lead = await Lead.findById(id);
+      const schema = getSchemaFromReq(req);
+      const lead = await Lead.findById(id, { schema });
 
       if (!lead) {
         return res.status(404).json({
           success: false,
-          error: 'Lead nÃƒÂ£o encontrado',
+          error: "Lead nÃƒÂ£o encontrado",
         });
       }
 
@@ -105,7 +114,13 @@ class LeadController {
   async createLead(req, res) {
     try {
       const leadData = req.body;
-      const lead = new Lead(leadData);
+      const schema = getSchemaFromReq(req);
+      const tenantId = getTenantIdFromReq(req);
+      const lead = new Lead({
+        ...leadData,
+        _schema: schema,
+        _tenantId: tenantId,
+      });
       const savedLead = await lead.save();
 
       res.status(201).json({
@@ -136,12 +151,12 @@ class LeadController {
         mensagem,
       } = req.body || {};
 
-      const telefone = String(whatsapp || '').replace(/\D/g, '');
+      const telefone = String(whatsapp || "").replace(/\D/g, "");
 
       if (telefone.length < 10) {
         return res.status(400).json({
           success: false,
-          error: 'WhatsApp invÃ¡lido.',
+          error: "WhatsApp invÃ¡lido.",
         });
       }
 
@@ -150,21 +165,21 @@ class LeadController {
 
       const leadData = {
         emailId,
-        remetente: nome || telefone || 'Simulador pÃºblico',
+        remetente: nome || telefone || "Simulador pÃºblico",
         emailRemetente,
-        assunto: 'SimulaÃ§Ã£o de compra de veÃ­culo',
+        assunto: "SimulaÃ§Ã£o de compra de veÃ­culo",
         telefone,
-        nome: nome || telefone || 'Simulador pÃºblico',
-        veiculoInteresse: veiculoInteresse || 'Compra de veÃ­culo',
-        mensagem: mensagem || '',
-        origem: origem || 'Simulador pÃºblico',
-        status: 'novo',
-        prioridade: 'media',
+        nome: nome || telefone || "Simulador pÃºblico",
+        veiculoInteresse: veiculoInteresse || "Compra de veÃ­culo",
+        mensagem: mensagem || "",
+        origem: origem || "Simulador pÃºblico",
+        status: "novo",
+        prioridade: "media",
         dataRecebimento: new Date(),
         metadata: {
-          tipoClassificacao: 'lead',
-          origem: 'simulador-compra',
-          fonte: 'simulador-compra',
+          tipoClassificacao: "lead",
+          origem: "simulador-compra",
+          fonte: "simulador-compra",
           simulacao: {
             valorVeiculo: Number(valorVeiculo || 0),
             entrada: Number(entrada || 0),
@@ -176,11 +191,17 @@ class LeadController {
         },
       };
 
-      const lead = new Lead(leadData);
+      const schema = getSchemaFromReq(req);
+      const tenantId = getTenantIdFromReq(req);
+      const lead = new Lead({
+        ...leadData,
+        _schema: schema,
+        _tenantId: tenantId,
+      });
       const savedLead = await lead.save();
 
       if (!savedLead) {
-        throw new Error('Nao foi possivel salvar a simulacao.');
+        throw new Error("Nao foi possivel salvar a simulacao.");
       }
 
       let workflowResult = null;
@@ -188,12 +209,15 @@ class LeadController {
       try {
         workflowResult = await LeadWorkflowService.onNewLead(savedLead);
       } catch (workflowError) {
-        console.error('Falha ao disparar WAPA da simulacao:', workflowError.message);
+        console.error(
+          "Falha ao disparar WAPA da simulacao:",
+          workflowError.message,
+        );
       }
 
       return res.status(201).json({
         success: true,
-        message: 'Simulacao registrada com sucesso.',
+        message: "Simulacao registrada com sucesso.",
         data: savedLead,
         workflowResult,
       });
@@ -210,11 +234,13 @@ class LeadController {
       const { id } = req.params;
       const updates = req.body;
 
-      const lead = await Lead.findById(id);
+      const schema = getSchemaFromReq(req);
+      const tenantId = getTenantIdFromReq(req);
+      const lead = await Lead.findById(id, { schema, tenantId });
       if (!lead) {
         return res.status(404).json({
           success: false,
-          error: 'Lead nÃƒÂ£o encontrado',
+          error: "Lead nÃƒÂ£o encontrado",
         });
       }
 
@@ -240,21 +266,22 @@ class LeadController {
       if (!status) {
         return res.status(400).json({
           success: false,
-          error: 'Status ÃƒÂ© obrigatÃƒÂ³rio',
+          error: "Status ÃƒÂ© obrigatÃƒÂ³rio",
         });
       }
 
-      const lead = await Lead.findById(id);
+      const schema = getSchemaFromReq(req);
+      const lead = await Lead.findById(id, { schema });
       if (!lead) {
         return res.status(404).json({
           success: false,
-          error: 'Lead nÃƒÂ£o encontrado',
+          error: "Lead nÃƒÂ£o encontrado",
         });
       }
 
       const updates = { status };
       if (observacao) updates.observacoes = observacao;
-      if (status === 'contatado') updates.dataContato = new Date();
+      if (status === "contatado") updates.dataContato = new Date();
 
       const updatedLead = await lead.update(updates);
 
@@ -275,15 +302,18 @@ class LeadController {
       const { id } = req.params;
       const { sellerId, sellerName, sellerWhatsapp } = req.body;
 
-      const lead = await Lead.findById(id);
+      const schema = getSchemaFromReq(req);
+      const lead = await Lead.findById(id, { schema });
       if (!lead) {
         return res.status(404).json({
           success: false,
-          error: 'Lead nÃƒÂ£o encontrado',
+          error: "Lead nÃƒÂ£o encontrado",
         });
       }
 
       const updatedLead = await LeadWorkflowService.startAttendanceManual({
+        schema,
+        tenantId,
         leadId: id,
         sellerId: sellerId || null,
         sellerName: sellerName || null,
@@ -295,7 +325,7 @@ class LeadController {
         data: updatedLead,
       });
     } catch (error) {
-      console.error('Erro ao iniciar atendimento:', error);
+      console.error("Erro ao iniciar atendimento:", error);
       res.status(500).json({
         success: false,
         error: error.message,
@@ -306,21 +336,23 @@ class LeadController {
   async retryWhatsApp(req, res) {
     try {
       const { id } = req.params;
-      const { mode = 'initial' } = req.body || {};
+      const { mode = "initial" } = req.body || {};
 
-      const allowedModes = ['initial', 'reminder', 'feedback'];
+      const allowedModes = ["initial", "reminder", "feedback"];
 
       if (!allowedModes.includes(mode)) {
         return res.status(400).json({
           success: false,
-          error: 'Modo invÃƒÂ¡lido. Use: initial, reminder ou feedback',
+          error: "Modo invÃƒÂ¡lido. Use: initial, reminder ou feedback",
         });
       }
 
-      const result = await Lead.requeueWhatsApp(id, mode);
+      const schema = getSchemaFromReq(req);
+      const tenantId = getTenantIdFromReq(req);
+      const result = await Lead.requeueWhatsApp(id, mode, { schema, tenantId });
 
-      if (mode === 'initial') {
-        await LeadWorkflowService.onNewLead(result.lead);
+      if (mode === "initial") {
+        await LeadWorkflowService.onNewLead(result.lead, { schema, tenantId });
       }
 
       res.json({
@@ -332,7 +364,7 @@ class LeadController {
         },
       });
     } catch (error) {
-      console.error('Erro ao reprocessar WhatsApp:', error);
+      console.error("Erro ao reprocessar WhatsApp:", error);
       res.status(400).json({
         success: false,
         error: error.message,
@@ -343,18 +375,20 @@ class LeadController {
   async deleteLead(req, res) {
     try {
       const { id } = req.params;
-      const lead = await Lead.delete(id);
+      const schema = getSchemaFromReq(req);
+      const tenantId = getTenantIdFromReq(req);
+      const lead = await Lead.delete(id, { schema, tenantId });
 
       if (!lead) {
         return res.status(404).json({
           success: false,
-          error: 'Lead nÃƒÂ£o encontrado',
+          error: "Lead nÃƒÂ£o encontrado",
         });
       }
 
       res.json({
         success: true,
-        message: 'Lead deletado com sucesso',
+        message: "Lead deletado com sucesso",
       });
     } catch (error) {
       res.status(500).json({
@@ -367,7 +401,10 @@ class LeadController {
   async getDashboardStats(req, res) {
     try {
       const { dataInicio, dataFim } = req.query;
-      const stats = await Lead.getDashboardStats(dataInicio, dataFim);
+      const schema = getSchemaFromReq(req);
+      const stats = await Lead.getDashboardStats(dataInicio, dataFim, schema, {
+        schema,
+      });
 
       res.json({
         success: true,
@@ -388,7 +425,7 @@ class LeadController {
       if (!Array.isArray(ids) || ids.length === 0 || !vendedorId) {
         return res.status(400).json({
           success: false,
-          error: 'IDs e vendedorId sÃƒÂ£o obrigatÃƒÂ³rios',
+          error: "IDs e vendedorId sÃƒÂ£o obrigatÃƒÂ³rios",
         });
       }
 
@@ -409,7 +446,7 @@ class LeadController {
   async exportLeads(req, res) {
     try {
       const {
-        format = 'json',
+        format = "json",
         dataInicio,
         dataFim,
         status,
@@ -423,10 +460,10 @@ class LeadController {
         origem,
       });
 
-      if (format === 'csv') {
+      if (format === "csv") {
         const csv = Lead.toCSV(leads);
-        res.header('Content-Type', 'text/csv');
-        res.attachment('leads.csv');
+        res.header("Content-Type", "text/csv");
+        res.attachment("leads.csv");
         return res.send(csv);
       }
 

@@ -1,4 +1,5 @@
 const LeadWorkflowService = require('../services/LeadWorkflowService');
+const TenantIntegrationService = require('../services/TenantIntegrationService');
 
 class WhatsAppWebhookController {
   async verify(req, res) {
@@ -33,6 +34,9 @@ class WhatsAppWebhookController {
           if (change?.field !== 'messages') continue;
 
           const value = change?.value || {};
+          const metadata = value?.metadata || {};
+          const waConfig = await TenantIntegrationService.getWhatsAppConfig({ externalId: metadata?.phone_number_id || null });
+          const context = { tenantId: waConfig?.tenantId || null, schema: waConfig?.schema || null };
           const messages = value?.messages || [];
 
           for (const msg of messages) {
@@ -61,7 +65,7 @@ class WhatsAppWebhookController {
                       sellerName: sellerInfo.name,
                       sellerWhatsapp: sellerInfo.whatsapp,
                       from,
-                    });
+                    }, context);
 
                     console.log(
                       `👤 Vendedor selecionado: ${sellerInfo.name} (ID ${sellerInfo.id}) para lead ${leadId}`,
@@ -86,7 +90,7 @@ class WhatsAppWebhookController {
                   const [, outcome, leadId] = id.split(':');
 
                   if (outcome && leadId) {
-                    await LeadWorkflowService.setOutcome({ leadId, outcome });
+                    await LeadWorkflowService.setOutcome({ leadId, outcome }, context);
                     console.log(
                       `📌 Outcome definido: lead ${leadId}, outcome ${outcome}`,
                     );

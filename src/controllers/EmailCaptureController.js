@@ -3,7 +3,7 @@
  * Controlador que usa o EmailCaptureService para servir API REST
  */
 
-const EmailCaptureService = require('../services/EmailCaptureService');
+const EmailCaptureService = require("../services/EmailCaptureService");
 
 class EmailCaptureController {
   /**
@@ -103,7 +103,7 @@ class EmailCaptureController {
 
       return res.json({
         success: true,
-        message: 'Captura agendada iniciada',
+        message: "Captura agendada iniciada",
       });
     } catch (error) {
       return res.status(500).json({
@@ -123,7 +123,7 @@ class EmailCaptureController {
 
       return res.json({
         success: true,
-        message: 'Captura agendada parada',
+        message: "Captura agendada parada",
       });
     } catch (error) {
       return res.status(500).json({
@@ -168,7 +168,7 @@ class EmailCaptureController {
 
       return res.json({
         success: true,
-        message: 'Cache invalidado com sucesso',
+        message: "Cache invalidado com sucesso",
       });
     } catch (error) {
       return res.status(500).json({
@@ -212,18 +212,18 @@ class EmailCaptureController {
       if (!subject || !from || !body) {
         return res.status(400).json({
           success: false,
-          error: 'subject, from e body são obrigatórios',
+          error: "subject, from e body são obrigatórios",
         });
       }
 
       const fakeEmailData = {
         subject,
         from: {
-          text: from.name || from.email || 'Remetente',
-          value: [{ address: from.email || 'teste@example.com' }],
+          text: from.name || from.email || "Remetente",
+          value: [{ address: from.email || "teste@example.com" }],
         },
-        text: typeof body === 'string' ? body : body.text || '',
-        html: typeof body === 'string' ? body : body.html || body.text || '',
+        text: typeof body === "string" ? body : body.text || "",
+        html: typeof body === "string" ? body : body.html || body.text || "",
         messageId: `manual-${Date.now()}-${Math.random()
           .toString(36)
           .slice(2, 11)}`,
@@ -237,14 +237,14 @@ class EmailCaptureController {
       if (!lead) {
         return res.status(400).json({
           success: false,
-          error: 'Não foi possível salvar o lead',
+          error: "Não foi possível salvar o lead",
         });
       }
 
       return res.json({
         success: true,
         data: lead,
-        message: 'Email processado manualmente e salvo como lead',
+        message: "Email processado manualmente e salvo como lead",
       });
     } catch (error) {
       return res.status(500).json({

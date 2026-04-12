@@ -5,6 +5,7 @@ if (process.env.NODE_ENV !== "production") {
 const moment = require("moment");
 const cron = require("node-cron");
 const crypto = require("crypto");
+const { getSchemaFromReq } = require("../utils/tenantContext");
 
 exports.verifyTokenSim = async (req, res, next) => {
   const token = req.headers.authorization;
@@ -15,14 +16,14 @@ exports.verifyTokenSim = async (req, res, next) => {
   } else {
     return res
       .status(401)
-      .json({ auth: false, message: "Auth-Token invÃ¡lido." });
+      .json({ auth: false, message: "Auth-Token invalido." });
   }
 };
 
 exports.cadastraVeiculo = async (req, res) => {
   const dataAtual = moment().format();
   const { dados_veiculo, imagens_veiculo } = req.body;
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   if (!schema) {
     return res.status(400).json({
@@ -195,7 +196,7 @@ exports.cadastraVeiculo = async (req, res) => {
 exports.salvaVeiculo = async (req, res) => {
   const dataAtual = moment().format();
   const { dados_veiculo, imagens_veiculo, img_alterada } = req.body;
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   if (!schema) {
     return res.status(400).json({
@@ -376,7 +377,7 @@ exports.salvaVeiculo = async (req, res) => {
 };
 
 exports.buscaVeiculo = async (req, res) => {
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   if (!schema) {
     return res.status(400).json({
@@ -439,14 +440,14 @@ exports.buscaVeiculo = async (req, res) => {
 exports.excluirVeiculo = async (req, res) => {
   const { seq_veiculo, motivo_exclusao } = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
         // Sua lÃ³gica de transaÃ§Ã£o aqui
 
-        const insertQuery = ` UPDATE ${schema}.tab_veiculo 
+        const insertQuery = ` UPDATE ${schema}.tab_veiculo
                               SET ind_status = $1,
                                   motivo_exclusao = $2
                               WHERE seq_veiculo = $3 `;
@@ -485,7 +486,7 @@ exports.excluirVeiculo = async (req, res) => {
 
 exports.buscaImgVeiculo = async (req, res) => {
   const { seq_veiculo } = req.body;
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   if (!schema) {
     return res.status(400).json({
@@ -608,9 +609,9 @@ exports.cadastraDocumentoVeiculo = async (req, res) => {
     await db.queryGaragem(
       `
       UPDATE tab_veiculo
-      SET 
+      SET
         des_veiculo = $1,
-        documento = $2, 
+        documento = $2,
         nome_documento = $3,
         renavam = $4,
         placa = $5,
@@ -655,7 +656,7 @@ exports.cadastraCompromissoAgenda = async (req, res) => {
     tipo,
     repeatMonths,
   } = req.body;
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   console.log(req.body);
 
@@ -724,7 +725,7 @@ exports.cadastraCompromissoAgenda = async (req, res) => {
         case "c": // Concluir
         case "p": // Pendente
           const updateQuery = `
-            UPDATE ${schema}.tab_agenda 
+            UPDATE ${schema}.tab_agenda
             SET concluido = $1
             WHERE seq_registro = $2
             RETURNING seq_registro
@@ -741,7 +742,7 @@ exports.cadastraCompromissoAgenda = async (req, res) => {
 
         case "d": // Deletar
           const deleteQuery = `
-            DELETE FROM ${schema}.tab_agenda 
+            DELETE FROM ${schema}.tab_agenda
             WHERE seq_registro = $1
             RETURNING seq_registro
           `;
@@ -794,7 +795,7 @@ exports.cadastraCompromissoAgenda = async (req, res) => {
 };
 
 exports.buscaCompromissosAgenda = async (req, res) => {
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   if (!schema) {
     return res.status(400).json({
@@ -806,7 +807,7 @@ exports.buscaCompromissosAgenda = async (req, res) => {
   try {
     // Consulta corrigida com os nomes reais das colunas
     const query = `
-      SELECT 
+      SELECT
         dia as date,
         jsonb_agg(
           jsonb_build_object(
@@ -818,11 +819,11 @@ exports.buscaCompromissosAgenda = async (req, res) => {
             'dia', dia
           )
         ) as appointments
-      FROM 
+      FROM
         ${schema}.tab_agenda
-      GROUP BY 
+      GROUP BY
         dia
-      ORDER BY 
+      ORDER BY
         dia;
     `;
 
@@ -849,7 +850,7 @@ exports.buscaCompromissosAgenda = async (req, res) => {
 };
 
 exports.buscaIntegradoresAtivos = async (req, res) => {
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const result = await db.transaction(async (client) => {
@@ -895,7 +896,7 @@ exports.buscaIntegradoresAtivos = async (req, res) => {
 exports.cadastraParceiros = async (req, res) => {
   const { nom_parceiro, ind_tipo, percentual_lucro } = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -938,7 +939,7 @@ exports.cadastraParceiros = async (req, res) => {
 };
 
 exports.buscaParceiros = async (req, res) => {
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -982,7 +983,7 @@ exports.buscaParceiros = async (req, res) => {
 exports.editaParceiros = async (req, res) => {
   const { seq_registro } = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -1026,7 +1027,7 @@ exports.editaParceiros = async (req, res) => {
 exports.cadastraBanco = async (req, res) => {
   const { des_banco, agencia, conta_corrente } = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -1069,7 +1070,7 @@ exports.cadastraBanco = async (req, res) => {
 };
 
 exports.buscaBanco = async (req, res) => {
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -1113,7 +1114,7 @@ exports.buscaBanco = async (req, res) => {
 exports.editaBanco = async (req, res) => {
   const { seq_registro } = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -1157,7 +1158,7 @@ exports.editaBanco = async (req, res) => {
 exports.cadastraCartao = async (req, res) => {
   const { bandeira, final_cartao, vencimento, fechamento } = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -1200,7 +1201,7 @@ exports.cadastraCartao = async (req, res) => {
 };
 
 exports.buscaCartao = async (req, res) => {
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -1244,7 +1245,7 @@ exports.buscaCartao = async (req, res) => {
 exports.editaCartao = async (req, res) => {
   const { seq_registro } = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -1286,7 +1287,7 @@ exports.editaCartao = async (req, res) => {
 };
 
 exports.inserirMovimento = async (req, res) => {
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
   const body = req.body;
 
   console.log(req.body);
@@ -1873,14 +1874,14 @@ exports.alteraMovimento = async (req, res) => {
     dta_movimento,
   } = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
         // Sua lÃ³gica de transaÃ§Ã£o aqui
 
-        const updateQuery = `UPDATE ${schema}.tab_movimentacao 
+        const updateQuery = `UPDATE ${schema}.tab_movimentacao
                              SET ind_excluido = $1, ind_alterado = $2, val_movimento = $3, cod_banco = $4, cod_cartao = $5, dta_movimento = $6
                              where seq_registro = $7`;
 
@@ -1935,7 +1936,7 @@ exports.alocadorDespesaVeiculo = async (req, res) => {
     seq_movimentacao,
   } = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -1943,7 +1944,7 @@ exports.alocadorDespesaVeiculo = async (req, res) => {
         // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = `INSERT INTO ${schema}.tab_alocador_despesa_veiculo
-                                  (des_movimento, val_movimento, dta_movimento, seq_veiculo, 
+                                  (des_movimento, val_movimento, dta_movimento, seq_veiculo,
                                   des_observacao, ind_alocato, seq_movimentacao)
                              VALUES ($1, $2, $3, $4, $5, $6, $7)
                              RETURNING seq_registro`;
@@ -1994,7 +1995,7 @@ exports.alocadorDespesaVeiculo = async (req, res) => {
 exports.buscaDespesasAlocador = async (req, res) => {
   const { ind_alocato } = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -2057,7 +2058,7 @@ exports.buscaDespesasAlocador = async (req, res) => {
 
 exports.updateDespesasAlocador = async (req, res) => {
   const { seq_veiculo, des_veiculo, seq_movimentacao } = req.body;
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     // validaÃ§Ãµes bÃ¡sicas
@@ -2155,7 +2156,7 @@ exports.inserirDespesaVeiculo = async (req, res) => {
     parcela,
   } = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -2163,8 +2164,8 @@ exports.inserirDespesaVeiculo = async (req, res) => {
         // Sua lÃ³gica de transaÃ§Ã£o aqui
 
         const insertQuery = `INSERT INTO ${schema}.tab_despesa_veiculo
-                                  (cod_banco, cod_cartao, des_despesa, cod_tipo_despesa, 
-                                  des_tipo_despesa, des_veiculo_garantia, dta_despesa, ind_excluido, 
+                                  (cod_banco, cod_cartao, des_despesa, cod_tipo_despesa,
+                                  des_tipo_despesa, des_veiculo_garantia, dta_despesa, ind_excluido,
                                   seq_veiculo, seq_veiculo_garantia, val_despesa, parcela)
                              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                              RETURNING seq_registro`;
@@ -2220,7 +2221,7 @@ exports.inserirDespesaVeiculo = async (req, res) => {
 exports.buscaDespesaVeiculo = async (req, res) => {
   const { seq_veiculo } = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -2278,7 +2279,7 @@ exports.buscaDespesaVeiculo = async (req, res) => {
 };
 
 exports.buscaMovimentoFinanceiro = async (req, res) => {
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
   const {
     cod_banco,
     ind_conciliado,
@@ -2368,7 +2369,7 @@ exports.buscaMovimentoFinanceiro = async (req, res) => {
 
 exports.importarFinanceiroOFX = async (req, res) => {
   const { movimentosSelecionados, banco } = req.body;
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
   const dtaAtual = moment().format();
 
   if (!schema) {
@@ -2524,7 +2525,7 @@ exports.importarFinanceiroOFX = async (req, res) => {
 exports.conciliarEncontrados = async (req, res) => {
   const { movimentosEncontrados } = req.body;
   const dtaAtual = moment().format();
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   if (!schema) {
     return res.status(400).json({
@@ -2637,10 +2638,10 @@ async function apurarSaldosBancarios() {
 
     // 2. Query para calcular saldos por banco
     const calculoSaldoQuery = `
-      SELECT 
+      SELECT
         m.cod_banco as seq_banco,
         b.des_banco,
-        COALESCE(SUM(CASE WHEN m.tipo_movimento = 'E' THEN m.val_movimento ELSE 0 END), 0) - 
+        COALESCE(SUM(CASE WHEN m.tipo_movimento = 'E' THEN m.val_movimento ELSE 0 END), 0) -
         COALESCE(SUM(CASE WHEN m.tipo_movimento = 'S' THEN m.val_movimento ELSE 0 END), 0) as saldo_dia,
         $1 as dta_saldo
         FROM ${schema}.movimentacao m
@@ -2660,11 +2661,11 @@ async function apurarSaldosBancarios() {
 
     // 4. Inserir na tabela de apuraÃ§Ã£o
     const insertQuery = `
-      INSERT INTO ${schema}.tab_apuracao_saldo_banco 
+      INSERT INTO ${schema}.tab_apuracao_saldo_banco
         (seq_banco, des_banco, saldo_dia, dta_saldo)
       VALUES ${rows.map((_, i) => `($${i * 4 + 1}, $${i * 4 + 2}, $${i * 4 + 3}, $${i * 4 + 4})`).join(", ")}
-      ON CONFLICT (seq_banco, dta_saldo) 
-      DO UPDATE SET 
+      ON CONFLICT (seq_banco, dta_saldo)
+      DO UPDATE SET
         des_banco = EXCLUDED.des_banco,
         saldo_dia = EXCLUDED.saldo_dia
     `;
@@ -2715,7 +2716,7 @@ exports.cadastraDespesaOperacional = async (req, res) => {
     parcela,
   } = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   console.log(req.body);
   try {
@@ -2723,7 +2724,7 @@ exports.cadastraDespesaOperacional = async (req, res) => {
       try {
         // Sua lÃ³gica de transaÃ§Ã£o aqui
 
-        const insertQuery = `INSERT INTO ${schema}.tab_despesa_operacional 
+        const insertQuery = `INSERT INTO ${schema}.tab_despesa_operacional
                               (des_despesa, val_despesa, dta_despesa, cod_tipo_despesa, des_tipo_despesa, cod_banco, cod_cartao, parcela)
                               values
                               ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -2776,7 +2777,7 @@ exports.cadastraDespesaOperacional = async (req, res) => {
 exports.buscaDespesaOperacional = async (req, res) => {
   const {} = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -2822,7 +2823,7 @@ exports.buscaDespesaOperacional = async (req, res) => {
 exports.buscaMovimentoCartao = async (req, res) => {
   const {} = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -2868,7 +2869,7 @@ exports.buscaMovimentoCartao = async (req, res) => {
 exports.faturaCartao = async (req, res) => {
   const { total, seqMovimentos, dataVencimento, codCartao } = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -2879,7 +2880,7 @@ exports.faturaCartao = async (req, res) => {
 
         const insertQuery = `INSERT INTO ${schema}.tab_fatura_cartao
                              (cod_cartao, val_fatura, dta_vencimento, dta_pagamento, cod_banco, ind_pago, val_pago, seq_movimento_cartao)
-                             VALUES 
+                             VALUES
                              ($1, $2, $3, $4, $5, $6, $7, $8)
                              RETURNING seq_registro`;
 
@@ -2938,7 +2939,7 @@ exports.faturaCartao = async (req, res) => {
 exports.buscafaturaCartao = async (req, res) => {
   const {} = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -2996,7 +2997,7 @@ exports.liquidarFaturaCartao = async (req, res) => {
 
   console.log(req.body);
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -3043,7 +3044,7 @@ exports.liquidarFaturaCartao = async (req, res) => {
 exports.buscaFinanceiras = async (req, res) => {
   const {} = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -3089,7 +3090,7 @@ exports.buscaFinanceiras = async (req, res) => {
 exports.vinculaBancoFinanceiras = async (req, res) => {
   const { seq_registro, cod_banco } = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -3135,7 +3136,7 @@ exports.vinculaBancoFinanceiras = async (req, res) => {
 exports.buscaCliente = async (req, res) => {
   const { valor } = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -3191,7 +3192,7 @@ exports.cadastrarCliente = async (req, res) => {
     uf,
   } = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   dtaAtual = moment().format();
 
@@ -3436,7 +3437,7 @@ async function vincularUsuarioAoVeiculo(client, schema, usuarioRow, seq_veiculo)
 exports.vinculaVeiculoCliente = async (req, res) => {
   const { seq_registro, seq_veiculo, cliente } = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -3478,7 +3479,7 @@ exports.vinculaVeiculoCliente = async (req, res) => {
 exports.vinculaContratoVeiculo = async (req, res) => {
   const { seq_veiculo, contrato } = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -3526,7 +3527,7 @@ exports.finalizaVendaVeiculo = async (req, res) => {
     seq_veiculo, val_compra, total_prazo, dta_primeiro_venc_prazo, val_consorcio, val_entrada_cartao, val_entrada_especie, val_financiado, val_veiculo_entrada, val_venda, valor_prazo,
     indTroca, indPrazo, indFinanciado, indConsorcio, entradaEspecie, entradaCartao, cod_vendedor, cod_cliente, cliente, indClienteNovo } = req.body;
 
-  const schema = req.headers['schema'];
+  const schema = getSchemaFromReq(req);
 
   const dtaAtual = moment().format();
 
@@ -3825,9 +3826,9 @@ exports.finalizaVendaVeiculo = async (req, res) => {
     const insertQuery = `
           INSERT INTO ${schema}.tab_movimentacao (
             tipo_movimento, dta_movimento, des_movimento, ind_conciliado, dta_conciliado,
-            ind_excluido, ind_alterado, seq_veiculo, des_origem, cod_banco, 
-            des_movimento_detalhado, cod_cartao, val_movimento, descricao_mov_ofx, 
-            cod_banco_ofx, id_unico, cod_categoria_movimento, des_categoria_movimento, 
+            ind_excluido, ind_alterado, seq_veiculo, des_origem, cod_banco,
+            des_movimento_detalhado, cod_cartao, val_movimento, descricao_mov_ofx,
+            cod_banco_ofx, id_unico, cod_categoria_movimento, des_categoria_movimento,
             parcela, seq_despesa, seq_fatura, ind_cartao_pago
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
           RETURNING seq_registro;
@@ -3902,9 +3903,9 @@ exports.finalizaVendaVeiculo = async (req, res) => {
     const insertQuery = `
           INSERT INTO ${schema}.tab_movimentacao (
             tipo_movimento, dta_movimento, des_movimento, ind_conciliado, dta_conciliado,
-            ind_excluido, ind_alterado, seq_veiculo, des_origem, cod_banco, 
-            des_movimento_detalhado, cod_cartao, val_movimento, descricao_mov_ofx, 
-            cod_banco_ofx, id_unico, cod_categoria_movimento, des_categoria_movimento, 
+            ind_excluido, ind_alterado, seq_veiculo, des_origem, cod_banco,
+            des_movimento_detalhado, cod_cartao, val_movimento, descricao_mov_ofx,
+            cod_banco_ofx, id_unico, cod_categoria_movimento, des_categoria_movimento,
             parcela, seq_despesa, seq_fatura, ind_cartao_pago
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
           RETURNING seq_registro;
@@ -3976,7 +3977,7 @@ exports.finalizaVendaVeiculo = async (req, res) => {
 exports.buscaDadosEmpresa = async (req, res) => {
   const {} = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -4048,7 +4049,7 @@ exports.salvaDadosEmpresa = async (req, res) => {
 
   console.log(req.body);
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   const dtaAtual = moment().format();
 
@@ -4176,7 +4177,7 @@ exports.salvaDadosEmpresa = async (req, res) => {
 exports.buscaModeloContrato = async (req, res) => {
   const {} = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -4228,7 +4229,7 @@ exports.cadastroModeloContrato = async (req, res) => {
 
   console.log(req.body);
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -4299,7 +4300,7 @@ exports.salvaModeloContrato = async (req, res) => {
     ind_padrao,
   } = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -4364,14 +4365,14 @@ exports.salvaModeloContrato = async (req, res) => {
 exports.buscaFinanciamentos = async (req, res) => {
   const {} = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
       try {
         // Sua lÃ³gica de transaÃ§Ã£o aqui
 
-        const insertQuery = `SELECT * from ${schema}.tab_conta_receber 
+        const insertQuery = `SELECT * from ${schema}.tab_conta_receber
                              WHERE ind_pago = $1`;
 
         const values = [false];
@@ -4415,7 +4416,7 @@ exports.cadastraVendedor = async (req, res) => {
     tipo_pagamento,
   } = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -4468,7 +4469,7 @@ exports.cadastraVendedor = async (req, res) => {
 exports.buscaVendedor = async (req, res) => {
   const {} = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -4521,7 +4522,7 @@ exports.salvaVendedor = async (req, res) => {
 
   console.log(req.body);
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -4578,7 +4579,7 @@ exports.salvaVendedor = async (req, res) => {
 // exports.desfazerVenda = async (req, res) => {
 //   const { seq_veiculo } = req.body;
 
-//   const schema = req.headers['schema'];
+//   const schema = getSchemaFromReq(req);
 
 //   try {
 //     const queryResult = await db.transaction(async (client) => {
@@ -4622,7 +4623,7 @@ exports.salvaVendedor = async (req, res) => {
 exports.crlv = async (req, res) => {
   const { seq_veiculo } = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -4669,7 +4670,7 @@ exports.crlv = async (req, res) => {
 exports.contrato = async (req, res) => {
   const { seq_veiculo } = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -4757,7 +4758,7 @@ exports.desfazerVenda = async (req, res) => {
   const indPrazo = item.valor_prazo !== null;
   const indTroca = item.ind_troca !== null;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -4916,7 +4917,7 @@ exports.receberFinanciamento = async (req, res) => {
     cod_tipo,
   } = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   console.log(req.body);
 
@@ -4960,9 +4961,9 @@ exports.receberFinanciamento = async (req, res) => {
           const insertQuery = `
           INSERT INTO ${schema}.tab_movimentacao (
             tipo_movimento, dta_movimento, des_movimento, ind_conciliado, dta_conciliado,
-            ind_excluido, ind_alterado, seq_veiculo, des_origem, cod_banco, 
-            des_movimento_detalhado, cod_cartao, val_movimento, descricao_mov_ofx, 
-            cod_banco_ofx, id_unico, cod_categoria_movimento, des_categoria_movimento, 
+            ind_excluido, ind_alterado, seq_veiculo, des_origem, cod_banco,
+            des_movimento_detalhado, cod_cartao, val_movimento, descricao_mov_ofx,
+            cod_banco_ofx, id_unico, cod_categoria_movimento, des_categoria_movimento,
             parcela, seq_despesa, seq_fatura, ind_cartao_pago
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`;
 
@@ -5053,7 +5054,7 @@ exports.receberFinanciamento = async (req, res) => {
 
 exports.registrarOperacaoParceiro = async (req, res) => {
   // 1. ValidaÃ§Ã£o dos headers e schema
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
   if (!schema) {
     return res.status(400).json({
       success: false,
@@ -5151,17 +5152,17 @@ exports.registrarOperacaoParceiro = async (req, res) => {
         // 8. Query de inserÃ§Ã£o com validaÃ§Ã£o adicional
         const insertQuery = `
           INSERT INTO ${schema}.tab_conta_parceiro (
-            cod_parceiro, 
-            nom_parceiro, 
-            des_movimento, 
-            dta_movimento, 
-            val_movimento, 
-            tipo_movimento, 
+            cod_parceiro,
+            nom_parceiro,
+            des_movimento,
+            dta_movimento,
+            val_movimento,
+            tipo_movimento,
             observacao,
             cod_banco,
             des_banco
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-          RETURNING seq_registro, cod_parceiro, nom_parceiro, des_movimento, 
+          RETURNING seq_registro, cod_parceiro, nom_parceiro, des_movimento,
                     dta_movimento, val_movimento, tipo_movimento, observacao, cod_banco, des_banco
         `;
 
@@ -5189,9 +5190,9 @@ exports.registrarOperacaoParceiro = async (req, res) => {
           const insertQueryMov = `
           INSERT INTO ${schema}.tab_movimentacao (
             tipo_movimento, dta_movimento, des_movimento, ind_conciliado, dta_conciliado,
-            ind_excluido, ind_alterado, seq_veiculo, des_origem, cod_banco, 
-            des_movimento_detalhado, cod_cartao, val_movimento, descricao_mov_ofx, 
-            cod_banco_ofx, id_unico, cod_categoria_movimento, des_categoria_movimento, 
+            ind_excluido, ind_alterado, seq_veiculo, des_origem, cod_banco,
+            des_movimento_detalhado, cod_cartao, val_movimento, descricao_mov_ofx,
+            cod_banco_ofx, id_unico, cod_categoria_movimento, des_categoria_movimento,
             parcela, seq_despesa, seq_fatura, ind_cartao_pago
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
           RETURNING seq_registro`;
@@ -5233,7 +5234,7 @@ exports.registrarOperacaoParceiro = async (req, res) => {
         if (data.cod_parceiro) {
           const saldoQuery = `
             SELECT COALESCE(SUM(val_movimento), 0) as saldo_total
-            FROM ${schema}.tab_conta_parceiro 
+            FROM ${schema}.tab_conta_parceiro
             WHERE cod_parceiro = $1
           `;
           const saldoResult = await client.query(saldoQuery, [
@@ -5326,7 +5327,7 @@ exports.registrarOperacaoParceiro = async (req, res) => {
 
 exports.buscaContaParceiro = async (req, res) => {
   // 1. ValidaÃ§Ã£o bÃ¡sica
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
   if (!schema) {
     return res.status(400).json({
       success: false,
@@ -5341,7 +5342,7 @@ exports.buscaContaParceiro = async (req, res) => {
     // 2. SE nÃ£o tiver cod_parceiro -> Retorna lista de parceiros com saldo
     if (!cod_parceiro) {
       const query = `
-        SELECT 
+        SELECT
           p.seq_registro as cod_parceiro,
           p.nom_parceiro,
           COALESCE(SUM(cp.val_movimento), 0) as saldo_total,
@@ -5371,7 +5372,7 @@ exports.buscaContaParceiro = async (req, res) => {
 
     // 3. SE tiver cod_parceiro -> Retorna Ãºltimas 20 movimentaÃ§Ãµes
     const query = `
-      SELECT 
+      SELECT
         seq_registro,
         cod_parceiro,
         nom_parceiro,
@@ -5382,7 +5383,7 @@ exports.buscaContaParceiro = async (req, res) => {
         observacao,
         cod_banco,
         des_banco,
-        CASE 
+        CASE
           WHEN tipo_movimento = 'C' THEN 'CrÃ©dito'
           ELSE 'DÃ©bito'
         END as tipo_descricao
@@ -5396,7 +5397,7 @@ exports.buscaContaParceiro = async (req, res) => {
 
     // 4. Buscar tambÃ©m o saldo total
     const saldoQuery = `
-      SELECT 
+      SELECT
         COALESCE(SUM(val_movimento), 0) as saldo_total,
         COUNT(*) as total_movimentacoes
       FROM ${schema}.tab_conta_parceiro
@@ -5441,7 +5442,7 @@ exports.buscaContaParceiro = async (req, res) => {
 exports.cadastraDespesaFixa = async (req, res) => {
   const { data } = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -5494,7 +5495,7 @@ exports.cadastraDespesaFixa = async (req, res) => {
 exports.buscaDespesasFixas = async (req, res) => {
   const {} = req.body;
 
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   try {
     const queryResult = await db.transaction(async (client) => {
@@ -5537,7 +5538,7 @@ exports.buscaDespesasFixas = async (req, res) => {
 
 exports.editaDespesaFixa = async (req, res) => {
   const { item, acao } = req.body;
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   console.log(item);
 
@@ -5575,10 +5576,10 @@ exports.editaDespesaFixa = async (req, res) => {
 
           // CORREÃ‡ÃƒO AQUI: sintaxe correta do UPDATE
           const updateQuery = `
-            UPDATE ${schema}.tab_despesa_fixas 
-            SET des_despesa = $1, 
-                val_despesa = $2, 
-                dta_despesa = $3 
+            UPDATE ${schema}.tab_despesa_fixas
+            SET des_despesa = $1,
+                val_despesa = $2,
+                dta_despesa = $3
             WHERE seq_registro = $4
           `;
 
@@ -5624,7 +5625,7 @@ exports.editaDespesaFixa = async (req, res) => {
 
 exports.updateMovimentoFinanceiro = async (req, res) => {
   const { movimento } = req.body;
-  const schema = req.headers["schema"];
+  const schema = getSchemaFromReq(req);
 
   if (!schema) {
     return res.status(400).json({

@@ -12,6 +12,7 @@ const cron = require("node-cron");
 const { XMLParser } = require("fast-xml-parser");
 require("dotenv").config();
 const cloudinary = require("../services/Cloudinary.service");
+const { resolveSchemaValue, setTenantOnReq } = require("../utils/tenantContext");
 
 // ajuste o caminho do seu db/pool
 const db = require("../config/database");
@@ -23,7 +24,7 @@ const DEFAULT_GARAJE_URL =
   process.env.GARAJE_URL ||
   "https://www.garaje.com.br/parceiros/sites/50/c0c7c76d30bd3dcaefc96f40275bdc0a";
 
-  const DEFAULT_SCHEMA = process.env.SCHEMA_PADRAO || "nextcar";
+const DEFAULT_SCHEMA = resolveSchemaValue(process.env.SCHEMA_PADRAO || "nextcar");
 const TIMEZONE = process.env.TZ || "America/Sao_Paulo";
 
 // ------------------------------------
@@ -218,10 +219,10 @@ async function mapVeiculoToCadastroPayloadAsync(v) {
  * Reaproveita seu cadastraVeiculo (sem HTTP real)
  */
 async function chamarCadastraVeiculo(schema, payload) {
-  const fakeReq = {
+  const fakeReq = setTenantOnReq({
     body: payload,
-    headers: { schema },
-  };
+    headers: {},
+  }, { schema });
 
   const fakeRes = {
     statusCode: 200,

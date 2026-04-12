@@ -28,6 +28,8 @@ const corsOptions = {
     "Content-Type",
     "Authorization",
     "schema",
+    "X-Tenant-Schema",
+    "X-Tenant-Id",
     "X-Requested-With",
     "Accept",
     "Origin",
@@ -115,6 +117,9 @@ const integrador = require("./src/routes/integradores.router");
 const emailCaptureRoutes = require("./src/routes/lead.router");
 const whatsappWebhookRoutes = require("./src/routes/whatsappWebhookRoutes");
 const importadorGaraje = require("./src/controllers/importadorGaraje.controller");
+const authGaragemwebRoutes = require("./src/routes/authGaragemweb.routes");
+
+app.use("/garagemweb/api/auth", authGaragemwebRoutes);
 
 app.use(index);
 app.use("/garagemweb", garagemWeb);
@@ -122,7 +127,7 @@ app.use("/garagemweb/integradores", integrador);
 
 // Mantém compatibilidade com rotas antigas e novas
 app.use("/garagemweb/api", emailCaptureRoutes);
-app.use("/garagemweb/leads", emailCaptureRoutes);
+//app.use("/garagemweb/leads", emailCaptureRoutes);
 
 // WhatsApp webhook
 app.use("/webhooks/whatsapp", whatsappWebhookRoutes);

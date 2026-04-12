@@ -1,32 +1,28 @@
 const axios = require("axios");
+const TenantIntegrationService = require("./TenantIntegrationService");
 
 class WhatsAppService {
-  static get phoneNumberId() {
-    return process.env.WA_PHONE_NUMBER_ID;
+  static async getConfig(context = {}) {
+    return TenantIntegrationService.getWhatsAppConfig(context);
   }
 
-  static get token() {
-    return process.env.WA_ACCESS_TOKEN;
-  }
+  static async api(context = {}) {
+    const config = await this.getConfig(context);
 
-  static get graphVersion() {
-    return process.env.WA_GRAPH_VERSION || "v22.0";
-  }
-
-  static api() {
-    if (!this.phoneNumberId || !this.token) {
+    if (!config.phoneNumberId || !config.token) {
       throw new Error("WA_PHONE_NUMBER_ID / WA_ACCESS_TOKEN não configurados");
     }
 
     return axios.create({
-      baseURL: `https://graph.facebook.com/${this.graphVersion}/${this.phoneNumberId}`,
+      baseURL: `https://graph.facebook.com/${config.graphVersion}/${config.phoneNumberId}` ,
       headers: {
-        Authorization: `Bearer ${this.token}`,
+        Authorization: `Bearer ${config.token}` ,
         "Content-Type": "application/json",
       },
       timeout: 15000,
     });
   }
+
 
   static normalizePhone(phone) {
     return String(phone || "").replace(/\D/g, "");
@@ -119,9 +115,10 @@ class WhatsAppService {
     return `https://wa.me/${phone}?text=${text}`;
   }
 
-  static async postMessage(payload) {
+  static async postMessage(payload, context = {}) {
     try {
-      const res = await this.api().post("/messages", payload);
+      const api = await this.api(context);
+      const res = await api.post("/messages", payload);
       return res.data;
     } catch (err) {
       const status = err?.response?.status;
@@ -135,7 +132,7 @@ class WhatsAppService {
     }
   }
 
-  static async sendText({ to, text }) {
+  static async sendText({ to, text, tenantId = null, schema = null }) {
     const sellerPhone = this.normalizePhone(to);
 
     const payload = {
@@ -147,11 +144,12 @@ class WhatsAppService {
       },
     };
 
-    const res = await this.api().post("/messages", payload);
+    const api = await this.api({ tenantId, schema });
+    const res = await api.post("/messages", payload);
     return res.data;
   }
 
-  static async sendLeadNotification({ to, lead }) {
+  static async sendLeadNotification({ to, lead, tenantId = null, schema = null }) {
     const sellerPhone = this.toWhatsAppPhone(to);
 
     const payload = {
@@ -177,10 +175,10 @@ class WhatsAppService {
       },
     };
 
-    return this.postMessage(payload);
+    return this.postMessage(payload, { tenantId: tenantId || lead?._tenantId || null, schema: schema || lead?._schema || null });
   }
 
-  static async sendReminder({ to, lead, reminderCount }) {
+  static async sendReminder({ to, lead, reminderCount, tenantId = null, schema = null }) {
     const sellerPhone = this.toWhatsAppPhone(to);
 
     const payload = {
@@ -206,10 +204,10 @@ class WhatsAppService {
       },
     };
 
-    return this.postMessage(payload);
+    return this.postMessage(payload, { tenantId: tenantId || lead?._tenantId || null, schema: schema || lead?._schema || null });
   }
 
-  static async sendStartConversationButton({ to, lead, sellerName }) {
+  static async sendStartConversationButton({ to, lead, sellerName, tenantId = null, schema = null }) {
     const sellerPhone = this.toWhatsAppPhone(to);
     const waUrl = this.buildOpenConversationUrl(lead);
 
@@ -228,7 +226,7 @@ class WhatsAppService {
         },
       };
 
-      return this.postMessage(payload);
+      return this.postMessage(payload, { tenantId: tenantId || lead?._tenantId || null, schema: schema || lead?._schema || null });
     }
 
     const payload = {
@@ -262,10 +260,10 @@ class WhatsAppService {
       },
     };
 
-    return this.postMessage(payload);
+    return this.postMessage(payload, { tenantId: tenantId || lead?._tenantId || null, schema: schema || lead?._schema || null });
   }
 
-  static async sendFeedbackRequest({ to, lead }) {
+  static async sendFeedbackRequest({ to, lead, tenantId = null, schema = null }) {
     const sellerPhone = this.toWhatsAppPhone(to);
 
     const payload = {
@@ -314,7 +312,7 @@ class WhatsAppService {
       },
     };
 
-    return this.postMessage(payload);
+    return this.postMessage(payload, { tenantId: tenantId || lead?._tenantId || null, schema: schema || lead?._schema || null });
   }
 }
 

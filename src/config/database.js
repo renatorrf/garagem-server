@@ -1,5 +1,6 @@
 // db.js
 const { Pool } = require("pg");
+const { assertValidSchemaName } = require("../utils/tenantContext");
 
 const databaseUrl =
   process.env.DATABASE_URL_NOVA ||
@@ -229,11 +230,52 @@ async function query(text, params, options) {
   }
 }
 
+async function connect(schema = null) {
+  const client = await pool.connect();
+  const originalQuery = client.query.bind(client);
+
+  client.query = (...args) => {
+    if (args.length === 0) {
+      return originalQuery();
+    }
+
+    if (typeof args[0] === "string") {
+      if (args.length === 1) return originalQuery(args[0]);
+      if (args.length === 2) return originalQuery(args[0], sanitizeQueryValue(args[1]));
+      return originalQuery(args[0], sanitizeQueryValue(args[1]), args[2]);
+    }
+
+    if (args[0] && typeof args[0] === "object") {
+      const config = { ...args[0] };
+      if (config.values != null) {
+        config.values = sanitizeQueryParams(Array.isArray(config.values) ? config.values : [config.values]);
+      }
+      if (args.length === 1) return originalQuery(config);
+      return originalQuery(config, args[1]);
+    }
+
+    return originalQuery(...args);
+  };
+
+  const originalRelease = client.release.bind(client);
+  client.release = (...args) => {
+    client.query = originalQuery;
+    return originalRelease(...args);
+  };
+
+  if (schema) {
+    await client.query(`SET search_path TO ${assertValidSchemaName(schema)}, public`);
+  }
+
+  return client;
+}
+
 const db = {
   query,
+  connect,
 
   async transaction(callback) {
-    const client = await pool.connect();
+    const client = await connect();
     const originalQuery = client.query.bind(client);
 
     client.query = (...args) => {
@@ -288,6 +330,16 @@ const db = {
     }
   },
 
+
+
+  async withSchema(schema, callback) {
+    const client = await connect(schema);
+    try {
+      return await callback(client);
+    } finally {
+      client.release();
+    }
+  },
   async getOne(text, params, options) {
     const result = await query(text, params, options);
     return result.rows[0] || null;

@@ -1,13 +1,15 @@
 const axios = require('axios');
 const db = require("../config/database");
 const moment = require('moment');
+const { getSchemaFromReq } = require('../utils/tenantContext');
+const TenantIntegrationService = require('../services/TenantIntegrationService');
 
-const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InByaW1lY2FyLnVkaUBnbWFpbC5jb20iLCJpYXQiOjE3NDczNDE2NTcsImV4cCI6MTc0ODYzNzY1N30.VTFeS9DyZrQ8EcIb0AYzNkUeQeLGr_sS2iAQDyfoeTk'
+const token = null;
 
 exports.buscaMarca = async (req, res) => {
     const type = 1;
     const baseUrl = 'https://dhqmwf73sb.execute-api.us-east-1.amazonaws.com/prd/brand';
-    const schema = 'integrador_autoscar'; // Defina seu schema aqui
+    const schema = getSchemaFromReq(req) || 'integrador_autoscar'
     
     try {
         // 1. Faz a solicitação HTTP
@@ -64,7 +66,7 @@ exports.buscaMarca = async (req, res) => {
 exports.buscaMarcaModelo = async (req, res) => {
     const type = 1;
     const baseUrl = 'https://dhqmwf73sb.execute-api.us-east-1.amazonaws.com/prd/model/findByBrand/';
-    const schema = 'integrador_autoscar';
+    const schema = getSchemaFromReq(req) || 'integrador_autoscar';
     
     // Configurações ajustáveis
     const config = {
@@ -203,7 +205,7 @@ exports.buscaMarcaModelo = async (req, res) => {
 exports.buscaMarcaModeloVersao = async (req, res) => {
     const type = 1;
     const baseUrl = 'https://dhqmwf73sb.execute-api.us-east-1.amazonaws.com/prd/model/findByBrandModel/';
-    const schema = 'integrador_autoscar';
+    const schema = getSchemaFromReq(req) || 'integrador_autoscar';
     
     // Configurações ajustáveis
     const config = {
@@ -343,7 +345,7 @@ exports.buscaMarcaModeloVersao = async (req, res) => {
 
 exports.salvarAutosCar = async (req, res) => {
     const { seq_registro, usuario, senha, connected, mensagem_predefinida } = req.body;
-    const schema = req.headers['schema'];
+    const schema = getSchemaFromReq(req);
     
     // Validação dos campos obrigatórios
     if (!usuario || !senha) {
@@ -368,6 +370,17 @@ exports.salvarAutosCar = async (req, res) => {
 
         // Se chegou aqui, a autenticação foi bem-sucedida
         const token = response.data.token;
+
+        await TenantIntegrationService.upsertIntegration('autoscar', {
+            schema,
+            integrationName: 'AutosCar',
+            externalId: String(seq_registro),
+            config: { usuario, mensagemPredefinida: mensagem_predefinida },
+            secret: senha,
+            token,
+            isActive: true,
+            metadata: { connected: !!token, connectedAt: new Date().toISOString() },
+        });
 
         await db.transaction(async (client) => {
 
@@ -416,7 +429,7 @@ exports.salvarAutosCar = async (req, res) => {
 
 exports.buscaDadosAutoscar = async (req, res) => {
     const { seq_registro } = req.body;
-    const schema = req.headers['schema'];
+    const schema = getSchemaFromReq(req);
     
     try {
         const result = await db.transaction(async (client) => {
@@ -452,7 +465,7 @@ exports.buscaDadosAutoscar = async (req, res) => {
 
 exports.analisaVeiculoAutosCar = async (req, res) => {
     const { veiculo } = req.body;
-    const schema = req.headers['schema'];
+    const schema = getSchemaFromReq(req);
     console.log(veiculo.des_veiculo)
     const modelo_completo = veiculo.des_veiculo.toUpperCase();
     const cambioProcurado = veiculo.cambio.toUpperCase(); // 'MANUAL' ou 'AUTOMATICO'
@@ -615,7 +628,7 @@ exports.analisaVeiculoAutosCar = async (req, res) => {
 
 // exports.analisaVeiculoAutosCar = async (req, res) => {
 //     const { veiculo } = req.body;
-//     const schema = req.headers['schema'];
+//     const schema = getSchemaFromReq(req);
 //     const modelo_completo = veiculo.des_veiculo.toUpperCase();
 //     const cambioProcurado = veiculo.cambio.toUpperCase();
 

@@ -12,6 +12,7 @@ const cheerio = require("cheerio");
 const cron = require("node-cron");
 const Lead = require("../models/leads");
 const LeadWorkflowService = require("./LeadWorkflowService");
+const TenantIntegrationService = require("./TenantIntegrationService");
 
 class EmailCaptureService {
   constructor() {
@@ -33,6 +34,8 @@ class EmailCaptureService {
       authTimeout: 10000,
       connTimeout: 30000,
     };
+    this.schema = process.env.SCHEMA_PADRAO || "nextcar";
+    this.tenantId = null;
 
     this.statsCache = {
       data: null,
@@ -47,8 +50,23 @@ class EmailCaptureService {
    * ============================================
    */
 
-  async connect() {
+  async getRuntimeConfig(context = {}) {
+    const runtime = await TenantIntegrationService.getEmailConfig({
+      tenantId: context.tenantId || this.tenantId || null,
+      schema: context.schema || this.schema || null,
+    });
+
+    return { ...this.config, ...runtime };
+  }
+
+  async connect(context = {}) {
+    const runtimeConfig = await this.getRuntimeConfig(context);
+    this.config = runtimeConfig;
+    this.schema = runtimeConfig.schema || this.schema;
+    this.tenantId = runtimeConfig.tenantId || this.tenantId;
+
     return new Promise((resolve, reject) => {
+
       if (
         !this.config.user ||
         !this.config.password ||
@@ -266,7 +284,7 @@ class EmailCaptureService {
    * ============================================
    */
 
-  async saveLeadFromEmail(emailData, attributes) {
+  async saveLeadFromEmail(emailData, attributes, options = {}) {
     try {
       const { subject, from, text, html, messageId, date } = emailData;
 
@@ -275,7 +293,10 @@ class EmailCaptureService {
         return null;
       }
 
-      const existingLead = await Lead.findByEmailId(messageId);
+      const effectiveSchema = options.schema || this.schema || process.env.SCHEMA_PADRAO || "nextcar";
+      const effectiveTenantId = options.tenantId || this.tenantId || null;
+
+      const existingLead = await Lead.findByEmailId(messageId, { schema: effectiveSchema, tenantId: effectiveTenantId });
       if (existingLead) {
         console.log(`⚠️ Lead já existe: ${messageId}`);
         return null;
@@ -411,8 +432,8 @@ class EmailCaptureService {
         };
       }
 
-      const lead = new Lead(leadData);
-      const savedLead = await lead.save();
+      const lead = new Lead({ ...leadData, _schema: effectiveSchema, _tenantId: effectiveTenantId });
+      const savedLead = await lead.save({ schema: effectiveSchema, tenantId: effectiveTenantId });
 
       if (savedLead) {
         console.log(`✅ Lead ${savedLead.id} salvo com sucesso!`);
@@ -426,9 +447,9 @@ class EmailCaptureService {
             savedLead?.metadata?.tipoClassificacao || "lead";
 
           if (classification === "lead") {
-            await LeadWorkflowService.onNewLead(savedLead);
+            await LeadWorkflowService.onNewLead(savedLead, { schema: effectiveSchema, tenantId: effectiveTenantId });
           } else if (classification === "chat_event") {
-            await LeadWorkflowService.onChatEvent(savedLead);
+            await LeadWorkflowService.onChatEvent(savedLead, { schema: effectiveSchema, tenantId: effectiveTenantId });
           } else {
             console.log("📧 Email comum, sem disparo de WhatsApp");
           }
@@ -1739,8 +1760,8 @@ class EmailCaptureService {
 
   async createLead(leadData) {
     try {
-      const lead = new Lead(leadData);
-      const savedLead = await lead.save();
+      const lead = new Lead({ ...leadData, _schema: effectiveSchema, _tenantId: effectiveTenantId });
+      const savedLead = await lead.save({ schema: effectiveSchema, tenantId: effectiveTenantId });
       this.statsCache.data = null;
       return savedLead;
     } catch (error) {

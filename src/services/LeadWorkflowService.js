@@ -2,6 +2,7 @@ const cron = require("node-cron");
 const db = require("../config/database");
 const Lead = require("../models/leads");
 const WhatsAppService = require("./WhatsAppService");
+const TenantIntegrationService = require("./TenantIntegrationService");
 
 class LeadWorkflowService {
   static start() {
@@ -24,9 +25,11 @@ class LeadWorkflowService {
     console.log("✅ LeadWorkflowService iniciado (reminders + feedback)");
   }
 
-  static cfg() {
+  static async cfg(context = {}) {
+    const waConfig = await TenantIntegrationService.getWhatsAppConfig(context);
+
     return {
-      sellerPhone: process.env.WA_SELLER_PHONE || "5534991023869",
+      sellerPhone: waConfig.sellerPhone || process.env.WA_SELLER_PHONE || "5534991023869",
       reminderIntervalSec: parseInt(
         process.env.LEAD_REMINDER_INTERVAL_SEC || "120",
         10,
@@ -40,6 +43,8 @@ class LeadWorkflowService {
         process.env.LEAD_ATTENDANCE_ESTIMATE_SEC || "1800",
         10,
       ),
+      tenantId: waConfig.tenantId || context.tenantId || null,
+      schema: waConfig.schema || context.schema || process.env.SCHEMA_PADRAO || "nextcar",
     };
   }
 
@@ -82,11 +87,11 @@ class LeadWorkflowService {
       ...leadPatch,
     };
 
-    return lead.update(payload);
+    return lead.update(payload, { schema: lead._schema, tenantId: lead._tenantId });
   }
 
-  static async onChatEvent(lead) {
-    const cfg = this.cfg();
+  static async onChatEvent(lead, context = {}) {
+    const cfg = await this.cfg(context);
 
     const mensagem =
       `💬 *Nova mensagem no chat da OLX!*\n\n` +
@@ -96,13 +101,15 @@ class LeadWorkflowService {
     await WhatsAppService.sendText({
       to: cfg.sellerPhone,
       text: mensagem,
+      tenantId: cfg.tenantId,
+      schema: cfg.schema,
     });
 
     console.log(`💬 Alerta de chat OLX enviado para lead ${lead.id}`);
   }
 
-  static async onNewLead(savedLead) {
-    const cfg = this.cfg();
+  static async onNewLead(savedLead, context = {}) {
+    const cfg = await this.cfg(context);
     const now = new Date();
     const nextReminderAt = new Date(
       now.getTime() + cfg.reminderIntervalSec * 1000,
@@ -111,10 +118,12 @@ class LeadWorkflowService {
     const waResp = await WhatsAppService.sendLeadNotification({
       to: cfg.sellerPhone,
       lead: savedLead,
+      tenantId: cfg.tenantId,
+      schema: cfg.schema,
     });
 
     const notifyWamid = waResp?.messages?.[0]?.id || null;
-    const lead = await Lead.findById(savedLead.id);
+    const lead = await Lead.findById(savedLead.id, { schema: context.schema || savedLead._schema, tenantId: context.tenantId || savedLead._tenantId });
 
     if (!lead) return null;
 
@@ -149,12 +158,12 @@ class LeadWorkflowService {
     return lead;
   }
 
-  static async processRemindersTick() {
-    const cfg = this.cfg();
+  static async processRemindersTick(context = {}) {
+    const cfg = await this.cfg(context);
 
     const q = `
       SELECT *
-      FROM ${Lead.tableName}
+      FROM ${Lead.resolveTableName({ schema: cfg.schema })}
       WHERE deleted_at IS NULL
         AND status = 'novo'
         AND (metadata->'wa'->>'claimedAt') IS NULL
@@ -168,7 +177,7 @@ class LeadWorkflowService {
     const rs = await db.query(q, [cfg.reminderMax]);
 
     for (const row of rs.rows) {
-      const lead = new Lead(row);
+      const lead = new Lead({ ...row, _schema: cfg.schema, _tenantId: cfg.tenantId });
       const wa = this.getWaMeta(lead);
       const reminderCount = (parseInt(wa.reminderCount || 0, 10) || 0) + 1;
 
@@ -176,6 +185,8 @@ class LeadWorkflowService {
         to: cfg.sellerPhone,
         lead,
         reminderCount,
+        tenantId: cfg.tenantId,
+        schema: cfg.schema,
       });
 
       const lastReminderAt = new Date();
@@ -194,13 +205,13 @@ class LeadWorkflowService {
     }
   }
 
-  static async processFeedbackTick() {
-    const cfg = this.cfg();
+  static async processFeedbackTick(context = {}) {
+    const cfg = await this.cfg(context);
     const delayMs = cfg.feedbackDelaySec * 1000;
 
     const q = `
       SELECT *
-      FROM ${Lead.tableName}
+      FROM ${Lead.resolveTableName({ schema: cfg.schema })}
       WHERE deleted_at IS NULL
         AND status IN ('contatado','novo')
         AND COALESCE(
@@ -221,10 +232,12 @@ class LeadWorkflowService {
     const rs = await db.query(q, [String(delayMs)]);
 
     for (const row of rs.rows) {
-      const lead = new Lead(row);
+      const lead = new Lead({ ...row, _schema: cfg.schema, _tenantId: cfg.tenantId });
       const waResp = await WhatsAppService.sendFeedbackRequest({
         to: cfg.sellerPhone,
         lead,
+        tenantId: cfg.tenantId,
+        schema: cfg.schema,
       });
 
       await this.updateLeadWa(lead, {
@@ -236,8 +249,8 @@ class LeadWorkflowService {
     }
   }
 
-  static async claimLead(leadId, from = null) {
-    const lead = await Lead.findById(leadId);
+  static async claimLead(leadId, from = null, context = {}) {
+    const lead = await Lead.findById(leadId, { schema: context.schema, tenantId: context.tenantId });
     if (!lead) return null;
 
     const now = new Date();
@@ -255,9 +268,9 @@ class LeadWorkflowService {
     );
   }
 
-  static async assignSeller({ leadId, sellerKey, sellerId, sellerName, from }) {
-    const cfg = this.cfg();
-    const lead = await Lead.findById(leadId);
+  static async assignSeller({ leadId, sellerKey, sellerId, sellerName, from }, context = {}) {
+    const cfg = await this.cfg(context);
+    const lead = await Lead.findById(leadId, { schema: context.schema, tenantId: context.tenantId });
     if (!lead) return null;
 
     const now = new Date();
@@ -304,8 +317,8 @@ class LeadWorkflowService {
     return updated;
   }
 
-  static async ignoreLead(leadId, from = null) {
-    const lead = await Lead.findById(leadId);
+  static async ignoreLead(leadId, from = null, context = {}) {
+    const lead = await Lead.findById(leadId, { schema: context.schema, tenantId: context.tenantId });
     if (!lead) return null;
 
     return this.updateLeadWa(
@@ -321,7 +334,7 @@ class LeadWorkflowService {
     );
   }
 
-  static async setOutcome({ leadId, outcome }) {
+  static async setOutcome({ leadId, outcome }, context = {}) {
     const lead = await Lead.findById(leadId);
     if (!lead) return null;
 
