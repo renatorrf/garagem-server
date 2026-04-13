@@ -6,13 +6,6 @@ const http = require("http");
 const axios = require("axios");
 const { Server: SocketIOServer } = require("socket.io");
 
-const bcrypt = require("bcryptjs");
-
-(async () => {
-  const hash = await bcrypt.hash("2662", 10);
-  console.log("senha app:", hash);
-})();
-
 let Sandbox;
 try {
   const SandboxSDK = require("@koyeb/sandbox-sdk");

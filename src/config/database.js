@@ -1,46 +1,79 @@
 // db.js
 const { Pool } = require("pg");
 const { assertValidSchemaName } = require("../utils/tenantContext");
+require("dotenv").config();
 
-const databaseUrl =
-  process.env.DATABASE_URL_NOVA ||
-  process.env.DATABASE_URL_ANTIGA ||
-  process.env.DATABASE_URL;
+const databaseUrl = process.env.DATABASE_URL;
 
 function resolveSslConfig(connectionString) {
   try {
-    if (!connectionString) return false;
+    const envValue = String(process.env.DB_SSL || "")
+      .trim()
+      .toLowerCase();
 
-    const url = new URL(connectionString);
-    const urlMode = String(url.searchParams.get("sslmode") || "").trim().toLowerCase();
-    const explicitSsl = String(url.searchParams.get("ssl") || "").trim().toLowerCase();
+    if (["false", "0", "no", "off", "disable", "disabled"].includes(envValue)) {
+      return false;
+    }
 
-    if (explicitSsl === "false" || urlMode === "disable") {
+    if (["true", "1", "yes", "on", "require", "required"].includes(envValue)) {
+      return { rejectUnauthorized: false };
+    }
+
+    if (!connectionString) {
+      return false;
+    }
+
+    const normalizedConnectionString = connectionString.replace(
+      /^base:\/\//i,
+      "postgres://",
+    );
+    const url = new URL(normalizedConnectionString);
+
+    const host = String(url.hostname || "")
+      .trim()
+      .toLowerCase();
+    const sslmode = String(url.searchParams.get("sslmode") || "")
+      .trim()
+      .toLowerCase();
+    const ssl = String(url.searchParams.get("ssl") || "")
+      .trim()
+      .toLowerCase();
+
+    if (ssl === "false" || ["disable", "disabled", "allow"].includes(sslmode)) {
       return false;
     }
 
     if (
-      explicitSsl === "true" ||
-      ["require", "verify-ca", "verify-full", "prefer"].includes(urlMode)
+      ssl === "true" ||
+      ["require", "verify-ca", "verify-full", "prefer"].includes(sslmode)
     ) {
       return { rejectUnauthorized: false };
     }
 
-    const host = url.hostname.toLowerCase();
     const localHosts = new Set(["localhost", "127.0.0.1", "::1"]);
     if (localHosts.has(host) || host.endsWith(".local")) {
       return false;
     }
 
-    if (host.includes("neon.tech")) {
-      return { rejectUnauthorized: false };
+    // Seu host próprio: por padrão, não usar SSL
+    if (host === "cloud.digitalrf.com.br") {
+      return false;
     }
 
-    if (host.includes("supabase.co") || host.includes("render.com")) {
+    // Hosts gerenciados que normalmente exigem SSL
+    if (
+      host.includes("neon.tech") ||
+      host.includes("supabase.co") ||
+      host.includes("render.com") ||
+      host.includes("railway.app")
+    ) {
       return { rejectUnauthorized: false };
     }
-  } catch (_) {
-    // Mantém o comportamento padrão do pg quando a URL não puder ser analisada.
+  } catch (error) {
+    console.warn(
+      "resolveSslConfig: falha ao analisar connectionString:",
+      error.message,
+    );
   }
 
   return false;
@@ -117,7 +150,7 @@ const pool = new Pool({
   idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT_MS || "30000", 10),
   connectionTimeoutMillis: parseInt(
     process.env.DB_CONNECTION_TIMEOUT_MS || "15000",
-    10
+    10,
   ),
   ssl: resolveSslConfig(databaseUrl),
 });
@@ -190,7 +223,7 @@ async function query(text, params, options) {
   const needed = maxPlaceholderIndex(text);
   if (needed > params.length) {
     const err = new Error(
-      `db.query: SQL exige $1..$${needed}, mas params.length=${params.length}. Dica: passou params undefined?`
+      `db.query: SQL exige $1..$${needed}, mas params.length=${params.length}. Dica: passou params undefined?`,
     );
     err.query = text;
     err.params = params;
@@ -241,14 +274,17 @@ async function connect(schema = null) {
 
     if (typeof args[0] === "string") {
       if (args.length === 1) return originalQuery(args[0]);
-      if (args.length === 2) return originalQuery(args[0], sanitizeQueryValue(args[1]));
+      if (args.length === 2)
+        return originalQuery(args[0], sanitizeQueryValue(args[1]));
       return originalQuery(args[0], sanitizeQueryValue(args[1]), args[2]);
     }
 
     if (args[0] && typeof args[0] === "object") {
       const config = { ...args[0] };
       if (config.values != null) {
-        config.values = sanitizeQueryParams(Array.isArray(config.values) ? config.values : [config.values]);
+        config.values = sanitizeQueryParams(
+          Array.isArray(config.values) ? config.values : [config.values],
+        );
       }
       if (args.length === 1) return originalQuery(config);
       return originalQuery(config, args[1]);
@@ -264,7 +300,9 @@ async function connect(schema = null) {
   };
 
   if (schema) {
-    await client.query(`SET search_path TO ${assertValidSchemaName(schema)}, public`);
+    await client.query(
+      `SET search_path TO ${assertValidSchemaName(schema)}, public`,
+    );
   }
 
   return client;
@@ -329,8 +367,6 @@ const db = {
       client.release();
     }
   },
-
-
 
   async withSchema(schema, callback) {
     const client = await connect(schema);
