@@ -9,6 +9,15 @@ const router = require("express-promise-router")();
 const garagemWeb = require("../controllers/garagemweb.controller");
 const importarGaraje = require('../controllers/importadorGaraje.controller')
 const leadController = require('../controllers/leadController');
+const multer = require("multer");
+const fotosController = require("../controllers/fotosController");
+
+const uploadFotos = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 15 * 1024 * 1024,
+  },
+});
 
 //=> Definindo as rotas do CRUD - Fasthelp
 
@@ -80,6 +89,8 @@ router.post("/receberFinanciamento", garagemWeb.receberFinanciamento);
 router.post("/buscaCliente", garagemWeb.buscaCliente);
 router.post("/cadastrarCliente", garagemWeb.cadastrarCliente);
 router.post("/vinculaVeiculoCliente", garagemWeb.vinculaVeiculoCliente);
+
+router.post("/fotos/template", uploadFotos.any(), fotosController.editarComTemplate);
 
 router.post("/buscaDadosEmpresa", garagemWeb.buscaDadosEmpresa);
 router.post("/salvaDadosEmpresa", garagemWeb.salvaDadosEmpresa);

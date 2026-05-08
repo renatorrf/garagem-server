@@ -1654,7 +1654,9 @@ exports.inserirMovimento = async (req, res) => {
 
       if (parcelas > 1) {
         if (!cartao || !cartao.fechamento) {
-          throw new Error("Parcelamento exige dados do cartÃ£o com fechamento.");
+          throw new Error(
+            "Parcelamento exige dados do cartÃ£o com fechamento.",
+          );
         }
 
         for (let index = 0; index < parcelas; index++) {
@@ -2110,7 +2112,13 @@ exports.updateDespesasAlocador = async (req, res) => {
          RETURNING a.seq_registro, a.seq_veiculo, a.des_movimento_detalhado
       `;
 
-      const updateMovParams = [seq_veiculo, detalhe, seq_movimentacao, 4, 'Despesas VeÃ­culos'];
+      const updateMovParams = [
+        seq_veiculo,
+        detalhe,
+        seq_movimentacao,
+        4,
+        "Despesas VeÃ­culos",
+      ];
       const r2 = await client.query(updateMovSql, updateMovParams);
 
       if (r2.rowCount === 0) {
@@ -2228,7 +2236,7 @@ exports.buscaDespesaVeiculo = async (req, res) => {
       try {
         // Sua lÃ³gica de transaÃ§Ã£o aqui
 
-        let query = '';
+        let query = "";
         let values = [];
 
         if (Number(seq_veiculo) === -1) {
@@ -3255,29 +3263,339 @@ exports.cadastrarCliente = async (req, res) => {
 };
 
 function normalizaDocumento(valor) {
-  return (valor || '').toString().replace(/\D/g, '');
+  return (valor || "").toString().replace(/\D/g, "");
+}
+
+// function gerarCodigo() {
+//   return Math.floor(10000 + Math.random() * 90000);
+// }
+
+// function obterPrimeiroEUltimoNome(nomeCompleto) {
+//   const nomeSeguro = (nomeCompleto || '').trim();
+
+//   if (!nomeSeguro) {
+//     return 'cliente';
+//   }
+
+//   const partesNome = nomeSeguro.split(/\s+/);
+//   const primeiroNome = partesNome[0];
+//   const ultimoNome = partesNome[partesNome.length - 1];
+
+//   return `${primeiroNome}.${ultimoNome}`.toLowerCase();
+// }
+
+// async function localizarClienteVenda(client, schema, clientePayload = {}) {
+//   const seqRegistro = clientePayload.seq_registro || clientePayload.cod_cliente || null;
+//   const documento = normalizaDocumento(
+//     clientePayload.num_cnpj_cpf || clientePayload.num_cpf_cnpj,
+//   );
+
+//   let clienteRow = null;
+
+//   if (seqRegistro) {
+//     const result = await client.query(
+//       `SELECT seq_registro,
+//               nom_cliente,
+//               num_cpf_cnpj AS num_cnpj_cpf,
+//               des_logradouro,
+//               complemento,
+//               cep,
+//               telefone,
+//               dta_nascimento,
+//               bairro,
+//               cidade,
+//               uf
+//          FROM ${schema}.tab_cliente
+//         WHERE seq_registro = $1
+//         LIMIT 1`,
+//       [seqRegistro],
+//     );
+
+//     clienteRow = result.rows[0] || null;
+//   }
+
+//   if (!clienteRow && documento) {
+//     const result = await client.query(
+//       `SELECT seq_registro,
+//               nom_cliente,
+//               num_cpf_cnpj AS num_cnpj_cpf,
+//               des_logradouro,
+//               complemento,
+//               cep,
+//               telefone,
+//               dta_nascimento,
+//               bairro,
+//               cidade,
+//               uf
+//          FROM ${schema}.tab_cliente
+//         WHERE num_cpf_cnpj = $1
+//         LIMIT 1`,
+//       [documento],
+//     );
+
+//     clienteRow = result.rows[0] || null;
+//   }
+
+//   if (!clienteRow) {
+//     if (!clientePayload.nom_cliente || !documento) {
+//       throw new Error('Cliente nÃ£o localizado e dados insuficientes para cadastro.');
+//     }
+
+//     const dtaAtual = moment().format();
+//     const insertQuery = `INSERT INTO ${schema}.tab_cliente
+//                         (nom_cliente, num_cpf_cnpj, des_logradouro, complemento, cep, telefone, dta_nascimento, dta_cadastro, bairro, cidade, uf)
+//                         VALUES
+//                         ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+//                         RETURNING seq_registro,
+//                                   nom_cliente,
+//                                   num_cpf_cnpj AS num_cnpj_cpf,
+//                                   des_logradouro,
+//                                   complemento,
+//                                   cep,
+//                                   telefone,
+//                                   dta_nascimento,
+//                                   bairro,
+//                                   cidade,
+//                                   uf`;
+
+//     const values = [
+//       clientePayload.nom_cliente,
+//       documento,
+//       clientePayload.des_logradouro || null,
+//       clientePayload.complemento || null,
+//       clientePayload.cep || null,
+//       clientePayload.telefone || null,
+//       clientePayload.dta_nascimento || null,
+//       dtaAtual,
+//       clientePayload.bairro || null,
+//       clientePayload.cidade || null,
+//       clientePayload.uf || null,
+//     ];
+
+//     const result = await client.query(insertQuery, values);
+//     clienteRow = result.rows[0];
+//   }
+
+//   return clienteRow;
+// }
+
+// async function localizarOuCriarUsuarioCliente(client, schema, clienteRow) {
+//   const usuarioExistente = await client.query(
+//     `SELECT seq_usuario, codigo_usuario
+//        FROM ${schema}.tab_usuario
+//       WHERE cod_cliente = $1
+//       ORDER BY seq_usuario DESC
+//       LIMIT 1`,
+//     [clienteRow.seq_registro],
+//   );
+
+//   if (usuarioExistente.rowCount > 0) {
+//     return usuarioExistente.rows[0];
+//   }
+
+//   const nomUsuario = obterPrimeiroEUltimoNome(clienteRow.nom_cliente);
+//   const codigoUsuario = gerarCodigo();
+//   const insertQuery = `INSERT INTO ${schema}.tab_usuario
+//                       (nom_usuario, senha, telefone, ind_tipo, codigo_usuario, dta_nasc, ind_elegivel, nome_completo, cod_cliente, img_perfil, ind_ativo)
+//                       VALUES
+//                       ($1, $2, $3, 'C', $4, $5, 'S', $6, $7)
+//                       RETURNING seq_usuario, codigo_usuario`;
+
+//   const values = [
+//     nomUsuario,
+//     'senha123', // Senha padrão, deve ser alterada posteriormente
+//     clienteRow.telefone || null,
+//     codigoUsuario,
+//     clienteRow.dta_nascimento || null,
+//     clienteRow.nom_cliente || null,
+//     clienteRow.seq_registro || null,
+//     null, // img_perfil
+//     'S', // ind_ativo
+//   ];
+
+//   const result = await client.query(insertQuery, values);
+//   return result.rows[0];
+// }
+
+// async function vincularUsuarioAoVeiculo(client, schema, usuarioRow, seq_veiculo) {
+//   const insertVinculo = `INSERT INTO ${schema}.tab_usuario_veiculo
+//                         (codigo_usuario, seq_veiculo, seq_usuario)
+//                         SELECT $1, $2, $3
+//                         WHERE NOT EXISTS (
+//                           SELECT 1
+//                             FROM ${schema}.tab_usuario_veiculo
+//                            WHERE seq_veiculo = $2
+//                              AND seq_usuario = $3
+//                         )`;
+
+//   await client.query(insertVinculo, [
+//     usuarioRow.codigo_usuario,
+//     seq_veiculo,
+//     usuarioRow.seq_usuario,
+//   ]);
+
+//   await client.query(
+//     `UPDATE ${schema}.tab_veiculo
+//         SET cod_usuario_vinculado = $1
+//       WHERE seq_veiculo = $2`,
+//     [usuarioRow.seq_usuario, seq_veiculo],
+//   );
+
+//   return usuarioRow;
+// }
+
+// exports.vinculaVeiculoCliente = async (req, res) => {
+//   const { seq_registro, seq_veiculo, cliente } = req.body;
+
+//   const schema = getSchemaFromReq(req);
+
+//   try {
+//     const queryResult = await db.transaction(async (client) => {
+//       try {
+//         const clienteResolvido = await localizarClienteVenda(client, schema, {
+//           ...(cliente || {}),
+//           seq_registro,
+//         });
+//         const usuario = await localizarOuCriarUsuarioCliente(client, schema, clienteResolvido);
+//         await vincularUsuarioAoVeiculo(client, schema, usuario, seq_veiculo);
+
+//         return {
+//           rows: [],
+//           rowCount: 1,
+//           seq_usuario: usuario.seq_usuario,
+//           cod_cliente: clienteResolvido.seq_registro,
+//         };
+//       } catch (innerError) {
+//         console.error('Erro na transacao:', innerError);
+//         throw innerError;
+//       }
+//     });
+
+//     return res.status(200).json({
+//       success: true,
+//       message: 'Operacao realizada com sucesso',
+//       data: queryResult,
+//     });
+//   } catch (error) {
+//     console.error('Erro na operacao:', error);
+//     return res.status(500).json({
+//       success: false,
+//       message: 'Erro ao processar a requisicao',
+//       details: error.message,
+//       errorDetails: error.stack,
+//     });
+//   }
+// };
+
+// exports.vinculaContratoVeiculo = async (req, res) => {
+//   const { seq_veiculo, contrato } = req.body;
+
+//   const schema = getSchemaFromReq(req);
+
+//   try {
+//     const queryResult = await db.transaction(async (client) => {
+//       try {
+//         // Sua lÃ³gica de transaÃ§Ã£o aqui
+
+//         const insertQuery = `update ${schema}.tab_veiculo
+//                             set img_contrato = $1
+//                             WHERE seq_veiculo = $2 `;
+
+//         const values = [contrato, seq_veiculo];
+
+//         const result = await client.query(insertQuery, values);
+
+//         return {
+//           rows: result.rows,
+//           rowCount: result.rowCount,
+//         };
+//         // Commit implÃ­cito se nÃ£o houve erro
+//       } catch (innerError) {
+//         console.error("Erro na transacao:", innerError);
+//         throw innerError; // ForÃ§a o rollback
+//       }
+//     });
+
+//     // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
+//     return res.status(200).json({
+//       success: true,
+//       message: "Operacao realizada com sucesso",
+//       data: queryResult,
+//     });
+//   } catch (error) {
+//     console.error("Erro na operacao:", error);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Erro ao processar a requisicao",
+//       details: error.message,
+//       errorDetails: error.stack,
+//     });
+//   }
+// };
+// const bcrypt = require('bcrypt'); // habilite se seu login já trabalhar com hash
+
+function validarSchema(schema) {
+  if (!schema || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(schema)) {
+    throw new Error("Schema inválido");
+  }
+  return schema;
 }
 
 function gerarCodigo() {
   return Math.floor(10000 + Math.random() * 90000);
 }
 
+function normalizarTexto(valor) {
+  return String(valor || "").trim();
+}
+
 function obterPrimeiroEUltimoNome(nomeCompleto) {
-  const nomeSeguro = (nomeCompleto || '').trim();
+  const nomeSeguro = normalizarTexto(nomeCompleto);
 
   if (!nomeSeguro) {
-    return 'cliente';
+    return "cliente";
   }
 
   const partesNome = nomeSeguro.split(/\s+/);
   const primeiroNome = partesNome[0];
-  const ultimoNome = partesNome[partesNome.length - 1];
+  const ultimoNome =
+    partesNome.length > 1 ? partesNome[partesNome.length - 1] : partesNome[0];
 
   return `${primeiroNome}.${ultimoNome}`.toLowerCase();
 }
 
+function normalizaDocumento(documento) {
+  return (
+    String(documento || "")
+      .replace(/\D/g, "")
+      .trim() || null
+  );
+}
+
+async function gerarCodigoUsuarioUnico(client, schema) {
+  for (let i = 0; i < 20; i++) {
+    const codigo = gerarCodigo();
+
+    const exists = await client.query(
+      `SELECT 1
+         FROM ${schema}.tab_usuario
+        WHERE codigo_usuario = $1
+        LIMIT 1`,
+      [codigo],
+    );
+
+    if (exists.rowCount === 0) {
+      return codigo;
+    }
+  }
+
+  throw new Error("Não foi possível gerar um código de usuário único.");
+}
+
 async function localizarClienteVenda(client, schema, clientePayload = {}) {
-  const seqRegistro = clientePayload.seq_registro || clientePayload.cod_cliente || null;
+  const seqRegistro =
+    clientePayload.seq_registro || clientePayload.cod_cliente || null;
+
   const documento = normalizaDocumento(
     clientePayload.num_cnpj_cpf || clientePayload.num_cpf_cnpj,
   );
@@ -3320,7 +3638,7 @@ async function localizarClienteVenda(client, schema, clientePayload = {}) {
               cidade,
               uf
          FROM ${schema}.tab_cliente
-        WHERE num_cpf_cnpj = $1
+        WHERE regexp_replace(COALESCE(num_cpf_cnpj, ''), '\\D', '', 'g') = $1
         LIMIT 1`,
       [documento],
     );
@@ -3330,38 +3648,58 @@ async function localizarClienteVenda(client, schema, clientePayload = {}) {
 
   if (!clienteRow) {
     if (!clientePayload.nom_cliente || !documento) {
-      throw new Error('Cliente nÃ£o localizado e dados insuficientes para cadastro.');
+      throw new Error(
+        "Cliente não localizado e dados insuficientes para cadastro.",
+      );
     }
 
     const dtaAtual = moment().format();
-    const insertQuery = `INSERT INTO ${schema}.tab_cliente
-                        (nom_cliente, num_cpf_cnpj, des_logradouro, complemento, cep, telefone, dta_nascimento, dta_cadastro, bairro, cidade, uf)
-                        VALUES
-                        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-                        RETURNING seq_registro,
-                                  nom_cliente,
-                                  num_cpf_cnpj AS num_cnpj_cpf,
-                                  des_logradouro,
-                                  complemento,
-                                  cep,
-                                  telefone,
-                                  dta_nascimento,
-                                  bairro,
-                                  cidade,
-                                  uf`;
+
+    const insertQuery = `
+      INSERT INTO ${schema}.tab_cliente
+      (
+        nom_cliente,
+        num_cpf_cnpj,
+        des_logradouro,
+        complemento,
+        cep,
+        telefone,
+        dta_nascimento,
+        dta_cadastro,
+        bairro,
+        cidade,
+        uf
+      )
+      VALUES
+      (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+      )
+      RETURNING
+        seq_registro,
+        nom_cliente,
+        num_cpf_cnpj AS num_cnpj_cpf,
+        des_logradouro,
+        complemento,
+        cep,
+        telefone,
+        dta_nascimento,
+        bairro,
+        cidade,
+        uf
+    `;
 
     const values = [
-      clientePayload.nom_cliente,
+      normalizarTexto(clientePayload.nom_cliente),
       documento,
-      clientePayload.des_logradouro || null,
-      clientePayload.complemento || null,
-      clientePayload.cep || null,
-      clientePayload.telefone || null,
+      normalizarTexto(clientePayload.des_logradouro) || null,
+      normalizarTexto(clientePayload.complemento) || null,
+      normalizarTexto(clientePayload.cep) || null,
+      normalizarTexto(clientePayload.telefone) || null,
       clientePayload.dta_nascimento || null,
       dtaAtual,
-      clientePayload.bairro || null,
-      clientePayload.cidade || null,
-      clientePayload.uf || null,
+      normalizarTexto(clientePayload.bairro) || null,
+      normalizarTexto(clientePayload.cidade) || null,
+      normalizarTexto(clientePayload.uf) || null,
     ];
 
     const result = await client.query(insertQuery, values);
@@ -3373,7 +3711,7 @@ async function localizarClienteVenda(client, schema, clientePayload = {}) {
 
 async function localizarOuCriarUsuarioCliente(client, schema, clienteRow) {
   const usuarioExistente = await client.query(
-    `SELECT seq_usuario, codigo_usuario
+    `SELECT seq_usuario, codigo_usuario, cod_cliente
        FROM ${schema}.tab_usuario
       WHERE cod_cliente = $1
       ORDER BY seq_usuario DESC
@@ -3386,37 +3724,87 @@ async function localizarOuCriarUsuarioCliente(client, schema, clienteRow) {
   }
 
   const nomUsuario = obterPrimeiroEUltimoNome(clienteRow.nom_cliente);
-  const codigoUsuario = gerarCodigo();
-  const insertQuery = `INSERT INTO ${schema}.tab_usuario
-                      (nom_usuario, senha, telefone, ind_tipo, codigo_usuario, dta_nasc, ind_elegivel, nome_completo, cod_cliente)
-                      VALUES
-                      ($1, $2, $3, 'C', $4, $5, 'S', $6, $7)
-                      RETURNING seq_usuario, codigo_usuario`;
+  const codigoUsuario = await gerarCodigoUsuarioUnico(client, schema);
+
+  // Se seu sistema suportar hash:
+  // const senhaTemporaria = await bcrypt.hash('senha123', 10);
+  const senhaTemporaria = "senha123";
+
+  const insertQuery = `
+    INSERT INTO ${schema}.tab_usuario
+    (
+      nom_usuario,
+      senha,
+      telefone,
+      ind_tipo,
+      codigo_usuario,
+      dta_nasc,
+      ind_elegivel,
+      nome_completo,
+      cod_cliente,
+      img_perfil,
+      ind_ativo
+    )
+    VALUES
+    (
+      $1, $2, $3, 'C', $4, $5, 'S', $6, $7, $8, $9
+    )
+    RETURNING seq_usuario, codigo_usuario, cod_cliente
+  `;
 
   const values = [
     nomUsuario,
-    'prime2024',
+    senhaTemporaria,
     clienteRow.telefone || null,
     codigoUsuario,
     clienteRow.dta_nascimento || null,
     clienteRow.nom_cliente || null,
-    clienteRow.seq_registro,
+    clienteRow.seq_registro || null,
+    null, // img_perfil
+    "S", // ind_ativo
   ];
 
   const result = await client.query(insertQuery, values);
   return result.rows[0];
 }
 
-async function vincularUsuarioAoVeiculo(client, schema, usuarioRow, seq_veiculo) {
-  const insertVinculo = `INSERT INTO ${schema}.tab_usuario_veiculo
-                        (codigo_usuario, seq_veiculo, seq_usuario)
-                        SELECT $1, $2, $3
-                        WHERE NOT EXISTS (
-                          SELECT 1
-                            FROM ${schema}.tab_usuario_veiculo
-                           WHERE seq_veiculo = $2
-                             AND seq_usuario = $3
-                        )`;
+async function validarVeiculoExiste(client, schema, seq_veiculo) {
+  const result = await client.query(
+    `SELECT seq_veiculo
+       FROM ${schema}.tab_veiculo
+      WHERE seq_veiculo = $1
+      LIMIT 1`,
+    [seq_veiculo],
+  );
+
+  if (result.rowCount === 0) {
+    throw new Error("Veículo não encontrado.");
+  }
+}
+
+async function vincularUsuarioAoVeiculo(
+  client,
+  schema,
+  usuarioRow,
+  seq_veiculo,
+) {
+  await validarVeiculoExiste(client, schema, seq_veiculo);
+
+  const insertVinculo = `
+    INSERT INTO ${schema}.tab_usuario_veiculo
+    (
+      codigo_usuario,
+      seq_veiculo,
+      seq_usuario
+    )
+    SELECT $1, $2, $3
+    WHERE NOT EXISTS (
+      SELECT 1
+        FROM ${schema}.tab_usuario_veiculo
+       WHERE seq_veiculo = $2
+         AND seq_usuario = $3
+    )
+  `;
 
   await client.query(insertVinculo, [
     usuarioRow.codigo_usuario,
@@ -3437,95 +3825,137 @@ async function vincularUsuarioAoVeiculo(client, schema, usuarioRow, seq_veiculo)
 exports.vinculaVeiculoCliente = async (req, res) => {
   const { seq_registro, seq_veiculo, cliente } = req.body;
 
-  const schema = getSchemaFromReq(req);
-
   try {
-    const queryResult = await db.transaction(async (client) => {
-      try {
-        const clienteResolvido = await localizarClienteVenda(client, schema, {
-          ...(cliente || {}),
-          seq_registro,
-        });
-        const usuario = await localizarOuCriarUsuarioCliente(client, schema, clienteResolvido);
-        await vincularUsuarioAoVeiculo(client, schema, usuario, seq_veiculo);
+    const schema = validarSchema(getSchemaFromReq(req));
 
-        return {
-          rows: [],
-          rowCount: 1,
-          seq_usuario: usuario.seq_usuario,
-          cod_cliente: clienteResolvido.seq_registro,
-        };
-      } catch (innerError) {
-        console.error('Erro na transacao:', innerError);
-        throw innerError;
-      }
+    if (!seq_veiculo) {
+      return res.status(400).json({
+        success: false,
+        message: "seq_veiculo é obrigatório",
+      });
+    }
+
+    const queryResult = await db.transaction(async (client) => {
+      const clienteResolvido = await localizarClienteVenda(client, schema, {
+        ...(cliente || {}),
+        seq_registro,
+      });
+
+      const usuario = await localizarOuCriarUsuarioCliente(
+        client,
+        schema,
+        clienteResolvido,
+      );
+
+      await vincularUsuarioAoVeiculo(client, schema, usuario, seq_veiculo);
+
+      return {
+        rowCount: 1,
+        seq_usuario: usuario.seq_usuario,
+        codigo_usuario: usuario.codigo_usuario,
+        cod_cliente: clienteResolvido.seq_registro,
+        seq_veiculo,
+      };
     });
 
     return res.status(200).json({
       success: true,
-      message: 'Operacao realizada com sucesso',
+      message: "Operação realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operacao:', error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisicao',
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack,
     });
   }
 };
+
 exports.vinculaContratoVeiculo = async (req, res) => {
   const { seq_veiculo, contrato } = req.body;
 
-  const schema = getSchemaFromReq(req);
-
   try {
-    const queryResult = await db.transaction(async (client) => {
-      try {
-        // Sua lÃ³gica de transaÃ§Ã£o aqui
+    const schema = validarSchema(getSchemaFromReq(req));
 
-        const insertQuery = `update ${schema}.tab_veiculo
-                            set img_contrato = $1
-                            WHERE seq_veiculo = $2 `;
+    if (!seq_veiculo) {
+      return res.status(400).json({
+        success: false,
+        message: "seq_veiculo é obrigatório",
+      });
+    }
 
-        const values = [contrato, seq_veiculo];
+    const result = await db.transaction(async (client) => {
+      await validarVeiculoExiste(client, schema, seq_veiculo);
 
-        const result = await client.query(insertQuery, values);
+      const updateQuery = `
+        UPDATE ${schema}.tab_veiculo
+           SET img_contrato = $1
+         WHERE seq_veiculo = $2
+         RETURNING seq_veiculo
+      `;
 
-        return {
-          rows: result.rows,
-          rowCount: result.rowCount,
-        };
-        // Commit implÃ­cito se nÃ£o houve erro
-      } catch (innerError) {
-        console.error("Erro na transaÃ§Ã£o:", innerError);
-        throw innerError; // ForÃ§a o rollback
-      }
+      const updateResult = await client.query(updateQuery, [
+        contrato,
+        seq_veiculo,
+      ]);
+
+      return {
+        rowCount: updateResult.rowCount,
+        rows: updateResult.rows,
+      };
     });
 
-    // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "OperaÃ§Ã£o realizada com sucesso",
-      data: queryResult,
+      message: "Operação realizada com sucesso",
+      data: result,
     });
   } catch (error) {
-    console.error("Erro na operaÃ§Ã£o:", error);
+    console.error("Erro na operação:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisiÃ§Ã£o",
+      message: "Erro ao processar a requisição",
       details: error.message,
-      errorDetails: error.stack,
     });
   }
 };
 
 exports.finalizaVendaVeiculo = async (req, res) => {
-  const { des_veiculo, cod_banco_entrada, cod_financeira, des_financeira, cod_banco_financeira, dados_consorcio, des_veiculo_entrada, ind_troca, observacao_venda, ind_tipo_veiculo,
-    seq_veiculo, val_compra, total_prazo, dta_primeiro_venc_prazo, val_consorcio, val_entrada_cartao, val_entrada_especie, val_financiado, val_veiculo_entrada, val_venda, valor_prazo,
-    indTroca, indPrazo, indFinanciado, indConsorcio, entradaEspecie, entradaCartao, cod_vendedor, cod_cliente, cliente, indClienteNovo } = req.body;
+  const {
+    des_veiculo,
+    cod_banco_entrada,
+    cod_financeira,
+    des_financeira,
+    cod_banco_financeira,
+    dados_consorcio,
+    des_veiculo_entrada,
+    ind_troca,
+    observacao_venda,
+    ind_tipo_veiculo,
+    seq_veiculo,
+    val_compra,
+    total_prazo,
+    dta_primeiro_venc_prazo,
+    val_consorcio,
+    val_entrada_cartao,
+    val_entrada_especie,
+    val_financiado,
+    val_veiculo_entrada,
+    val_venda,
+    valor_prazo,
+    indTroca,
+    indPrazo,
+    indFinanciado,
+    indConsorcio,
+    entradaEspecie,
+    entradaCartao,
+    cod_vendedor,
+    cod_cliente,
+    cliente,
+    indClienteNovo,
+  } = req.body;
 
   const schema = getSchemaFromReq(req);
 
@@ -3538,11 +3968,20 @@ exports.finalizaVendaVeiculo = async (req, res) => {
           ...cliente,
           seq_registro: cod_cliente || cliente?.seq_registro || null,
         });
-        const usuarioCliente = await localizarOuCriarUsuarioCliente(client, schema, clienteResolvido);
-        await vincularUsuarioAoVeiculo(client, schema, usuarioCliente, seq_veiculo);
+        const usuarioCliente = await localizarOuCriarUsuarioCliente(
+          client,
+          schema,
+          clienteResolvido,
+        );
+        await vincularUsuarioAoVeiculo(
+          client,
+          schema,
+          usuarioCliente,
+          seq_veiculo,
+        );
 
         const lucro = Number(val_venda || 0) - Number(val_compra || 0);
-        const indTrocaValor = indTroca ? 'S' : null;
+        const indTrocaValor = indTroca ? "S" : null;
 
         const insertQuery = `UPDATE ${schema}.tab_veiculo
                              SET des_veiculo_entrada = $1,
@@ -3587,32 +4026,81 @@ exports.finalizaVendaVeiculo = async (req, res) => {
         const result = await client.query(insertQuery, values);
 
         if (indTroca) {
-          await processarTroca(client, schema, des_veiculo_entrada, des_veiculo, seq_veiculo);
+          await processarTroca(
+            client,
+            schema,
+            des_veiculo_entrada,
+            des_veiculo,
+            seq_veiculo,
+          );
         }
         if (indPrazo) {
-          await indPrazoF(client, schema, total_prazo, valor_prazo, des_veiculo, dta_primeiro_venc_prazo, seq_veiculo, cod_cliente)
+          await indPrazoF(
+            client,
+            schema,
+            total_prazo,
+            valor_prazo,
+            des_veiculo,
+            dta_primeiro_venc_prazo,
+            seq_veiculo,
+            cod_cliente,
+          );
         }
         if (indFinanciado) {
-          await indFinanciadoF(client, schema, cod_financeira, cod_banco_financeira, val_financiado, seq_veiculo, des_veiculo, des_financeira, cod_cliente)
+          await indFinanciadoF(
+            client,
+            schema,
+            cod_financeira,
+            cod_banco_financeira,
+            val_financiado,
+            seq_veiculo,
+            des_veiculo,
+            des_financeira,
+            cod_cliente,
+          );
         }
         if (indConsorcio) {
-          await indConsorcioF(client, schema, val_consorcio, dados_consorcio, seq_veiculo, des_veiculo, cod_cliente)
+          await indConsorcioF(
+            client,
+            schema,
+            val_consorcio,
+            dados_consorcio,
+            seq_veiculo,
+            des_veiculo,
+            cod_cliente,
+          );
         }
         if (entradaEspecie) {
-          await entradaEspecieF(client, schema, val_entrada_especie, cod_banco_entrada, des_veiculo, seq_veiculo, ind_tipo_veiculo)
+          await entradaEspecieF(
+            client,
+            schema,
+            val_entrada_especie,
+            cod_banco_entrada,
+            des_veiculo,
+            seq_veiculo,
+            ind_tipo_veiculo,
+          );
         }
         if (entradaCartao) {
-          await entradaCartaoF(client, schema, val_entrada_cartao, cod_banco_entrada, des_veiculo, seq_veiculo, ind_tipo_veiculo)
+          await entradaCartaoF(
+            client,
+            schema,
+            val_entrada_cartao,
+            cod_banco_entrada,
+            des_veiculo,
+            seq_veiculo,
+            ind_tipo_veiculo,
+          );
         }
 
         return {
           rows: result.rows,
           rowCount: result.rowCount,
-          seq_veiculo: seq_veiculo
+          seq_veiculo: seq_veiculo,
         };
         // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error('Erro na transaÃ§Ã£o:', innerError);
+        console.error("Erro na transacao:", innerError);
         throw innerError; // ForÃ§a o rollback
       }
     });
@@ -3620,30 +4108,35 @@ exports.finalizaVendaVeiculo = async (req, res) => {
     // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: 'OperaÃ§Ã£o realizada com sucesso',
-      data: queryResult
+      message: "OperaÃ§Ã£o realizada com sucesso",
+      data: queryResult,
     });
   } catch (error) {
-    console.error('Erro na operaÃ§Ã£o:', error);
+    console.error("Erro na operacao:", error);
     return res.status(500).json({
       success: false,
-      message: 'Erro ao processar a requisiÃ§Ã£o',
+      message: "Erro ao processar a requisicao",
       details: error.message,
-      errorDetails: error.stack
+      errorDetails: error.stack,
     });
   }
 
-  async function processarTroca(client, schema, des_veiculo_entrada, des_veiculo, seq_veiculo) {
-
-    const dtaAtual = moment().format('YYYY-MM-DD');
+  async function processarTroca(
+    client,
+    schema,
+    des_veiculo_entrada,
+    des_veiculo,
+    seq_veiculo,
+  ) {
+    const dtaAtual = moment().format("YYYY-MM-DD");
 
     const camposAgenda = {
-      titulo: 'Cadastrar VeÃ­culo',
-      hora: '12:00',
+      titulo: "Cadastrar Veículo",
+      hora: "12:00",
       dia: dtaAtual,
-      descricao: `VeÃ­culo Recebido na troca: ${des_veiculo_entrada} na venda do: ${des_veiculo}`,
+      descricao: `Veículo Recebido na troca: ${des_veiculo_entrada} na venda do: ${des_veiculo}`,
       concluido: false,
-      seq_veiculo
+      seq_veiculo,
     };
 
     const insertQuery = `
@@ -3658,25 +4151,35 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       camposAgenda.dia,
       camposAgenda.descricao,
       camposAgenda.concluido,
-      camposAgenda.seq_veiculo
+      camposAgenda.seq_veiculo,
     ]);
   }
 
-  async function indPrazoF(client, schema, total_prazo, valor_prazo, des_veiculo, dta_primeiro_venc_prazo, seq_veiculo, cod_cliente) {
-
+  async function indPrazoF(
+    client,
+    schema,
+    total_prazo,
+    valor_prazo,
+    des_veiculo,
+    dta_primeiro_venc_prazo,
+    seq_veiculo,
+    cod_cliente,
+  ) {
     const parcela = valor_prazo / total_prazo;
     const resultados = [];
 
     for (let index = 0; index < total_prazo; index++) {
       const campos = {
         des_receita: `Parcela ${index + 1} do ${des_veiculo}`,
-        dta_receita: moment(dta_primeiro_venc_prazo).add(index * 30, 'days').format(),
+        dta_receita: moment(dta_primeiro_venc_prazo)
+          .add(index * 30, "days")
+          .format(),
         val_receita: parcela,
         seq_veiculo,
         des_veiculo,
         cod_cliente,
         cod_tipo: 91,
-        cod_banco: 0
+        cod_banco: 0,
       };
 
       const insertQuery = `
@@ -3694,17 +4197,25 @@ exports.finalizaVendaVeiculo = async (req, res) => {
         campos.des_veiculo,
         campos.cod_cliente,
         campos.cod_tipo,
-        campos.cod_banco
+        campos.cod_banco,
       ]);
 
       resultados.push(result.rows[0]);
     }
   }
 
-  async function indFinanciadoF(client, schema, cod_financeira, cod_banco_financeira, val_financiado, seq_veiculo, des_veiculo, des_financeira, cod_cliente) {
-
-
-    const dtaAtual = moment().format()
+  async function indFinanciadoF(
+    client,
+    schema,
+    cod_financeira,
+    cod_banco_financeira,
+    val_financiado,
+    seq_veiculo,
+    des_veiculo,
+    des_financeira,
+    cod_cliente,
+  ) {
+    const dtaAtual = moment().format();
 
     const campos = {
       des_receita: `Aprovar Recebimento do ${des_veiculo} pela Financiado na ${des_financeira}`,
@@ -3714,7 +4225,7 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       cod_banco_financeira,
       cod_tipo: 93, // Recebimento de Financiamentos
       des_veiculo,
-      cod_cliente
+      cod_cliente,
     };
 
     const insertQuery = `
@@ -3732,7 +4243,7 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       campos.cod_banco_financeira,
       campos.cod_tipo,
       campos.des_veiculo,
-      campos.cod_cliente
+      campos.cod_cliente,
     ]);
 
     const camposRetorno = {
@@ -3743,7 +4254,7 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       cod_banco_financeira,
       cod_tipo: 99, // Retorno de Financiamentos
       des_veiculo,
-      cod_cliente
+      cod_cliente,
     };
 
     const insertQueryRetorno = `
@@ -3761,7 +4272,7 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       camposRetorno.cod_banco_financeira,
       camposRetorno.cod_tipo,
       camposRetorno.des_veiculo,
-      camposRetorno.cod_cliente
+      camposRetorno.cod_cliente,
     ]);
 
     const updateQuery = `UPDATE ${schema}.tab_veiculo
@@ -3769,15 +4280,22 @@ exports.finalizaVendaVeiculo = async (req, res) => {
               cod_financeira = $2
           WHERE seq_veiculo = $3`;
 
-    const values = [true, cod_financeira, seq_veiculo]
+    const values = [true, cod_financeira, seq_veiculo];
 
     await client.query(updateQuery, values);
   }
 
-  async function indConsorcioF(client, schema, val_consorcio, dados_consorcio, seq_veiculo, des_veiculo, cod_cliente) {
-
-    console.log('consorcio')
-    const dtaAtual = moment().format()
+  async function indConsorcioF(
+    client,
+    schema,
+    val_consorcio,
+    dados_consorcio,
+    seq_veiculo,
+    des_veiculo,
+    cod_cliente,
+  ) {
+    console.log("consorcio");
+    const dtaAtual = moment().format();
 
     const campos = {
       des_receita: `Aprovar Recebimento do ${des_veiculo} pelo ConsÃ³rcio ${dados_consorcio}`,
@@ -3787,7 +4305,7 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       cod_banco_financeira: 0,
       cod_tipo: 92, // Recebimento de Financiamentos
       des_veiculo,
-      cod_cliente
+      cod_cliente,
     };
 
     const insertQuery1 = `
@@ -3804,7 +4322,7 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       campos.cod_banco_financeira,
       campos.cod_tipo,
       campos.des_veiculo,
-      campos.cod_cliente
+      campos.cod_cliente,
     ]);
 
     const insertQuery = `UPDATE ${schema}.tab_veiculo
@@ -3812,16 +4330,21 @@ exports.finalizaVendaVeiculo = async (req, res) => {
                                    dados_consorcio = $2
                                WHERE seq_veiculo = $3`;
 
-    const values = [val_consorcio, dados_consorcio, seq_veiculo]
-
+    const values = [val_consorcio, dados_consorcio, seq_veiculo];
 
     await client.query(insertQuery, values);
-
   }
 
-  async function entradaEspecieF(client, schema, val_entrada_especie, cod_banco_entrada, des_veiculo, seq_veiculo, ind_tipo_veiculo) {
-
-    const dtaAtual = moment().format()
+  async function entradaEspecieF(
+    client,
+    schema,
+    val_entrada_especie,
+    cod_banco_entrada,
+    des_veiculo,
+    seq_veiculo,
+    ind_tipo_veiculo,
+  ) {
+    const dtaAtual = moment().format();
 
     const insertQuery = `
           INSERT INTO ${schema}.tab_movimentacao (
@@ -3835,7 +4358,7 @@ exports.finalizaVendaVeiculo = async (req, res) => {
         `;
 
     const values = {
-      tipo_movimento: 'E',
+      tipo_movimento: "E",
       dtaAtual, // Usa a data ajustada
       des_movimento: `Recebimento referente Entrada da venda do veiculo ${des_veiculo}`,
       ind_conciliado: false,
@@ -3843,20 +4366,23 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       ind_excluido: null,
       ind_alterado: false,
       seq_veiculo,
-      des_origem: 'Venda de VeÃ­culos',
+      des_origem: "Venda de Vei­culos",
       cod_banco_entrada,
-      des_movimento_detalhado: 'Entrada em PIX, TransferÃªncia ou Dinheiro',
+      des_movimento_detalhado: "Entrada em PIX, TransferÃªncia ou Dinheiro",
       cod_cartao: 0,
       val_entrada_especie,
       descricao_mov_ofx: null,
       cod_banco_ofx: null,
       id_unico: null,
-      cod_categoria_movimento: ind_tipo_veiculo === 'P' ? 95 : 94,
-      des_categoria_movimento: ind_tipo_veiculo === 'P' ? 'Venda de VeÃ­culos Proprios' : 'Venda de Veiculos de Parceiros',
+      cod_categoria_movimento: ind_tipo_veiculo === "P" ? 95 : 94,
+      des_categoria_movimento:
+        ind_tipo_veiculo === "P"
+          ? "Venda de Vei­culos Proprios"
+          : "Venda de Veiculos de Parceiros",
       numeroParcela: 0,
       seq_despesa: 0,
       seq_fatura: 0,
-      ind_cartao_pago: false
+      ind_cartao_pago: false,
     };
 
     await client.query(insertQuery, [
@@ -3881,24 +4407,29 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       values.numeroParcela,
       values.seq_despesa,
       values.seq_fatura,
-      values.ind_cartao_pago
-    ]
-    );
+      values.ind_cartao_pago,
+    ]);
 
     const updateQuery = `UPDATE ${schema}.tab_veiculo
                                SET val_entrada_especie = $1,
                                    cod_banco_entrada = $2
                                WHERE seq_veiculo = $3`;
 
-    const valuesUpdate = [val_entrada_especie, cod_banco_entrada, seq_veiculo]
+    const valuesUpdate = [val_entrada_especie, cod_banco_entrada, seq_veiculo];
 
     await client.query(updateQuery, valuesUpdate);
-
   }
 
-  async function entradaCartaoF(client, schema, val_entrada_cartao, cod_banco_entrada, des_veiculo, seq_veiculo, ind_tipo_veiculo) {
-
-    const dtaAtual = moment().format()
+  async function entradaCartaoF(
+    client,
+    schema,
+    val_entrada_cartao,
+    cod_banco_entrada,
+    des_veiculo,
+    seq_veiculo,
+    ind_tipo_veiculo,
+  ) {
+    const dtaAtual = moment().format();
 
     const insertQuery = `
           INSERT INTO ${schema}.tab_movimentacao (
@@ -3912,7 +4443,7 @@ exports.finalizaVendaVeiculo = async (req, res) => {
         `;
 
     const values = {
-      tipo_movimento: 'E',
+      tipo_movimento: "E",
       dataAtual: dtaAtual, // Usa a data ajustada
       des_movimento: `Recebimento referente Entrada em CartÃ£o da venda do veiculo ${des_veiculo}`,
       ind_conciliado: false,
@@ -3920,20 +4451,23 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       ind_excluido: false,
       ind_alterado: false,
       seq_veiculo,
-      des_origem: 'Venda de VeÃ­culos em CartÃ£o',
+      des_origem: "Venda de Veículos em Cartão",
       cod_banco_entrada,
-      des_movimento_detalhado: 'TransaÃ§Ã£o realizada no nosso terminal',
+      des_movimento_detalhado: "Transação realizada no nosso terminal",
       cod_cartao: 0,
       val_entrada_cartao,
       descricao_mov_ofx: null,
       cod_banco_ofx: null,
       id_unico: null,
-      cod_categoria_movimento: ind_tipo_veiculo === 'P' ? 95 : 94,
-      des_categoria_movimento: ind_tipo_veiculo === 'P' ? 'Venda de VeÃ­culos Proprios' : 'Venda de Veiculos de Parceiros',
+      cod_categoria_movimento: ind_tipo_veiculo === "P" ? 95 : 94,
+      des_categoria_movimento:
+        ind_tipo_veiculo === "P"
+          ? "Venda de Veículos Proprios"
+          : "Venda de Veiculos de Parceiros",
       numeroParcela: 0,
       seq_despesa: 0,
       seq_fatura: 0,
-      ind_cartao_pago: false
+      ind_cartao_pago: false,
     };
 
     await client.query(insertQuery, [
@@ -3958,21 +4492,19 @@ exports.finalizaVendaVeiculo = async (req, res) => {
       values.numeroParcela,
       values.seq_despesa,
       values.seq_fatura,
-      values.ind_cartao_pago
-    ]
-    );
+      values.ind_cartao_pago,
+    ]);
 
     const updateQuery = `UPDATE ${schema}.tab_veiculo
                                SET val_entrada_cartao = $1,
                                    cod_banco_entrada = $2
                                WHERE seq_veiculo = $3`;
 
-    const valuesUpdate = [val_entrada_cartao, cod_banco_entrada, seq_veiculo]
+    const valuesUpdate = [val_entrada_cartao, cod_banco_entrada, seq_veiculo];
 
     await client.query(updateQuery, valuesUpdate);
-
   }
-}
+};
 
 exports.buscaDadosEmpresa = async (req, res) => {
   const {} = req.body;
@@ -4152,7 +4684,7 @@ exports.salvaDadosEmpresa = async (req, res) => {
         }
         // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transaÃ§Ã£o:", innerError);
+        console.error("Erro na transacao:", innerError);
         throw innerError; // ForÃ§a o rollback
       }
     });
@@ -4160,14 +4692,14 @@ exports.salvaDadosEmpresa = async (req, res) => {
     // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "OperaÃ§Ã£o realizada com sucesso",
+      message: "Operacao realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operaÃ§Ã£o:", error);
+    console.error("Erro na transacao:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisiÃ§Ã£o",
+      message: "Erro ao processar a requisicao",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -4208,10 +4740,10 @@ exports.buscaModeloContrato = async (req, res) => {
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operaÃ§Ã£o:", error);
+    console.error("Erro na transacao:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisiÃ§Ã£o",
+      message: "Erro ao processar a requisicao",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -4268,7 +4800,7 @@ exports.cadastroModeloContrato = async (req, res) => {
         };
         // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transaÃ§Ã£o:", innerError);
+        console.error("Erro na transacao:", innerError);
         throw innerError; // ForÃ§a o rollback
       }
     });
@@ -4276,14 +4808,14 @@ exports.cadastroModeloContrato = async (req, res) => {
     // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "OperaÃ§Ã£o realizada com sucesso",
+      message: "Operacao realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operaÃ§Ã£o:", error);
+    console.error("Erro na transacao:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisiÃ§Ã£o",
+      message: "Erro ao processar a requisicao",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -4340,7 +4872,7 @@ exports.salvaModeloContrato = async (req, res) => {
         };
         // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transaÃ§Ã£o:", innerError);
+        console.error("Erro na transacao:", innerError);
         throw innerError; // ForÃ§a o rollback
       }
     });
@@ -4348,14 +4880,14 @@ exports.salvaModeloContrato = async (req, res) => {
     // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "OperaÃ§Ã£o realizada com sucesso",
+      message: "Operacao realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operaÃ§Ã£o:", error);
+    console.error("Erro na transacao:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisiÃ§Ã£o",
+      message: "Erro ao processar a requisicao",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -4385,7 +4917,7 @@ exports.buscaFinanciamentos = async (req, res) => {
         };
         // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transaÃ§Ã£o:", innerError);
+        console.error("Erro na transacao:", innerError);
         throw innerError; // ForÃ§a o rollback
       }
     });
@@ -4393,14 +4925,14 @@ exports.buscaFinanciamentos = async (req, res) => {
     // Se chegou aqui, a transaÃ§Ã£o foi bem-sucedida
     return res.status(200).json({
       success: true,
-      message: "OperaÃ§Ã£o realizada com sucesso",
+      message: "Operacao realizada com sucesso",
       data: queryResult,
     });
   } catch (error) {
-    console.error("Erro na operaÃ§Ã£o:", error);
+    console.error("Erro na transacao:", error);
     return res.status(500).json({
       success: false,
-      message: "Erro ao processar a requisiÃ§Ã£o",
+      message: "Erro ao processar a requisicao",
       details: error.message,
       errorDetails: error.stack,
     });
@@ -4444,7 +4976,7 @@ exports.cadastraVendedor = async (req, res) => {
         };
         // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transaÃ§Ã£o:", innerError);
+        console.error("Erro na transacao:", innerError);
         throw innerError; // ForÃ§a o rollback
       }
     });
@@ -5826,7 +6358,9 @@ function validarCategoriaFinanceira({
 
     case 99: // Retorno Financiamento
       if (!seq_veiculo && !des_movimento_detalhado && !des_observacao) {
-        throw new Error("Informe veÃ­culo ou detalhamento para esta categoria.");
+        throw new Error(
+          "Informe veÃ­culo ou detalhamento para esta categoria.",
+        );
       }
       break;
 
@@ -5884,5 +6418,3 @@ function validarCategoriaFinanceira({
       break;
   }
 }
-
-
