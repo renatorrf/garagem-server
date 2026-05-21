@@ -34,7 +34,8 @@ class LeadWorkflowService {
     const waConfig = await TenantIntegrationService.getWhatsAppConfig(context);
 
     return {
-      sellerPhone: waConfig.sellerPhone || process.env.WA_SELLER_PHONE || "5534991023869",
+      sellerPhone:
+        waConfig.sellerPhone || process.env.WA_SELLER_PHONE || "5534992041352",
       reminderIntervalSec: parseInt(
         process.env.LEAD_REMINDER_INTERVAL_SEC || "120",
         10,
@@ -49,7 +50,11 @@ class LeadWorkflowService {
         10,
       ),
       tenantId: waConfig.tenantId || context.tenantId || null,
-      schema: waConfig.schema || context.schema || process.env.SCHEMA_PADRAO || "nextcar",
+      schema:
+        waConfig.schema ||
+        context.schema ||
+        process.env.SCHEMA_PADRAO ||
+        "nextcar",
     };
   }
 
@@ -92,7 +97,10 @@ class LeadWorkflowService {
       ...leadPatch,
     };
 
-    return lead.update(payload, { schema: lead._schema, tenantId: lead._tenantId });
+    return lead.update(payload, {
+      schema: lead._schema,
+      tenantId: lead._tenantId,
+    });
   }
 
   static async onChatEvent(lead, context = {}) {
@@ -124,7 +132,10 @@ class LeadWorkflowService {
     });
 
     const notifyWamid = waResp?.messages?.[0]?.id || null;
-    const lead = await Lead.findById(savedLead.id, { schema: context.schema || savedLead._schema, tenantId: context.tenantId || savedLead._tenantId });
+    const lead = await Lead.findById(savedLead.id, {
+      schema: context.schema || savedLead._schema,
+      tenantId: context.tenantId || savedLead._tenantId,
+    });
 
     if (!lead) return null;
 
@@ -178,7 +189,11 @@ class LeadWorkflowService {
     const rs = await db.query(q, [cfg.reminderMax]);
 
     for (const row of rs.rows) {
-      const lead = new Lead({ ...row, _schema: cfg.schema, _tenantId: cfg.tenantId });
+      const lead = new Lead({
+        ...row,
+        _schema: cfg.schema,
+        _tenantId: cfg.tenantId,
+      });
       const wa = this.getWaMeta(lead);
       const reminderCount = (parseInt(wa.reminderCount || 0, 10) || 0) + 1;
 
@@ -233,7 +248,11 @@ class LeadWorkflowService {
     const rs = await db.query(q, [String(delayMs)]);
 
     for (const row of rs.rows) {
-      const lead = new Lead({ ...row, _schema: cfg.schema, _tenantId: cfg.tenantId });
+      const lead = new Lead({
+        ...row,
+        _schema: cfg.schema,
+        _tenantId: cfg.tenantId,
+      });
       const waResp = await WhatsAppService.sendFeedbackRequest({
         to: cfg.sellerPhone,
         lead,
@@ -251,7 +270,10 @@ class LeadWorkflowService {
   }
 
   static async claimLead(leadId, from = null, context = {}) {
-    const lead = await Lead.findById(leadId, { schema: context.schema, tenantId: context.tenantId });
+    const lead = await Lead.findById(leadId, {
+      schema: context.schema,
+      tenantId: context.tenantId,
+    });
     if (!lead) return null;
 
     const now = new Date();
@@ -269,9 +291,15 @@ class LeadWorkflowService {
     );
   }
 
-  static async assignSeller({ leadId, sellerKey, sellerId, sellerName, from }, context = {}) {
+  static async assignSeller(
+    { leadId, sellerKey, sellerId, sellerName, from },
+    context = {},
+  ) {
     const cfg = await this.cfg(context);
-    const lead = await Lead.findById(leadId, { schema: context.schema, tenantId: context.tenantId });
+    const lead = await Lead.findById(leadId, {
+      schema: context.schema,
+      tenantId: context.tenantId,
+    });
     if (!lead) return null;
 
     const now = new Date();
@@ -319,7 +347,10 @@ class LeadWorkflowService {
   }
 
   static async ignoreLead(leadId, from = null, context = {}) {
-    const lead = await Lead.findById(leadId, { schema: context.schema, tenantId: context.tenantId });
+    const lead = await Lead.findById(leadId, {
+      schema: context.schema,
+      tenantId: context.tenantId,
+    });
     if (!lead) return null;
 
     return this.updateLeadWa(
