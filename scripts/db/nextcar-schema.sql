@@ -29,7 +29,7 @@ CREATE TABLE "nextcar"."leads" (
 	"result_text" varchar(255),
 	CONSTRAINT "leads_prioridade_check" CHECK (((prioridade)::text = ANY (ARRAY[('alta'::character varying)::text, ('media'::character varying)::text, ('baixa'::character varying)::text]))),
 	CONSTRAINT "leads_score_check" CHECK (((score >= 0) AND (score <= 100))),
-	CONSTRAINT "leads_status_check" CHECK (((status)::text = ANY (ARRAY[('novo'::character varying)::text, ('contatado'::character varying)::text, ('agendado'::character varying)::text, ('vendido'::character varying)::text, ('perdido'::character varying)::text])))
+	CONSTRAINT "leads_status_check" CHECK (((status)::text = ANY (ARRAY[('novo'::character varying)::text, ('lido'::character varying)::text])))
 );
 CREATE TABLE "nextcar"."marketing_costs_monthly" (
 	"plataforma" text PRIMARY KEY,

@@ -35,7 +35,7 @@ class LeadWorkflowService {
 
     return {
       sellerPhone:
-        waConfig.sellerPhone || process.env.WA_SELLER_PHONE || "5534992041352",
+        waConfig.sellerPhone || process.env.WA_SELLER_PHONE || "5534991023869",
       reminderIntervalSec: parseInt(
         process.env.LEAD_REMINDER_INTERVAL_SEC || "120",
         10,
@@ -67,14 +67,7 @@ class LeadWorkflowService {
   }
 
   static outcomeMap(outcome) {
-    const map = {
-      WON: "vendido",
-      CREDIT_DENIED: "perdido",
-      NO_REPLY: "perdido",
-      IMPOSSIBLE: "perdido",
-    };
-
-    return map[outcome] || "perdido";
+    return "lido";
   }
 
   static getWaMeta(lead) {
@@ -229,7 +222,7 @@ class LeadWorkflowService {
       SELECT *
       FROM ${Lead.resolveTableName({ schema: cfg.schema })}
       WHERE deleted_at IS NULL
-        AND status IN ('contatado','novo')
+        AND status = 'novo'
         AND COALESCE(
           (metadata->'wa'->>'attendanceStartedAt')::timestamptz,
           (metadata->'wa'->>'claimedAt')::timestamptz
@@ -285,7 +278,7 @@ class LeadWorkflowService {
         sellerSelectedBy: from,
       },
       {
-        status: "contatado",
+        status: "lido",
         dataContato: now,
       },
     );
@@ -321,7 +314,7 @@ class LeadWorkflowService {
         nextReminderAt: null,
       },
       {
-        status: "contatado",
+        status: "lido",
         dataContato: now,
       },
     );
@@ -361,17 +354,19 @@ class LeadWorkflowService {
         closedAt: new Date().toISOString(),
       },
       {
-        status: "perdido",
+        status: "lido",
       },
     );
   }
 
   static async setOutcome({ leadId, outcome }, context = {}) {
-    const lead = await Lead.findById(leadId);
+    const lead = await Lead.findById(leadId, {
+      schema: context.schema,
+      tenantId: context.tenantId,
+    });
     if (!lead) return null;
 
     const now = new Date();
-    const newStatus = this.outcomeMap(outcome);
 
     return this.updateLeadWa(
       lead,
@@ -380,7 +375,8 @@ class LeadWorkflowService {
         closedAt: now.toISOString(),
       },
       {
-        status: newStatus,
+        status: "lido",
+        dataContato: now,
       },
     );
   }
@@ -391,10 +387,13 @@ class LeadWorkflowService {
     timestamp,
     recipientId,
     raw,
-  }) {
+  }, context = {}) {
+    if (!wamid) return null;
+
+    const cfg = await this.cfg(context);
     const q = `
       SELECT *
-      FROM ${Lead.tableName}
+      FROM ${Lead.resolveTableName({ schema: cfg.schema })}
       WHERE deleted_at IS NULL
         AND (
           metadata->'wa'->>'notifyWamid' = $1
@@ -409,11 +408,17 @@ class LeadWorkflowService {
     const rs = await db.query(q, [wamid]);
 
     if (!rs.rows?.length) {
-      console.warn(`⚠️ Nenhum lead encontrado para o wamid ${wamid}`);
+      if (process.env.WA_LOG_UNMATCHED_STATUS === "true") {
+        console.warn(`Status WhatsApp sem lead vinculado para o wamid ${wamid}`);
+      }
       return null;
     }
 
-    const lead = new Lead(rs.rows[0]);
+    const lead = new Lead({
+      ...rs.rows[0],
+      _schema: cfg.schema,
+      _tenantId: cfg.tenantId,
+    });
     const wa = this.getWaMeta(lead);
     const statuses = Array.isArray(wa.messageStatuses)
       ? wa.messageStatuses
@@ -430,13 +435,31 @@ class LeadWorkflowService {
       },
     ].slice(-20);
 
+    const leadPatch =
+      status === "read"
+        ? {
+            status: "lido",
+            dataContato: timestamp
+              ? new Date(Number(timestamp) * 1000)
+              : new Date(),
+          }
+        : {};
+
     return this.updateLeadWa(lead, {
       lastStatus: status,
       lastStatusAt: timestamp
         ? new Date(Number(timestamp) * 1000).toISOString()
         : new Date().toISOString(),
       messageStatuses: nextStatuses,
-    });
+      closedAt:
+        status === "read"
+          ? (timestamp
+              ? new Date(Number(timestamp) * 1000)
+              : new Date()
+            ).toISOString()
+          : wa.closedAt || null,
+      nextReminderAt: status === "read" ? null : wa.nextReminderAt || null,
+    }, leadPatch);
   }
 }
 

@@ -22,6 +22,13 @@ class LeadController {
         order = "DESC",
       } = req.query;
 
+      if (status && !["novo", "lido"].includes(status)) {
+        return res.status(400).json({
+          success: false,
+          error: "Status invalido. Use: novo ou lido",
+        });
+      }
+
       const schema = getSchemaFromReq(req);
       const result = await Lead.findAll({
         schema,
@@ -270,6 +277,13 @@ class LeadController {
         });
       }
 
+      if (!["novo", "lido"].includes(status)) {
+        return res.status(400).json({
+          success: false,
+          error: "Status invalido. Use: novo ou lido",
+        });
+      }
+
       const schema = getSchemaFromReq(req);
       const lead = await Lead.findById(id, { schema });
       if (!lead) {
@@ -281,7 +295,8 @@ class LeadController {
 
       const updates = { status };
       if (observacao) updates.observacoes = observacao;
-      if (status === "contatado") updates.dataContato = new Date();
+      if (status === "lido") updates.dataContato = new Date();
+      if (status === "novo") updates.dataContato = null;
 
       const updatedLead = await lead.update(updates);
 

@@ -55,34 +55,6 @@ class WhatsAppWebhookController {
                 }
 
                 console.log('🔘 Button reply recebido:', { id, title, from });
-
-                if (id.startsWith('seller:')) {
-                  const [, sellerRaw, leadId] = id.split(':');
-                  const sellerKey = (sellerRaw || '').toLowerCase().trim();
-                  const sellerInfo =
-                    LeadWorkflowService.sellerCatalog()[sellerKey];
-
-                  if (leadId && sellerInfo) {
-                    await LeadWorkflowService.assignSeller({
-                      leadId,
-                      sellerKey: sellerInfo.key,
-                      sellerId: sellerInfo.id,
-                      sellerName: sellerInfo.name,
-                      sellerWhatsapp: sellerInfo.whatsapp,
-                      from,
-                    }, context);
-
-                    console.log(
-                      `👤 Vendedor selecionado: ${sellerInfo.name} (ID ${sellerInfo.id}) para lead ${leadId}`,
-                    );
-                  } else {
-                    console.warn('⚠️ Seller inválido:', {
-                      sellerKey,
-                      leadId,
-                      from,
-                    });
-                  }
-                }
               }
 
               if (interactive?.type === 'list_reply') {
@@ -95,17 +67,6 @@ class WhatsAppWebhookController {
                 }
 
                 console.log('📋 List reply recebido:', { id, title, from });
-
-                if (id.startsWith('outcome:')) {
-                  const [, outcome, leadId] = id.split(':');
-
-                  if (outcome && leadId) {
-                    await LeadWorkflowService.setOutcome({ leadId, outcome }, context);
-                    console.log(
-                      `📌 Outcome definido: lead ${leadId}, outcome ${outcome}`,
-                    );
-                  }
-                }
               }
             }
 
@@ -125,7 +86,7 @@ class WhatsAppWebhookController {
               timestamp: s?.timestamp,
               recipientId: s?.recipient_id,
               raw: s,
-            });
+            }, context);
 
             if (s?.errors?.length) {
               console.error(
