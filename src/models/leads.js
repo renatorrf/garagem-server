@@ -949,7 +949,7 @@ class Lead {
   }
 
   static async requeueWhatsApp(id, mode = "initial", options = {}) {
-    const allowedModes = ["initial", "reminder", "feedback"];
+    const allowedModes = ["initial"];
 
     if (!allowedModes.includes(mode)) {
       throw new Error("Modo de reenvio inválido");

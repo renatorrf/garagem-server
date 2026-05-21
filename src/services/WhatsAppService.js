@@ -149,6 +149,43 @@ class WhatsAppService {
     return res.data;
   }
 
+  static buildCleanLeadBody(lead) {
+    const plataforma =
+      lead?.metadata?.plataforma ||
+      lead?.metadata?.extras?.fonte ||
+      lead?.origem ||
+      "Email";
+
+    return [
+      "*Novo lead - Next Car Uberlandia*",
+      `ID: *${lead.id}*`,
+      `Origem: ${String(plataforma).toUpperCase()}`,
+      lead?.nome ? `Cliente: ${lead.nome}` : null,
+      lead?.telefone ? `Telefone: ${lead.telefone}` : null,
+      lead?.veiculoInteresse ? `Veiculo: ${lead.veiculoInteresse}` : null,
+      lead?.assunto ? `Assunto: ${lead.assunto}` : null,
+      lead?.mensagem ? `Mensagem: ${String(lead.mensagem).slice(0, 600)}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  static async sendCleanLeadNotification({ to, lead, tenantId = null, schema = null }) {
+    const sellerPhone = this.toWhatsAppPhone(to);
+
+    const payload = {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: sellerPhone,
+      type: "text",
+      text: {
+        body: this.buildCleanLeadBody(lead),
+      },
+    };
+
+    return this.postMessage(payload, { tenantId: tenantId || lead?._tenantId || null, schema: schema || lead?._schema || null });
+  }
+
   static async sendLeadNotification({ to, lead, tenantId = null, schema = null }) {
     const sellerPhone = this.toWhatsAppPhone(to);
 

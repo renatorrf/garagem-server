@@ -6,6 +6,11 @@ const TenantIntegrationService = require("./TenantIntegrationService");
 
 class LeadWorkflowService {
   static start() {
+    // Fluxos de lembrete e feedback foram desativados. Mantemos os metodos
+    // abaixo no arquivo para reativacao futura sem recriar a regra.
+    console.log("LeadWorkflowService iniciado (envio simples de leads)");
+    return;
+
     cron.schedule("*/1 * * * *", async () => {
       try {
         await this.processRemindersTick();
@@ -110,12 +115,8 @@ class LeadWorkflowService {
 
   static async onNewLead(savedLead, context = {}) {
     const cfg = await this.cfg(context);
-    const now = new Date();
-    const nextReminderAt = new Date(
-      now.getTime() + cfg.reminderIntervalSec * 1000,
-    );
 
-    const waResp = await WhatsAppService.sendLeadNotification({
+    const waResp = await WhatsAppService.sendCleanLeadNotification({
       to: cfg.sellerPhone,
       lead: savedLead,
       tenantId: cfg.tenantId,
@@ -139,7 +140,7 @@ class LeadWorkflowService {
       attendanceStartedAt: null,
       estimatedEndAt: null,
       reminderCount: 0,
-      nextReminderAt: nextReminderAt.toISOString(),
+      nextReminderAt: null,
       lastReminderAt: null,
       lastReminderWamid: null,
       feedbackRequestedAt: null,

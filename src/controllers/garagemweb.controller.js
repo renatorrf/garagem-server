@@ -3027,7 +3027,7 @@ exports.liquidarFaturaCartao = async (req, res) => {
         };
         // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transaÃ§Ã£o:", innerError);
+        console.error("Erro na transacao:", innerError);
         throw innerError; // ForÃ§a o rollback
       }
     });
@@ -3164,7 +3164,7 @@ exports.buscaCliente = async (req, res) => {
         };
         // Commit implÃ­cito se nÃ£o houve erro
       } catch (innerError) {
-        console.error("Erro na transaÃ§Ã£o:", innerError);
+        console.error("Erro na transacao:", innerError);
         throw innerError; // ForÃ§a o rollback
       }
     });
@@ -3267,6 +3267,7 @@ function normalizaDocumento(valor) {
 }
 
 // function gerarCodigo() {
+
 //   return Math.floor(10000 + Math.random() * 90000);
 // }
 
@@ -6188,25 +6189,25 @@ exports.updateMovimentoFinanceiro = async (req, res) => {
 
       const validarCategoria = () => {
         switch (categoria) {
-          case 95:
+          //case 95: venda de veiculos proprios
           case 91:
           case 92:
           case 93:
           case 4:
-          case 5:
+          //case 5: //comissoes de vendas, selecionar veiculo
           case 7:
             if (!seqVeiculo) {
               throw new Error("Esta categoria exige vÃ­nculo com veÃ­culo.");
             }
             break;
 
-          case 94:
-            if (!seqVeiculo || !codParceiro) {
-              throw new Error(
-                "Venda de veÃ­culo de parceiro exige veÃ­culo e parceiro.",
-              );
-            }
-            break;
+          // case 94: // venda de veiculos de parceiros
+          //   if (!seqVeiculo || !codParceiro) {
+          //     throw new Error(
+          //       "Venda de veÃ­culo de parceiro exige veÃ­culo e parceiro.",
+          //     );
+          //   }
+          //   break;
 
           case 90:
           case 10:

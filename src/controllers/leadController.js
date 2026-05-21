@@ -300,9 +300,8 @@ class LeadController {
   async startAttendance(req, res) {
     try {
       const { id } = req.params;
-      const { sellerId, sellerName, sellerWhatsapp } = req.body;
-
       const schema = getSchemaFromReq(req);
+      const tenantId = getTenantIdFromReq(req);
       const lead = await Lead.findById(id, { schema });
       if (!lead) {
         return res.status(404).json({
@@ -311,13 +310,9 @@ class LeadController {
         });
       }
 
-      const updatedLead = await LeadWorkflowService.startAttendanceManual({
+      const updatedLead = await LeadWorkflowService.claimLead(id, null, {
         schema,
         tenantId,
-        leadId: id,
-        sellerId: sellerId || null,
-        sellerName: sellerName || null,
-        sellerWhatsapp: sellerWhatsapp || null,
       });
 
       res.json({
@@ -338,12 +333,12 @@ class LeadController {
       const { id } = req.params;
       const { mode = "initial" } = req.body || {};
 
-      const allowedModes = ["initial", "reminder", "feedback"];
+      const allowedModes = ["initial"];
 
       if (!allowedModes.includes(mode)) {
         return res.status(400).json({
           success: false,
-          error: "Modo invÃƒÂ¡lido. Use: initial, reminder ou feedback",
+          error: "Modo invalido. Use: initial",
         });
       }
 
@@ -420,6 +415,11 @@ class LeadController {
 
   async assignToSeller(req, res) {
     try {
+      return res.status(410).json({
+        success: false,
+        error: "Atribuicao de vendedor desativada no fluxo atual",
+      });
+
       const { ids, vendedorId } = req.body;
 
       if (!Array.isArray(ids) || ids.length === 0 || !vendedorId) {

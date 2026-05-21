@@ -3,6 +3,7 @@ if (process.env.NODE_ENV !== "production") {
   require("dotenv-safe").config({ example: ".env.example" });
 }
 const moment = require("moment");
+const { isoUint8Array } = require("@simplewebauthn/server/helpers");
 const cron = require("node-cron");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
@@ -481,7 +482,7 @@ exports.passkeyRegisterOptions = async (req, res) => {
       rpName: RP_NAME,
       rpID: RP_ID,
       userName: user.username,
-      userID: String(user.id),
+      userID: isoUint8Array.fromUTF8String(`user_${user.id}`),
       attestationType: "none",
       authenticatorSelection: {
         authenticatorAttachment: "platform",

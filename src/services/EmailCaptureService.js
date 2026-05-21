@@ -14,6 +14,13 @@ const Lead = require("../models/leads");
 const LeadWorkflowService = require("./LeadWorkflowService");
 const TenantIntegrationService = require("./TenantIntegrationService");
 
+const REGULAR_EMAIL_SENDERS = new Set([
+  "ofertas@a.mercadolivre.com.br",
+  "mailer@vindi.com.br",
+  "nao-responder@mercadolivre.com",
+  "dicas@newsolx.com.br",
+]);
+
 class EmailCaptureService {
   constructor() {
     this.imap = null;
@@ -303,7 +310,12 @@ class EmailCaptureService {
       }
 
       const fallbackText = text || this.htmlToText(html) || "";
-      const platformData = this.detectAndParsePlatform(emailData);
+      const forceRegularEmail = this.isRegularEmailSender(emailData);
+      let platformData = this.detectAndParsePlatform(emailData);
+
+      if (forceRegularEmail && (!platformData.platform || !platformData.parsed)) {
+        platformData = this.buildRegularEmailPlatformData(emailData, fallbackText);
+      }
 
       let leadData;
 
@@ -634,6 +646,39 @@ class EmailCaptureService {
     return { platform: null, parsed: null };
   }
 
+  getSenderEmail(emailData = {}) {
+    return String(emailData?.from?.value?.[0]?.address || "").toLowerCase();
+  }
+
+  isRegularEmailSender(emailData = {}) {
+    return REGULAR_EMAIL_SENDERS.has(this.getSenderEmail(emailData));
+  }
+
+  buildRegularEmailPlatformData(emailData = {}, fallbackText = "") {
+    const senderEmail = this.getSenderEmail(emailData);
+    const senderName = emailData?.from?.text || "";
+    const subject = emailData?.subject || "Email recebido";
+
+    return {
+      platform: "Email",
+      kind: "email",
+      parsed: {
+        nome: null,
+        email: senderEmail || null,
+        telefone: null,
+        veiculo: null,
+        mensagem: subject || fallbackText || "Email comum",
+        preco: null,
+        placa: null,
+        extras: {
+          tipoMensagem: "email-comum",
+          remetenteBloqueadoParaLead: true,
+        },
+      },
+      rawData: { subject, senderEmail, senderName },
+    };
+  }
+
   isBvNapistaSender(senderEmail = "") {
     return String(senderEmail || "").toLowerCase() === "noreply@napista.com.br";
   }
@@ -683,6 +728,10 @@ class EmailCaptureService {
     const senderEmail = String(
       emailData?.from?.value?.[0]?.address || "",
     ).toLowerCase();
+
+    if (REGULAR_EMAIL_SENDERS.has(senderEmail)) {
+      return "email";
+    }
 
     if (platform === "BV") {
       if (platformKind === "email") {
