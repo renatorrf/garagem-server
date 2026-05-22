@@ -19,6 +19,7 @@ const REGULAR_EMAIL_SENDERS = new Set([
   "mailer@vindi.com.br",
   "nao-responder@mercadolivre.com",
   "dicas@newsolx.com.br",
+  "notificacao@acesso.io",
 ]);
 
 class EmailCaptureService {
@@ -1484,10 +1485,18 @@ class EmailCaptureService {
 
     const nome =
       clean
-        .match(/([A-ZÀ-Ú][A-Za-zÀ-ÿ\s]+) quer financiar seu carro/i)?.[1]
+        .match(
+          /(?:^|\n|\s)([A-ZÀ-Ú][A-Za-zÀ-ÿ]+(?:\s+[A-ZÀ-Ú]\.)?(?:\s+[A-ZÀ-Ú][A-Za-zÀ-ÿ]+)*)\s+quer financiar seu carro/i,
+        )?.[1]
         ?.trim() || null;
 
     const veiculo =
+      clean
+        .match(
+          /quer financiar seu carro\s+(.+?)(?:\s+Confira a simula\S+|\s+este contato|\n|$)/i,
+        )?.[1]
+        ?.replace(/[,\s]+$/g, "")
+        .trim() ||
       clean.match(/financiar seu carro\s*\n\s*([^\n]+)/i)?.[1]?.trim() ||
       subject?.match(/financiamento[:\s-]*(.+)$/i)?.[1]?.trim() ||
       null;
@@ -1518,7 +1527,7 @@ class EmailCaptureService {
       email,
       telefone,
       veiculo,
-      mensagem: text || subject || "",
+      mensagem: "Cliente quer financiar o veículo pelo Mercado Livre.",
       preco: null,
       placa: null,
       extras: {

@@ -150,28 +150,93 @@ class WhatsAppService {
   }
 
   static buildCleanLeadBody(lead) {
+    const data = this.buildCleanLeadData(lead);
+
+    return [
+      "*Novo lead - Next Car Uberlandia*",
+      `ID: *${data.id}*`,
+      `Origem: ${data.origem}`,
+      `Cliente: ${data.cliente}`,
+      data.telefone ? `Telefone: ${data.telefone}` : null,
+      `Veiculo: ${data.veiculo}`,
+      `Mensagem: ${data.mensagem}`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  static buildCleanLeadData(lead) {
     const plataforma =
       lead?.metadata?.plataforma ||
       lead?.metadata?.extras?.fonte ||
       lead?.origem ||
       "Email";
 
+    return {
+      id: String(lead?.id || "sem-id"),
+      origem: String(plataforma || "Email").toUpperCase(),
+      cliente: lead?.nome || "Não informado",
+      telefone: lead?.telefone || "",
+      veiculo: lead?.veiculoInteresse || "Não informado",
+      mensagem: lead?.assunto || "Novo lead recebido.",
+    };
+  }
+
+  static buildCleanLeadTemplateComponents(lead, mode = "structured") {
+    const data = this.buildCleanLeadData(lead);
+
+    if (mode === "body") {
+      return [
+        {
+          type: "body",
+          parameters: [{ type: "text", text: this.buildCleanLeadBody(lead) }],
+        },
+      ];
+    }
+
     return [
-      "*Novo lead - Next Car Uberlandia*",
-      `ID: *${lead.id}*`,
-      `Origem: ${String(plataforma).toUpperCase()}`,
-      lead?.nome ? `Cliente: ${lead.nome}` : null,
-      lead?.telefone ? `Telefone: ${lead.telefone}` : null,
-      lead?.veiculoInteresse ? `Veiculo: ${lead.veiculoInteresse}` : null,
-      lead?.assunto ? `Assunto: ${lead.assunto}` : null,
-      lead?.mensagem ? `Mensagem: ${String(lead.mensagem).slice(0, 600)}` : null,
-    ]
-      .filter(Boolean)
-      .join("\n");
+      {
+        type: "body",
+        parameters: [
+          { type: "text", text: data.id },
+          { type: "text", text: data.origem },
+          { type: "text", text: data.cliente },
+          { type: "text", text: data.telefone || "Não informado" },
+          { type: "text", text: data.veiculo },
+          { type: "text", text: data.mensagem },
+        ],
+      },
+    ];
   }
 
   static async sendCleanLeadNotification({ to, lead, tenantId = null, schema = null }) {
     const sellerPhone = this.toWhatsAppPhone(to);
+    const context = {
+      tenantId: tenantId || lead?._tenantId || null,
+      schema: schema || lead?._schema || null,
+    };
+    const config = await this.getConfig(context);
+
+    if (config.leadTemplateName) {
+      const payload = {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: sellerPhone,
+        type: "template",
+        template: {
+          name: config.leadTemplateName,
+          language: {
+            code: config.leadTemplateLanguage || "pt_BR",
+          },
+          components: this.buildCleanLeadTemplateComponents(
+            lead,
+            config.leadTemplateMode || "structured",
+          ),
+        },
+      };
+
+      return this.postMessage(payload, context);
+    }
 
     const payload = {
       messaging_product: "whatsapp",
@@ -183,7 +248,7 @@ class WhatsAppService {
       },
     };
 
-    return this.postMessage(payload, { tenantId: tenantId || lead?._tenantId || null, schema: schema || lead?._schema || null });
+    return this.postMessage(payload, context);
   }
 
   static async sendLeadNotification({ to, lead, tenantId = null, schema = null }) {

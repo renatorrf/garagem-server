@@ -205,6 +205,18 @@ class TenantIntegrationService {
         null,
       sellerPhone:
         integration?.config?.sellerPhone || process.env.WA_SELLER_PHONE || null,
+      leadTemplateName:
+        integration?.config?.leadTemplateName ||
+        process.env.WA_LEAD_TEMPLATE_NAME ||
+        null,
+      leadTemplateLanguage:
+        integration?.config?.leadTemplateLanguage ||
+        process.env.WA_LEAD_TEMPLATE_LANGUAGE ||
+        "pt_BR",
+      leadTemplateMode:
+        integration?.config?.leadTemplateMode ||
+        process.env.WA_LEAD_TEMPLATE_MODE ||
+        "structured",
       graphVersion:
         integration?.config?.graphVersion || process.env.WA_GRAPH_VERSION || "v22.0",
       businessAccountId: integration?.config?.businessAccountId || null,
