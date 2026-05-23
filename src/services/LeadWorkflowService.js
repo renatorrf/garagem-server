@@ -275,10 +275,13 @@ class LeadWorkflowService {
       lead,
       {
         claimedAt: now.toISOString(),
+        attendanceStartedAt: now.toISOString(),
+        openConversationAt: now.toISOString(),
         sellerSelectedBy: from,
+        nextReminderAt: null,
       },
       {
-        status: "lido",
+        status: "contatado",
         dataContato: now,
       },
     );
@@ -314,7 +317,7 @@ class LeadWorkflowService {
         nextReminderAt: null,
       },
       {
-        status: "lido",
+        status: "contatado",
         dataContato: now,
       },
     );
@@ -435,8 +438,9 @@ class LeadWorkflowService {
       },
     ].slice(-20);
 
+    const shouldMarkAsRead = status === "read" && lead.status !== "contatado";
     const leadPatch =
-      status === "read"
+      shouldMarkAsRead
         ? {
             status: "lido",
             dataContato: timestamp
@@ -451,13 +455,7 @@ class LeadWorkflowService {
         ? new Date(Number(timestamp) * 1000).toISOString()
         : new Date().toISOString(),
       messageStatuses: nextStatuses,
-      closedAt:
-        status === "read"
-          ? (timestamp
-              ? new Date(Number(timestamp) * 1000)
-              : new Date()
-            ).toISOString()
-          : wa.closedAt || null,
+      closedAt: wa.closedAt || null,
       nextReminderAt: status === "read" ? null : wa.nextReminderAt || null,
     }, leadPatch);
   }

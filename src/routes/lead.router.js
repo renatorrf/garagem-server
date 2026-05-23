@@ -26,8 +26,16 @@ router.post('/email/manual-process', EmailCaptureController.processManualEmail);
 router.get('/leads', leads.getLeads);
 
 router.get('/leads/dashboard', leads.getDashboardStats);
+router.post('/leads/search', leads.searchLeads);
+router.get('/leads/export', leads.exportLeads);
+router.post('/leads/assign', leads.assignToSeller);
 
 router.post('/leads/simulacao-compra', leads.createSimulationLead);
 router.post('/leads/:id/retry-whatsapp', leads.retryWhatsApp);
+router.post('/leads/:id/start-attendance', leads.startAttendance);
+router.get('/leads/:id', leads.getLeadById);
+router.put('/leads/:id', leads.updateLead);
+router.patch('/leads/:id/status', leads.updateLeadStatus);
+router.delete('/leads/:id', leads.deleteLead);
 
 module.exports = router;

@@ -122,7 +122,7 @@ class Lead {
       errors.push("emailRemetente inválido");
     }
 
-    if (this.status && !["novo", "lido"].includes(this.status)) {
+    if (this.status && !["novo", "lido", "contatado"].includes(this.status)) {
       errors.push("status inválido");
     }
 
@@ -531,7 +531,7 @@ class Lead {
               AND data_recebimento <  date_trunc('day', NOW() AT TIME ZONE 'America/Sao_Paulo') + interval '1 day'
           )::int AS leads_hoje,
           COUNT(*) FILTER (WHERE prioridade = 'alta')::int AS alta_prioridade,
-          COUNT(*) FILTER (WHERE status = 'lido')::int AS contatados
+          COUNT(*) FILTER (WHERE status = 'contatado')::int AS contatados
         FROM ${leadTable}
         ${whereClause}
       )
@@ -555,6 +555,7 @@ class Lead {
         DATE(data_recebimento) as date,
         COUNT(*) as total,
         COUNT(CASE WHEN status = 'lido' THEN 1 END) as lidos,
+        COUNT(CASE WHEN status = 'contatado' THEN 1 END) as contatados,
         0::bigint as vendidos
       FROM ${leadTable}
       WHERE ${timelineWhere.join(" AND ")}
@@ -585,7 +586,7 @@ class Lead {
         ) AS plataforma,
         COUNT(*)::int AS leads,
         COUNT(*) FILTER (WHERE status = 'novo')::int AS novos,
-        COUNT(*) FILTER (WHERE status = 'lido')::int AS contatados,
+        COUNT(*) FILTER (WHERE status = 'contatado')::int AS contatados,
         COUNT(*) FILTER (WHERE status = 'lido')::int AS lidos,
         0::int AS vendidos,
         COUNT(*) FILTER (WHERE prioridade = 'alta')::int AS alta_prioridade,
@@ -594,7 +595,7 @@ class Lead {
               AND data_recebimento <  date_trunc('day', NOW() AT TIME ZONE 'America/Sao_Paulo') + interval '1 day'
           )::int AS leads_hoje,
         ROUND(
-          (COUNT(*) FILTER (WHERE status = 'lido')::numeric / NULLIF(COUNT(*),0)) * 100
+          (COUNT(*) FILTER (WHERE status = 'contatado')::numeric / NULLIF(COUNT(*),0)) * 100
         , 2) AS taxa_conversao_pct
       FROM base
       GROUP BY plataforma
@@ -628,6 +629,7 @@ class Lead {
           END AS plataforma,
           COUNT(*)::int AS leads,
           COUNT(*) FILTER (WHERE status='lido')::int AS lidos,
+          COUNT(*) FILTER (WHERE status='contatado')::int AS contatados,
           0::int AS vendidos
         FROM base_leads
         GROUP BY 1
@@ -650,6 +652,7 @@ class Lead {
         COALESCE(l.plataforma, s.plataforma) AS plataforma,
         COALESCE(l.leads, 0) AS leads,
         COALESCE(l.lidos, 0) AS lidos,
+        COALESCE(l.contatados, 0) AS contatados,
         COALESCE(l.vendidos, 0) AS vendidos,
         COALESCE(s.spend_periodo, 0) AS spend,
         ROUND(COALESCE(s.spend_periodo, 0) / NULLIF(COALESCE(l.leads, 0), 0), 2) AS cpl,
@@ -685,6 +688,7 @@ class Lead {
         COALESCE(metadata->'wa'->>'sellerName', 'Não definido') AS seller_name,
         COUNT(*)::int AS atendidos,
         COUNT(*) FILTER (WHERE status = 'lido')::int AS lidos,
+        COUNT(*) FILTER (WHERE status = 'contatado')::int AS contatados,
         0::int AS vendidos,
         0::int AS perdidos,
         ROUND(
@@ -721,7 +725,7 @@ class Lead {
         Number(result?.total_leads || 0) > 0
           ? Number(
               (
-                (Number(result.lidos || 0) /
+                (Number(result.contatados || 0) /
                   Number(result.total_leads || 0)) *
                 100
               ).toFixed(2),
@@ -765,6 +769,7 @@ class Lead {
           CASE status
             WHEN 'novo' THEN 1
             WHEN 'lido' THEN 2
+            WHEN 'contatado' THEN 3
           END ${dir},
           data_recebimento DESC
       `;
@@ -801,7 +806,7 @@ class Lead {
     const query = `
       UPDATE ${tableName}
       SET vendedor_id = $1,
-          status = 'lido',
+          status = 'contatado',
           data_contato = NOW(),
           updated_at = NOW()
       WHERE id = ANY($2::uuid[])
