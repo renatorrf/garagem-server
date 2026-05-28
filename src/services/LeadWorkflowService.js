@@ -193,6 +193,28 @@ class LeadWorkflowService {
     );
   }
 
+  static async openCustomerConversation(leadId, context = {}) {
+    const cfg = await this.cfg(context);
+    const lead = await Lead.findById(leadId, {
+      schema: context.schema,
+      tenantId: context.tenantId,
+    });
+    if (!lead) return null;
+
+    const waResp = await WhatsAppService.sendOpenCustomerConversationButton({
+      to: cfg.sellerPhone,
+      lead,
+      tenantId: cfg.tenantId,
+      schema: cfg.schema,
+    });
+
+    await this.updateLeadWa(lead, {
+      openConversationWamid: waResp?.messages?.[0]?.id || null,
+    });
+
+    return lead;
+  }
+
   static async recordMessageStatus(
     { wamid, status, timestamp, recipientId, raw },
     context = {},
@@ -204,7 +226,10 @@ class LeadWorkflowService {
       SELECT *
       FROM ${Lead.resolveTableName({ schema: cfg.schema })}
       WHERE deleted_at IS NULL
-        AND metadata->'wa'->>'notifyWamid' = $1
+        AND (
+          metadata->'wa'->>'notifyWamid' = $1
+          OR metadata->'wa'->>'openConversationWamid' = $1
+        )
       ORDER BY data_recebimento DESC
       LIMIT 1
     `;

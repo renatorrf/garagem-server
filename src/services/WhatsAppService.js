@@ -116,6 +116,88 @@ class WhatsAppService {
     ];
   }
 
+  static buildOpenCustomerConversationText(lead) {
+    const nome = lead?.nome || "cliente";
+    const veiculo = lead?.veiculoInteresse || "veículo de interesse";
+
+    return `Olá, ${nome}. Somos da Next Car e vamos dar andamento na sua proposta de interesse no veículo ${veiculo}.`;
+  }
+
+  static buildOpenConversationUrl(lead) {
+    const phone = this.toWhatsAppPhone(lead?.telefone || "");
+    if (!phone) return null;
+
+    const text = encodeURIComponent(
+      this.buildOpenCustomerConversationText(lead),
+    );
+
+    return `https://wa.me/${phone}?text=${text}`;
+  }
+
+  static async sendOpenCustomerConversationButton({
+    to,
+    lead,
+    tenantId = null,
+    schema = null,
+  }) {
+    const sellerPhone = this.toWhatsAppPhone(to);
+    const waUrl = this.buildOpenConversationUrl(lead);
+
+    if (!waUrl) {
+      const payload = {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: sellerPhone,
+        type: "text",
+        text: {
+          body:
+            `Atendimento iniciado para ${lead?.nome || "cliente"}.\n` +
+            `Não foi possível montar a conversa automática porque o telefone do cliente está inválido.`,
+        },
+      };
+
+      return this.postMessage(payload, {
+        tenantId: tenantId || lead?._tenantId || null,
+        schema: schema || lead?._schema || null,
+      });
+    }
+
+    const payload = {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: sellerPhone,
+      type: "interactive",
+      interactive: {
+        type: "cta_url",
+        header: {
+          type: "text",
+          text: "Atendimento iniciado",
+        },
+        body: {
+          text:
+            `Cliente: ${lead?.nome || "Não informado"}\n` +
+            `Veículo: ${lead?.veiculoInteresse || "Não informado"}\n\n` +
+            "Abra a conversa pronta para enviar a mensagem ao cliente.",
+        },
+        footer: {
+          text: "Next Car Uberlandia",
+        },
+        action: {
+          name: "cta_url",
+          parameters: {
+            display_text: "Abrir conversa com cliente",
+            url: waUrl,
+          },
+        },
+      },
+    };
+
+    return this.postMessage(payload, {
+      tenantId: tenantId || lead?._tenantId || null,
+      schema: schema || lead?._schema || null,
+    });
+  }
+
   static async sendLeadStartAttendanceNotification({
     to,
     lead,
