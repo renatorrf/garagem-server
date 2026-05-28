@@ -74,6 +74,30 @@ class LeadWorkflowService {
     return lead?.metadata?.wa || {};
   }
 
+  static normalizeLeadText(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+  }
+
+  static isEmailOrigin(lead) {
+    const candidates = [
+      lead?.origem,
+      lead?.metadata?.origem,
+      lead?.metadata?.plataforma,
+      lead?.metadata?.extras?.fonte,
+      lead?.metadata?.source,
+      lead?.metadata?.canal,
+    ];
+
+    return candidates.some((value) => {
+      const normalized = this.normalizeLeadText(value);
+      return normalized === "email" || normalized.startsWith("email");
+    });
+  }
+
   static async updateLeadWa(lead, waPatch, leadPatch = {}) {
     const currentWa = this.getWaMeta(lead);
 
@@ -117,12 +141,27 @@ class LeadWorkflowService {
   static async onNewLead(savedLead, context = {}) {
     const cfg = await this.cfg(context);
 
-    const waResp = await WhatsAppService.sendCleanLeadNotification({
-      to: cfg.sellerPhone,
-      lead: savedLead,
-      tenantId: cfg.tenantId,
-      schema: cfg.schema,
-    });
+    if (this.isEmailOrigin(savedLead)) {
+      console.log(
+        `📧 Lead ${savedLead.id} com origem Email: sem disparo de WhatsApp.`,
+      );
+      return savedLead;
+    }
+
+    let waResp = null;
+    try {
+      waResp = await WhatsAppService.sendLeadStartAttendanceNotification({
+        to: cfg.sellerPhone,
+        lead: savedLead,
+        tenantId: cfg.tenantId,
+        schema: cfg.schema,
+      });
+    } catch (e) {
+      console.error(
+        `⚠️ Falha ao enviar lead ${savedLead.id} com botao de atendimento:`,
+        e.message,
+      );
+    }
 
     const notifyWamid = waResp?.messages?.[0]?.id || null;
     const lead = await Lead.findById(savedLead.id, {
@@ -156,9 +195,15 @@ class LeadWorkflowService {
       messageStatuses: [],
     });
 
-    console.log(
-      `📲 Lead ${savedLead.id} notificado no WhatsApp (${cfg.sellerPhone})`,
-    );
+    if (notifyWamid) {
+      console.log(
+        `📲 Lead ${savedLead.id} notificado no WhatsApp (${cfg.sellerPhone})`,
+      );
+    } else {
+      console.log(
+        `📲 Lead ${savedLead.id} processado para WhatsApp (${cfg.sellerPhone}) sem envio confirmado`,
+      );
+    }
 
     return lead;
   }

@@ -327,7 +327,7 @@ class LeadController {
         });
       }
 
-      const updatedLead = await LeadWorkflowService.claimLead(id, null, {
+      const updatedLead = await LeadWorkflowService.claimLead(id, "nextcar", {
         schema,
         tenantId,
       });

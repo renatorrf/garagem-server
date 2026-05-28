@@ -49,6 +49,18 @@ class WhatsAppWebhookController {
                 const id = interactive?.button_reply?.id || '';
                 const title = interactive?.button_reply?.title || '';
 
+                if (id.startsWith('lead:start-attendance:')) {
+                  const leadId = id.split(':').pop();
+                  console.log('🟢 Botão iniciar atendimento recebido:', {
+                    id,
+                    title,
+                    from,
+                  });
+
+                  await LeadWorkflowService.claimLead(leadId, 'nextcar', context);
+                  continue;
+                }
+
                 if (id.startsWith('seller:')) {
                   console.log('Selecao de vendedor via WhatsApp desativada.', { id, title, from });
                   continue;

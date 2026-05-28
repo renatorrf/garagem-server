@@ -182,6 +182,36 @@ class WhatsAppService {
     };
   }
 
+  static buildLeadStartAttendanceBody(lead) {
+    const data = this.buildCleanLeadData(lead);
+
+    return [
+      "*Novo lead - Next Car Uberlandia*",
+      `ID: *${data.id}*`,
+      `Origem: ${data.origem}`,
+      `Cliente: ${data.cliente}`,
+      data.telefone ? `Telefone: ${data.telefone}` : null,
+      `Veiculo: ${data.veiculo}`,
+      `Mensagem: ${data.mensagem}`,
+      "",
+      "Toque em *Iniciar atendimento* para assumir este lead.",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  static buildLeadStartAttendanceButtons(leadId) {
+    return [
+      {
+        type: "reply",
+        reply: {
+          id: `lead:start-attendance:${leadId}`,
+          title: "Iniciar atendimento",
+        },
+      },
+    ];
+  }
+
   static buildCleanLeadTemplateComponents(lead, mode = "structured") {
     const data = this.buildCleanLeadData(lead);
 
@@ -249,6 +279,43 @@ class WhatsAppService {
     };
 
     return this.postMessage(payload, context);
+  }
+
+  static async sendLeadStartAttendanceNotification({
+    to,
+    lead,
+    tenantId = null,
+    schema = null,
+  }) {
+    const sellerPhone = this.toWhatsAppPhone(to);
+
+    const payload = {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: sellerPhone,
+      type: "interactive",
+      interactive: {
+        type: "button",
+        header: {
+          type: "text",
+          text: "Novo lead",
+        },
+        body: {
+          text: this.buildLeadStartAttendanceBody(lead),
+        },
+        footer: {
+          text: "Next Car Uberlandia",
+        },
+        action: {
+          buttons: this.buildLeadStartAttendanceButtons(lead.id),
+        },
+      },
+    };
+
+    return this.postMessage(payload, {
+      tenantId: tenantId || lead?._tenantId || null,
+      schema: schema || lead?._schema || null,
+    });
   }
 
   static async sendLeadNotification({ to, lead, tenantId = null, schema = null }) {
