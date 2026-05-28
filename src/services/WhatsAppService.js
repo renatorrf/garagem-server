@@ -86,6 +86,36 @@ class WhatsAppService {
     };
   }
 
+  static buildLeadStartAttendanceBody(lead) {
+    const data = this.buildCleanLeadData(lead);
+
+    return [
+      "*Novo lead - Next Car Uberlandia*",
+      `ID: *${data.id}*`,
+      `Origem: ${data.origem}`,
+      `Cliente: ${data.cliente}`,
+      data.telefone ? `Telefone: ${data.telefone}` : null,
+      `Veiculo: ${data.veiculo}`,
+      `Mensagem: ${data.mensagem}`,
+      "",
+      "Toque em *Iniciar atendimento* para assumir este lead.",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  static buildLeadStartAttendanceButtons(leadId) {
+    return [
+      {
+        type: "reply",
+        reply: {
+          id: `lead:start-attendance:${leadId}`,
+          title: "Iniciar atendimento",
+        },
+      },
+    ];
+  }
+
   static async sendLeadStartAttendanceNotification({
     to,
     lead,
