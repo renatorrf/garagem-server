@@ -1,4 +1,3 @@
-const cron = require("node-cron");
 const db = require("../config/database");
 const Lead = require("../models/leads");
 const WhatsAppService = require("./WhatsAppService");
@@ -6,28 +5,8 @@ const TenantIntegrationService = require("./TenantIntegrationService");
 
 class LeadWorkflowService {
   static start() {
-    // Fluxos de lembrete e feedback foram desativados. Mantemos os metodos
-    // abaixo no arquivo para reativacao futura sem recriar a regra.
-    console.log("LeadWorkflowService iniciado (envio simples de leads)");
+    console.log("LeadWorkflowService iniciado (lead dispatch)");
     return;
-
-    cron.schedule("*/1 * * * *", async () => {
-      try {
-        await this.processRemindersTick();
-      } catch (e) {
-        console.error("❌ ReminderTick:", e.message);
-      }
-    });
-
-    cron.schedule("*/5 * * * *", async () => {
-      try {
-        await this.processFeedbackTick();
-      } catch (e) {
-        console.error("❌ FeedbackTick:", e.message);
-      }
-    });
-
-    console.log("✅ LeadWorkflowService iniciado (reminders + feedback)");
   }
 
   static async cfg(context = {}) {
@@ -36,19 +15,6 @@ class LeadWorkflowService {
     return {
       sellerPhone:
         waConfig.sellerPhone || process.env.WA_SELLER_PHONE || "5534991023869",
-      reminderIntervalSec: parseInt(
-        process.env.LEAD_REMINDER_INTERVAL_SEC || "120",
-        10,
-      ),
-      reminderMax: parseInt(process.env.LEAD_REMINDER_MAX || "5", 10),
-      feedbackDelaySec: parseInt(
-        process.env.LEAD_FEEDBACK_DELAY_SEC || "3600",
-        10,
-      ),
-      attendanceEstimateSec: parseInt(
-        process.env.LEAD_ATTENDANCE_ESTIMATE_SEC || "1800",
-        10,
-      ),
       tenantId: waConfig.tenantId || context.tenantId || null,
       schema:
         waConfig.schema ||
@@ -56,18 +22,6 @@ class LeadWorkflowService {
         process.env.SCHEMA_PADRAO ||
         "nextcar",
     };
-  }
-
-  static sellerCatalog() {
-    return {
-      gustavo: { id: 1, key: "gustavo", name: "Gustavo" },
-      lucas: { id: 2, key: "lucas", name: "Lucas" },
-      luis: { id: 3, key: "luis", name: "Luis" },
-    };
-  }
-
-  static outcomeMap(outcome) {
-    return "lido";
   }
 
   static getWaMeta(lead) {
@@ -208,105 +162,6 @@ class LeadWorkflowService {
     return lead;
   }
 
-  static async processRemindersTick(context = {}) {
-    const cfg = await this.cfg(context);
-
-    const q = `
-      SELECT *
-      FROM ${Lead.resolveTableName({ schema: cfg.schema })}
-      WHERE deleted_at IS NULL
-        AND status = 'novo'
-        AND (metadata->'wa'->>'claimedAt') IS NULL
-        AND COALESCE((metadata->'wa'->>'reminderCount')::int, 0) < $1
-        AND (metadata->'wa'->>'nextReminderAt') IS NOT NULL
-        AND (metadata->'wa'->>'nextReminderAt')::timestamptz <= now()
-      ORDER BY data_recebimento ASC
-      LIMIT 50
-    `;
-
-    const rs = await db.query(q, [cfg.reminderMax]);
-
-    for (const row of rs.rows) {
-      const lead = new Lead({
-        ...row,
-        _schema: cfg.schema,
-        _tenantId: cfg.tenantId,
-      });
-      const wa = this.getWaMeta(lead);
-      const reminderCount = (parseInt(wa.reminderCount || 0, 10) || 0) + 1;
-
-      const waResp = await WhatsAppService.sendReminder({
-        to: cfg.sellerPhone,
-        lead,
-        reminderCount,
-        tenantId: cfg.tenantId,
-        schema: cfg.schema,
-      });
-
-      const lastReminderAt = new Date();
-      const nextReminderAt = new Date(
-        lastReminderAt.getTime() + cfg.reminderIntervalSec * 1000,
-      );
-
-      await this.updateLeadWa(lead, {
-        lastReminderWamid: waResp?.messages?.[0]?.id || null,
-        reminderCount,
-        lastReminderAt: lastReminderAt.toISOString(),
-        nextReminderAt: nextReminderAt.toISOString(),
-      });
-
-      console.log(`🔔 Reminder ${reminderCount} para lead ${lead.id}`);
-    }
-  }
-
-  static async processFeedbackTick(context = {}) {
-    const cfg = await this.cfg(context);
-    const delayMs = cfg.feedbackDelaySec * 1000;
-
-    const q = `
-      SELECT *
-      FROM ${Lead.resolveTableName({ schema: cfg.schema })}
-      WHERE deleted_at IS NULL
-        AND status = 'novo'
-        AND COALESCE(
-          (metadata->'wa'->>'attendanceStartedAt')::timestamptz,
-          (metadata->'wa'->>'claimedAt')::timestamptz
-        ) IS NOT NULL
-        AND (metadata->'wa'->>'feedbackRequestedAt') IS NULL
-        AND (
-          COALESCE(
-            (metadata->'wa'->>'attendanceStartedAt')::timestamptz,
-            (metadata->'wa'->>'claimedAt')::timestamptz
-          ) + ($1::text || ' milliseconds')::interval
-        ) <= now()
-      ORDER BY data_recebimento ASC
-      LIMIT 50
-    `;
-
-    const rs = await db.query(q, [String(delayMs)]);
-
-    for (const row of rs.rows) {
-      const lead = new Lead({
-        ...row,
-        _schema: cfg.schema,
-        _tenantId: cfg.tenantId,
-      });
-      const waResp = await WhatsAppService.sendFeedbackRequest({
-        to: cfg.sellerPhone,
-        lead,
-        tenantId: cfg.tenantId,
-        schema: cfg.schema,
-      });
-
-      await this.updateLeadWa(lead, {
-        feedbackRequestedAt: new Date().toISOString(),
-        feedbackRequestWamid: waResp?.messages?.[0]?.id || null,
-      });
-
-      console.log(`🧾 Feedback solicitado para lead ${lead.id}`);
-    }
-  }
-
   static async claimLead(leadId, from = null, context = {}) {
     const lead = await Lead.findById(leadId, {
       schema: context.schema,
@@ -315,6 +170,7 @@ class LeadWorkflowService {
     if (!lead) return null;
 
     const now = new Date();
+    const sellerMarker = from || "nextcar";
 
     return this.updateLeadWa(
       lead,
@@ -322,7 +178,12 @@ class LeadWorkflowService {
         claimedAt: now.toISOString(),
         attendanceStartedAt: now.toISOString(),
         openConversationAt: now.toISOString(),
-        sellerSelectedBy: from,
+        sellerSelectedBy: sellerMarker,
+        sellerKey: null,
+        sellerId: null,
+        sellerName: null,
+        sellerSelectedAt: null,
+        estimatedEndAt: null,
         nextReminderAt: null,
       },
       {
@@ -332,110 +193,10 @@ class LeadWorkflowService {
     );
   }
 
-  static async assignSeller(
-    { leadId, sellerKey, sellerId, sellerName, from },
+  static async recordMessageStatus(
+    { wamid, status, timestamp, recipientId, raw },
     context = {},
   ) {
-    const cfg = await this.cfg(context);
-    const lead = await Lead.findById(leadId, {
-      schema: context.schema,
-      tenantId: context.tenantId,
-    });
-    if (!lead) return null;
-
-    const now = new Date();
-    const estimatedEndAt = new Date(
-      now.getTime() + cfg.attendanceEstimateSec * 1000,
-    );
-
-    const updated = await this.updateLeadWa(
-      lead,
-      {
-        sellerKey,
-        sellerId,
-        sellerName,
-        sellerSelectedBy: from,
-        sellerSelectedAt: now.toISOString(),
-        claimedAt: now.toISOString(),
-        attendanceStartedAt: now.toISOString(),
-        estimatedEndAt: estimatedEndAt.toISOString(),
-        nextReminderAt: null,
-      },
-      {
-        status: "contatado",
-        dataContato: now,
-      },
-    );
-
-    try {
-      const waResp = await WhatsAppService.sendStartConversationButton({
-        to: cfg.sellerPhone,
-        lead,
-        sellerName,
-      });
-
-      await this.updateLeadWa(lead, {
-        openConversationWamid: waResp?.messages?.[0]?.id || null,
-      });
-    } catch (e) {
-      console.error(
-        `⚠️ Falha ao enviar CTA de início de conversa para lead ${leadId}:`,
-        e.message,
-      );
-    }
-
-    return updated;
-  }
-
-  static async ignoreLead(leadId, from = null, context = {}) {
-    const lead = await Lead.findById(leadId, {
-      schema: context.schema,
-      tenantId: context.tenantId,
-    });
-    if (!lead) return null;
-
-    return this.updateLeadWa(
-      lead,
-      {
-        sellerSelectedBy: from,
-        claimedAt: "IGNORED",
-        closedAt: new Date().toISOString(),
-      },
-      {
-        status: "lido",
-      },
-    );
-  }
-
-  static async setOutcome({ leadId, outcome }, context = {}) {
-    const lead = await Lead.findById(leadId, {
-      schema: context.schema,
-      tenantId: context.tenantId,
-    });
-    if (!lead) return null;
-
-    const now = new Date();
-
-    return this.updateLeadWa(
-      lead,
-      {
-        outcome,
-        closedAt: now.toISOString(),
-      },
-      {
-        status: "lido",
-        dataContato: now,
-      },
-    );
-  }
-
-  static async recordMessageStatus({
-    wamid,
-    status,
-    timestamp,
-    recipientId,
-    raw,
-  }, context = {}) {
     if (!wamid) return null;
 
     const cfg = await this.cfg(context);
@@ -443,12 +204,7 @@ class LeadWorkflowService {
       SELECT *
       FROM ${Lead.resolveTableName({ schema: cfg.schema })}
       WHERE deleted_at IS NULL
-        AND (
-          metadata->'wa'->>'notifyWamid' = $1
-          OR metadata->'wa'->>'lastReminderWamid' = $1
-          OR metadata->'wa'->>'feedbackRequestWamid' = $1
-          OR metadata->'wa'->>'openConversationWamid' = $1
-        )
+        AND metadata->'wa'->>'notifyWamid' = $1
       ORDER BY data_recebimento DESC
       LIMIT 1
     `;
@@ -494,15 +250,19 @@ class LeadWorkflowService {
           }
         : {};
 
-    return this.updateLeadWa(lead, {
-      lastStatus: status,
-      lastStatusAt: timestamp
-        ? new Date(Number(timestamp) * 1000).toISOString()
-        : new Date().toISOString(),
-      messageStatuses: nextStatuses,
-      closedAt: wa.closedAt || null,
-      nextReminderAt: status === "read" ? null : wa.nextReminderAt || null,
-    }, leadPatch);
+    return this.updateLeadWa(
+      lead,
+      {
+        lastStatus: status,
+        lastStatusAt: timestamp
+          ? new Date(Number(timestamp) * 1000).toISOString()
+          : new Date().toISOString(),
+        messageStatuses: nextStatuses,
+        closedAt: wa.closedAt || null,
+        nextReminderAt: status === "read" ? null : wa.nextReminderAt || null,
+      },
+      leadPatch,
+    );
   }
 }
 

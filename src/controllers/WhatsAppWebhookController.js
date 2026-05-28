@@ -60,23 +60,12 @@ class WhatsAppWebhookController {
                   await LeadWorkflowService.claimLead(leadId, 'nextcar', context);
                   continue;
                 }
-
-                if (id.startsWith('seller:')) {
-                  console.log('Selecao de vendedor via WhatsApp desativada.', { id, title, from });
-                  continue;
-                }
-
                 console.log('🔘 Button reply recebido:', { id, title, from });
               }
 
               if (interactive?.type === 'list_reply') {
                 const id = interactive?.list_reply?.id || '';
                 const title = interactive?.list_reply?.title || '';
-
-                if (id.startsWith('outcome:')) {
-                  console.log('Feedback de negociacao via WhatsApp desativado.', { id, title, from });
-                  continue;
-                }
 
                 console.log('📋 List reply recebido:', { id, title, from });
               }
