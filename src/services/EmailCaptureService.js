@@ -1014,6 +1014,19 @@ class EmailCaptureService {
   }
 
   parseMobiautoEmail(text, subject) {
+    const normalizedText = String(text || "")
+      .replace(/\r/g, "")
+      .replace(/=\n/g, "")
+      .replace(/=20/g, " ")
+      .replace(/=09/g, " ")
+      .replace(/=3D/g, "=")
+      .replace(/\u00A0/g, " ");
+
+    const extractPhoneDigits = (raw) => {
+      const digits = String(raw || "").replace(/\D/g, "");
+      return digits.length >= 10 && digits.length <= 13 ? digits : null;
+    };
+
     const result = {
       nome: null,
       email: null,
@@ -1027,24 +1040,27 @@ class EmailCaptureService {
 
     try {
       const nomeMatch =
-        text.match(/Nome\s*\n\s*([^\n]+)/i) ||
-        text.match(/Nome[:\s]*([^\n]+)/i);
+        normalizedText.match(/Nome\s*\n\s*([^\n]+)/i) ||
+        normalizedText.match(/Nome[:\s]*([^\n]+)/i);
 
       if (nomeMatch) result.nome = nomeMatch[1].trim();
 
       const emailMatch =
-        text.match(/E-mail\s*\n\s*([^\n@]+@[^\n]+)/i) ||
-        text.match(/Email[:\s]*([^\n@]+@[^\n]+)/i);
+        normalizedText.match(/E-mail\s*\n\s*([^\n@]+@[^\n]+)/i) ||
+        normalizedText.match(/Email[:\s]*([^\n@]+@[^\n]+)/i);
 
       if (emailMatch) result.email = emailMatch[1].trim();
 
-      const telefoneMatch =
-        text.match(/Telefone\s*\n\s*(\d{10,11})/i) ||
-        text.match(/Telefone[:\s]*(\d{10,11})/i) ||
-        text.match(/(\d{2}\s?\d{4,5}\s?\d{4})/);
+      const telefoneRawMatch =
+        normalizedText.match(/Telefone\s*\n\s*([^\n]+)/i) ||
+        normalizedText.match(/Telefone[:\s]*([^\n]+)/i) ||
+        normalizedText.match(/WhatsApp[:\s]*([^\n]+)/i) ||
+        normalizedText.match(/Celular[:\s]*([^\n]+)/i) ||
+        normalizedText.match(/(?:\+?55\s*)?\(?\d{2}\)?\s*9?\d{4,5}[-\s]?\d{4}/);
 
-      if (telefoneMatch) {
-        result.telefone = telefoneMatch[1].replace(/\D/g, "");
+      if (telefoneRawMatch) {
+        const rawPhone = telefoneRawMatch[1] || telefoneRawMatch[0] || "";
+        result.telefone = extractPhoneDigits(rawPhone);
       }
 
       const veiculoMatch =
