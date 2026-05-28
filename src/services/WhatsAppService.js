@@ -185,7 +185,7 @@ class WhatsAppService {
         action: {
           name: "cta_url",
           parameters: {
-            display_text: "Abrir conversa com cliente",
+            display_text: "Abrir conversa",
             url: waUrl,
           },
         },
