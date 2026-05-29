@@ -20,6 +20,7 @@ const REGULAR_EMAIL_SENDERS = new Set([
   "nao-responder@mercadolivre.com",
   "dicas@newsolx.com.br",
   "notificacao@acesso.io",
+  "promocion@r.mercadopago.com.br",
 ]);
 
 class EmailCaptureService {
@@ -652,7 +653,16 @@ class EmailCaptureService {
   }
 
   isRegularEmailSender(emailData = {}) {
-    return REGULAR_EMAIL_SENDERS.has(this.getSenderEmail(emailData));
+    const senderEmail = this.getSenderEmail(emailData);
+
+    if (REGULAR_EMAIL_SENDERS.has(senderEmail)) {
+      return true;
+    }
+
+    return (
+      senderEmail.endsWith("@mercadopago.com.br") ||
+      senderEmail.endsWith("@r.mercadopago.com.br")
+    );
   }
 
   buildRegularEmailPlatformData(emailData = {}, fallbackText = "") {
@@ -730,7 +740,7 @@ class EmailCaptureService {
       emailData?.from?.value?.[0]?.address || "",
     ).toLowerCase();
 
-    if (REGULAR_EMAIL_SENDERS.has(senderEmail)) {
+    if (this.isRegularEmailSender(emailData)) {
       return "email";
     }
 
@@ -827,6 +837,62 @@ class EmailCaptureService {
     };
   }
 
+  extractPhoneFromTrackedWhatsappLink(rawText = "") {
+    const compact = String(rawText || "")
+      .replace(/\r/g, "")
+      .replace(/\s+/g, "");
+
+    if (!compact) return null;
+
+    const directMatch =
+      compact.match(/api\.whatsapp\.com\/send\?phone=55(\d{10,11})/i) ||
+      compact.match(/wa\.me\/55(\d{10,11})/i) ||
+      compact.match(/phone=55(\d{10,11})/i);
+
+    if (directMatch?.[1]) {
+      return directMatch[1];
+    }
+
+    const mandrillMatch = compact.match(
+      /mandrillapp\.com\/track\/click\/[^?]+\?p=+([^"'&<>]+)/i,
+    );
+
+    if (!mandrillMatch?.[1]) {
+      return null;
+    }
+
+    const token = mandrillMatch[1]
+      .replace(/%3D/gi, "=")
+      .replace(/-/g, "+")
+      .replace(/_/g, "/")
+      .replace(/[^A-Za-z0-9+/=]/g, "");
+
+    const padded = token + "=".repeat((4 - (token.length % 4)) % 4);
+
+    try {
+      const decoded = Buffer.from(padded, "base64").toString("utf8");
+      const normalizedDecoded = decoded.replace(/\\\//g, "/");
+
+      const phoneMatch =
+        normalizedDecoded.match(/api\.whatsapp\.com\/send\?phone=55(\d{10,11})/i) ||
+        normalizedDecoded.match(/wa\.me\/55(\d{10,11})/i) ||
+        normalizedDecoded.match(/phone=55(\d{10,11})/i);
+
+      if (phoneMatch?.[1]) {
+        return phoneMatch[1];
+      }
+
+      const genericDigits = normalizedDecoded.match(/\b55\d{10,11}\b/)?.[0];
+      if (genericDigits) {
+        return genericDigits.startsWith("55") ? genericDigits.slice(2) : genericDigits;
+      }
+    } catch (error) {
+      console.warn("⚠️ Falha ao decodificar link rastreado do BV:", error.message);
+    }
+
+    return null;
+  }
+
   parseBvEmail(text, subject, emailData = {}) {
     const clean = String(text || "")
       .replace(/\r/g, "")
@@ -915,6 +981,7 @@ class EmailCaptureService {
     let telefone =
       combined.match(/api\.whatsapp\.com\/send\?phone=55(\d{10,11})/i)?.[1] ||
       combined.match(/wa\.me\/55(\d{10,11})/i)?.[1] ||
+      this.extractPhoneFromTrackedWhatsappLink([clean, html, combined].join("\n")) ||
       combined.match(/\(?\d{2}\)?\s*9?\d{4,5}-?\d{4}/)?.[0]?.replace(/\D/g, "") ||
       null;
 
