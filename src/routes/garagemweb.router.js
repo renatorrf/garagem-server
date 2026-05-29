@@ -27,6 +27,9 @@ const uploadFotos = multer({
 router.post("/cadastraVeiculo", garagemWeb.cadastraVeiculo);
 
 router.post("/buscaVeiculo", garagemWeb.buscaVeiculo);
+router.post("/salvaPreCadastro", garagemWeb.salvaPreCadastro);
+router.post("/buscaPreCadastro", garagemWeb.buscaPreCadastro);
+router.post("/updatePreCadastro", garagemWeb.updatePreCadastro);
 router.post("/importarGaraje", importarGaraje.importarGarajeManual);
 router.post("/excluirVeiculo", garagemWeb.excluirVeiculo);
 router.post("/buscaImgVeiculo", garagemWeb.buscaImgVeiculo);

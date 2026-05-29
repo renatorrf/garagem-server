@@ -1557,19 +1557,93 @@ class EmailCaptureService {
   }
 
   parseWebmotorsEmail(text, subject) {
-    const veiculo =
-      subject?.match(/interesse.*?:\s*(.+)$/i)?.[1]?.trim() ||
-      this.extractVehicleInfo(subject, text);
+    const decodeQuotedPrintable = (value) =>
+      String(value || "")
+        .replace(/\r/g, "")
+        .replace(/=\n/g, "")
+        .replace(/=([A-F0-9]{2})/gi, (_, hex) =>
+          String.fromCharCode(parseInt(hex, 16)),
+        );
+
+    const normalizeText = (value) =>
+      decodeQuotedPrintable(value)
+        .replace(/\u00A0/g, " ")
+        .replace(/[ \t]+/g, " ")
+        .replace(/\n[ \t]+/g, "\n")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+
+    const cleanSubject = normalizeText(subject);
+    const cleanText = normalizeText(text);
+    const combined = [cleanSubject, cleanText].filter(Boolean).join("\n");
+
+    const pick = (regex) => combined.match(regex)?.[1]?.trim() || null;
+
+    const nome =
+      pick(/Ol[áa],\s*([^!\n]+)!/i) ||
+      pick(/Nome:\s*([^\n]+)/i) ||
+      null;
+
+    const email =
+      pick(/E-?mail:\s*([^\s@]+@[^\s]+)/i) ||
+      pick(/Email:\s*([^\s@]+@[^\s]+)/i) ||
+      null;
+
+    const telefoneRaw =
+      pick(/Telefone:\s*([^\n]+)/i) ||
+      pick(/WhatsApp:\s*([^\n]+)/i) ||
+      pick(/Celular:\s*([^\n]+)/i) ||
+      combined.match(/(?:\+?55\s*)?\(?\d{2}\)?\s*9?\d{4,5}[-\s]?\d{4}/)?.[0] ||
+      null;
+
+    const telefone = telefoneRaw ? telefoneRaw.replace(/\D/g, "") : null;
+
+    const veiculoBody = pick(/Ve[íi]culo:\s*([^\n]+)/i);
+    const veiculoSubject =
+      cleanSubject.match(/Proposta para o carro usado\s+(.+)/i)?.[1]?.trim() ||
+      cleanSubject.match(/Proposta para\s+(.+)/i)?.[1]?.trim() ||
+      null;
+    const ano = pick(/Ano:\s*(\d{4})/i) || cleanSubject.match(/\b(19|20)\d{2}\b/)?.[0] || null;
+
+    let veiculo =
+      veiculoBody ||
+      veiculoSubject ||
+      this.extractVehicleInfo(cleanSubject, cleanText) ||
+      null;
+
+    if (veiculo && ano && !veiculo.includes(ano)) {
+      veiculo = `${veiculo} ${ano}`;
+    }
+
+    const precoRaw =
+      pick(/Preço:\s*R\$\s*([\d\.,]+)/i) ||
+      pick(/Preco:\s*R\$\s*([\d\.,]+)/i) ||
+      combined.match(/R\$\s*([\d\.,]+)/i)?.[1] ||
+      null;
+
+    const placa =
+      pick(/Placa:\s*([A-Z0-9-]+)/i)?.toUpperCase() ||
+      combined.match(/\b[A-Z]{3}\d[A-Z0-9]\d{2}\b/i)?.[0]?.toUpperCase() ||
+      null;
+
+    const cor = pick(/Cor:\s*([^\n]+)/i) || null;
 
     return {
-      nome: null,
-      email: null,
-      telefone: null,
+      nome,
+      email,
+      telefone,
       veiculo,
-      mensagem: text || subject || "",
-      preco: null,
-      placa: null,
-      extras: { fonte: "webmotors" },
+      mensagem: cleanText || cleanSubject || "",
+      preco: precoRaw ? precoRaw.replace(/\./g, "").replace(",", ".") : null,
+      placa,
+      extras: {
+        fonte: "webmotors",
+        cor,
+        ano,
+        anunciante:
+          cleanText.match(/^(RATEO MOTORS|NEXT CAR|.+MOTORS)$/im)?.[1]?.trim() ||
+          null,
+      },
     };
   }
 

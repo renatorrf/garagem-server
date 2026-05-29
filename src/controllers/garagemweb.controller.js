@@ -437,6 +437,398 @@ exports.buscaVeiculo = async (req, res) => {
   }
 };
 
+exports.salvaPreCadastro = async (req, res) => {
+  const { seq_registro, des_veiculo, placa, valor_compra } = req.body;
+  const schema = getSchemaFromReq(req);
+
+  if (!schema) {
+    return res.status(400).json({
+      success: false,
+      message: "Schema não especificado nos headers",
+    });
+  }
+
+  if (!des_veiculo || String(des_veiculo).trim() === "") {
+    return res.status(400).json({
+      success: false,
+      message: "des_veiculo é obrigatório",
+    });
+  }
+
+  if (valor_compra === null || valor_compra === undefined || Number.isNaN(Number(valor_compra))) {
+    return res.status(400).json({
+      success: false,
+      message: "valor_compra é obrigatório",
+    });
+  }
+
+  const desVeiculoNormalizado = String(des_veiculo).trim();
+  const placaNormalizada = placa ? String(placa).trim().toUpperCase() : null;
+  const valorCompraNormalizado = Number(valor_compra);
+
+  try {
+    const queryResult = await db.transaction(async (client) => {
+      try {
+        const salvarMovimentoPreCadastro = async (seqPreCadastro) => {
+          const dataAtual = moment().format();
+          const valorMovimento = -Math.abs(valorCompraNormalizado);
+          const desMovimento = `Compra de veículo: ${desVeiculoNormalizado}`;
+          const desMovimentoDetalhado = placaNormalizada
+            ? `Pré-cadastro de compra - Placa ${placaNormalizada}`
+            : 'Pré-cadastro de compra';
+
+          const movimentoExistente = await client.query(
+            `
+              SELECT seq_registro
+                FROM ${schema}.tab_movimentacao
+               WHERE seq_movimentacao_relacionada = $1
+                 AND cod_categoria_movimento = 95
+               LIMIT 1
+            `,
+            [seqPreCadastro],
+          );
+
+          const movimentoJaExiste = movimentoExistente.rowCount > 0;
+
+          if (movimentoJaExiste) {
+            const updateMovimentoQuery = `
+              UPDATE ${schema}.tab_movimentacao
+                 SET tipo_movimento = $1,
+                     dta_movimento = $2,
+                     des_movimento = $3,
+                     ind_conciliado = $4,
+                     dta_conciliado = $5,
+                     ind_excluido = $6,
+                     ind_alterado = $7,
+                     seq_veiculo = $8,
+                     des_origem = $9,
+                     cod_banco = $10,
+                     des_movimento_detalhado = $11,
+                     cod_cartao = $12,
+                     des_observacao = $13,
+                     val_movimento = $14,
+                     descricao_mov_ofx = $15,
+                     cod_banco_ofx = $16,
+                     cod_categoria_movimento = $17,
+                     des_categoria_movimento = $18,
+                     parcela = $19,
+                     seq_despesa = $20,
+                     ind_faturado = $21,
+                     seq_fatura = $22,
+                     ind_cartao_pago = $23,
+                     cod_parceiro = $24,
+                     nom_parceiro = $25,
+                     cod_banco_destino = $26,
+                     des_banco_destino = $27,
+                     criterio_conciliacao = $28,
+                     origem_importacao = $29,
+                     hash_conciliacao = $30,
+                     seq_movimentacao_relacionada = $31,
+                     ind_ofx = $32,
+                     des_status_validacao = $33
+               WHERE seq_registro = $34
+            `;
+
+            await client.query(updateMovimentoQuery, [
+              'S',
+              dataAtual,
+              desMovimento,
+              false,
+              null,
+              false,
+              true,
+              null,
+              'Pré-cadastro de compra',
+              null,
+              desMovimentoDetalhado,
+              null,
+              placaNormalizada || null,
+              valorMovimento,
+              desMovimento,
+              null,
+              95,
+              'Venda de Veículos Próprios',
+              null,
+              null,
+              false,
+              null,
+              false,
+              null,
+              null,
+              null,
+              null,
+              'PRE_CADASTRO',
+              'PRE_CADASTRO',
+              null,
+              seqPreCadastro,
+              false,
+              'PENDENTE',
+              movimentoExistente.rows[0].seq_registro,
+            ]);
+          } else {
+            const insertMovimentoQuery = `
+              INSERT INTO ${schema}.tab_movimentacao (
+                tipo_movimento,
+                dta_movimento,
+                des_movimento,
+                ind_conciliado,
+                dta_conciliado,
+                ind_excluido,
+                ind_alterado,
+                seq_veiculo,
+                des_origem,
+                cod_banco,
+                des_movimento_detalhado,
+                cod_cartao,
+                des_observacao,
+                val_movimento,
+                descricao_mov_ofx,
+                cod_banco_ofx,
+                id_unico,
+                cod_categoria_movimento,
+                des_categoria_movimento,
+                parcela,
+                seq_despesa,
+                ind_faturado,
+                seq_fatura,
+                ind_cartao_pago,
+                cod_parceiro,
+                nom_parceiro,
+                cod_banco_destino,
+                des_banco_destino,
+                criterio_conciliacao,
+                origem_importacao,
+                hash_conciliacao,
+                seq_movimentacao_relacionada,
+                ind_ofx,
+                des_status_validacao
+              ) VALUES (
+                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
+                $11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
+                $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,
+                $31,$32,$33,$34
+              )
+            `;
+
+            await client.query(insertMovimentoQuery, [
+              'S',
+              dataAtual,
+              desMovimento,
+              false,
+              null,
+              false,
+              false,
+              null,
+              'Pré-cadastro de compra',
+              null,
+              desMovimentoDetalhado,
+              null,
+              placaNormalizada || null,
+              valorMovimento,
+              desMovimento,
+              null,
+              null,
+              95,
+              'Venda de Veículos Próprios',
+              null,
+              null,
+              false,
+              null,
+              false,
+              null,
+              null,
+              null,
+              null,
+              'PRE_CADASTRO',
+              'PRE_CADASTRO',
+              null,
+              seqPreCadastro,
+              false,
+              'PENDENTE',
+            ]);
+          }
+        };
+
+        if (seq_registro) {
+          const updateQuery = `
+            UPDATE ${schema}.tab_pre_cadastro_vei
+               SET des_veiculo = $1,
+                   placa = $2,
+                   valor_compra = $3
+             WHERE seq_registro = $4
+             RETURNING *
+          `;
+
+          const result = await client.query(updateQuery, [
+            desVeiculoNormalizado,
+            placaNormalizada,
+            valorCompraNormalizado,
+            seq_registro,
+          ]);
+
+          if (result.rowCount === 0) {
+            throw new Error('Pré-cadastro não encontrado para atualização');
+          }
+
+          await salvarMovimentoPreCadastro(result.rows[0].seq_registro);
+
+          return {
+            rows: result.rows,
+            rowCount: result.rowCount,
+          };
+        }
+
+        const insertQuery = `
+          INSERT INTO ${schema}.tab_pre_cadastro_vei
+            (des_veiculo, placa, valor_compra, ind_utilizado)
+          VALUES
+            ($1, $2, $3, false)
+          RETURNING *
+        `;
+
+        const result = await client.query(insertQuery, [
+          desVeiculoNormalizado,
+          placaNormalizada,
+          valorCompraNormalizado,
+        ]);
+
+        await salvarMovimentoPreCadastro(result.rows[0].seq_registro);
+
+        return {
+          rows: result.rows,
+          rowCount: result.rowCount,
+        };
+      } catch (innerError) {
+        console.error("Erro na transação:", innerError);
+        throw innerError;
+      }
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Operação realizada com sucesso",
+      data: queryResult,
+    });
+  } catch (error) {
+    console.error("Erro na operação:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Erro ao processar a requisição",
+      details: error.message,
+      errorDetails: error.stack,
+    });
+  }
+};
+
+exports.buscaPreCadastro = async (req, res) => {
+  const { ind_utilizado = false } = req.body || {};
+  const schema = getSchemaFromReq(req);
+
+  if (!schema) {
+    return res.status(400).json({
+      success: false,
+      message: "Schema não especificado nos headers",
+    });
+  }
+
+  try {
+    const queryResult = await db.transaction(async (client) => {
+      try {
+        const whereClause =
+          typeof ind_utilizado === "boolean" ? "WHERE ind_utilizado = $1" : "";
+        const values = typeof ind_utilizado === "boolean" ? [ind_utilizado] : [];
+
+        const query = `
+          SELECT *
+            FROM ${schema}.tab_pre_cadastro_vei
+            ${whereClause}
+        ORDER BY seq_registro DESC
+        `;
+
+        const result = await client.query(query, values);
+
+        return {
+          rows: result.rows,
+          rowCount: result.rowCount,
+        };
+      } catch (innerError) {
+        console.error("Erro na transação:", innerError);
+        throw innerError;
+      }
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Operação realizada com sucesso",
+      data: queryResult,
+    });
+  } catch (error) {
+    console.error("Erro na operação:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Erro ao processar a requisição",
+      details: error.message,
+      errorDetails: error.stack,
+    });
+  }
+};
+
+exports.updatePreCadastro = async (req, res) => {
+  const { seq_registro, ind_utilizado = true } = req.body;
+  const schema = getSchemaFromReq(req);
+
+  if (!schema) {
+    return res.status(400).json({
+      success: false,
+      message: "Schema não especificado nos headers",
+    });
+  }
+
+  if (!seq_registro) {
+    return res.status(400).json({
+      success: false,
+      message: "seq_registro é obrigatório",
+    });
+  }
+
+  try {
+    const queryResult = await db.transaction(async (client) => {
+      try {
+        const updateQuery = `
+          UPDATE ${schema}.tab_pre_cadastro_vei
+             SET ind_utilizado = $1
+           WHERE seq_registro = $2
+           RETURNING *
+        `;
+
+        const result = await client.query(updateQuery, [ind_utilizado, seq_registro]);
+
+        return {
+          rows: result.rows,
+          rowCount: result.rowCount,
+        };
+      } catch (innerError) {
+        console.error("Erro na transação:", innerError);
+        throw innerError;
+      }
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Operação realizada com sucesso",
+      data: queryResult,
+    });
+  } catch (error) {
+    console.error("Erro na operação:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Erro ao processar a requisição",
+      details: error.message,
+      errorDetails: error.stack,
+    });
+  }
+};
+
 exports.excluirVeiculo = async (req, res) => {
   const { seq_veiculo, motivo_exclusao } = req.body;
 
@@ -6180,6 +6572,12 @@ exports.updateMovimentoFinanceiro = async (req, res) => {
       const seqVeiculo = movimento.seq_veiculo
         ? Number(movimento.seq_veiculo)
         : null;
+      const seqPreCadastro = movimento.seq_movimentacao_relacionada
+        ? Number(movimento.seq_movimentacao_relacionada)
+        : null;
+      const seqPreCadastroEfetivo =
+        categoria === 95 ? seqPreCadastro || seqVeiculo : seqPreCadastro;
+      const seqVeiculoPersistido = categoria === 95 ? null : seqVeiculo;
       const codParceiro = movimento.cod_parceiro
         ? Number(movimento.cod_parceiro)
         : null;
@@ -6198,6 +6596,12 @@ exports.updateMovimentoFinanceiro = async (req, res) => {
           case 7:
             if (!seqVeiculo) {
               throw new Error("Esta categoria exige vÃ­nculo com veÃ­culo.");
+            }
+            break;
+
+          case 95:
+            if (!seqPreCadastroEfetivo) {
+              throw new Error("Esta categoria exige vínculo com pré-cadastro.");
             }
             break;
 
@@ -6242,9 +6646,10 @@ exports.updateMovimentoFinanceiro = async (req, res) => {
                des_banco_destino = $9,
                des_observacao = $10,
                des_movimento_detalhado = $11,
-               criterio_conciliacao = COALESCE($12, criterio_conciliacao),
-               des_status_validacao = $13
-         WHERE seq_registro = $14
+               seq_movimentacao_relacionada = $12,
+               criterio_conciliacao = COALESCE($13, criterio_conciliacao),
+               des_status_validacao = $14
+         WHERE seq_registro = $15
          RETURNING *
       `;
 
@@ -6253,13 +6658,14 @@ exports.updateMovimentoFinanceiro = async (req, res) => {
         movimento.des_categoria_movimento || null,
         movimento.ind_conciliado === true ? true : false,
         movimento.ind_conciliado === true ? moment().format() : null,
-        seqVeiculo,
+        seqVeiculoPersistido,
         codParceiro,
         movimento.nom_parceiro || null,
         codBancoDestino,
         movimento.des_banco_destino || null,
         movimento.des_observacao || null,
         movimento.des_movimento_detalhado || null,
+        seqPreCadastroEfetivo,
         movimento.criterio_conciliacao || null,
         movimento.ind_conciliado === true
           ? "VALIDADO_E_CONCILIADO"
@@ -6273,13 +6679,22 @@ exports.updateMovimentoFinanceiro = async (req, res) => {
         throw new Error("Movimento nÃ£o encontrado para atualizaÃ§Ã£o.");
       }
 
-      if (seqVeiculo) {
+      if (seqVeiculo && categoria !== 95) {
         await client.query(
           `UPDATE ${schema}.tab_veiculo
               SET cod_movimentacao = $1,
                   financeiro_incluso = true
             WHERE seq_veiculo = $2`,
           [movimento.seq_registro, seqVeiculo],
+        );
+      }
+
+      if (categoria === 95 && seqPreCadastroEfetivo) {
+        await client.query(
+          `UPDATE ${schema}.tab_pre_cadastro_vei
+              SET ind_utilizado = true
+            WHERE seq_registro = $1`,
+          [seqPreCadastroEfetivo],
         );
       }
 
