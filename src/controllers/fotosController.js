@@ -102,13 +102,13 @@ function buildValueLayerSvg({ width, height, valor, ano, km }) {
   const anoX = Math.round(getNumberEnv("FOTO_TEMPLATE_ANO_X", width * 0.320));
   const kmX = Math.round(getNumberEnv("FOTO_TEMPLATE_KM_X", width * 0.520));
   const footerY = Math.round(
-    getNumberEnv("FOTO_TEMPLATE_FOOTER_TEXT_Y", height * 0.985),
+    getNumberEnv("FOTO_TEMPLATE_FOOTER_TEXT_Y", height * 0.936),
   );
   const valueFont = Math.round(
-    getNumberEnv("FOTO_TEMPLATE_FOOTER_FONT", height * 0.026),
+    getNumberEnv("FOTO_TEMPLATE_FOOTER_FONT", height * 0.024),
   );
-  const valorTextLength = Math.round(width * 0.16);
-  const compactTextLength = Math.round(width * 0.11);
+  const valorTextLength = Math.round(width * 0.17);
+  const compactTextLength = Math.round(width * 0.1);
 
   return `
     <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
@@ -127,6 +127,8 @@ function buildValueLayerSvg({ width, height, valor, ano, km }) {
           font-weight="900"
           textLength="${valorTextLength}"
           lengthAdjust="spacingAndGlyphs"
+          dominant-baseline="middle"
+          alignment-baseline="middle"
         >${escapeXml(valor || "--")}</text>
 
         <text
@@ -137,6 +139,8 @@ function buildValueLayerSvg({ width, height, valor, ano, km }) {
           font-weight="900"
           textLength="${compactTextLength}"
           lengthAdjust="spacingAndGlyphs"
+          dominant-baseline="middle"
+          alignment-baseline="middle"
         >${escapeXml(ano || "--")}</text>
 
         <text
@@ -147,6 +151,8 @@ function buildValueLayerSvg({ width, height, valor, ano, km }) {
           font-weight="900"
           textLength="${compactTextLength}"
           lengthAdjust="spacingAndGlyphs"
+          dominant-baseline="middle"
+          alignment-baseline="middle"
         >${escapeXml(km || "--")}</text>
       </g>
     </svg>
@@ -221,33 +227,32 @@ async function renderVehicleCard(file, meta, templateAsset) {
     .rotate()
     .toBuffer({ resolveWithObject: true });
 
-  const vehicleWidth = rotated.info.width || templateAsset.width;
-  const vehicleHeight = rotated.info.height || templateAsset.height;
+  const canvasWidth = templateAsset.width;
+  const canvasHeight = templateAsset.height;
 
-  const templateLayer =
-    vehicleWidth === templateAsset.width &&
-    vehicleHeight === templateAsset.height
-      ? templateAsset.buffer
-      : await sharp(templateAsset.buffer, { failOnError: false })
-          .resize(vehicleWidth, vehicleHeight, {
-            fit: "fill",
-            withoutEnlargement: false,
-          })
-          .png()
-          .toBuffer();
+  const vehicleLayer = await sharp(rotated.data, { failOnError: false })
+    .resize(canvasWidth, canvasHeight, {
+      fit: "contain",
+      position: "centre",
+      background: "#000000",
+      withoutEnlargement: false,
+    })
+    .png()
+    .toBuffer();
 
   const valuesLayer = Buffer.from(
     buildValueLayerSvg({
-      width: vehicleWidth,
-      height: vehicleHeight,
+      width: canvasWidth,
+      height: canvasHeight,
       valor: meta.valor,
       ano: meta.ano,
       km: meta.km,
     }),
   );
 
-  const { data, info } = await sharp(rotated.data, { failOnError: false })
-    .composite([{ input: templateLayer }, { input: valuesLayer }])
+  const { data, info } = await sharp(vehicleLayer, { failOnError: false })
+    .composite([{ input: templateAsset.buffer }, { input: valuesLayer }])
+    .flatten({ background: "#000000" })
     .jpeg({ quality: 88, mozjpeg: true })
     .toBuffer({ resolveWithObject: true });
 
