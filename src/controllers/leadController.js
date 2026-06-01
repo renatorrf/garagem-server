@@ -354,6 +354,7 @@ class LeadController {
       const updatedLead = await LeadWorkflowService.claimLead(id, sellerMarker, {
         schema,
         tenantId,
+        channel: "room",
       });
 
       if (!updatedLead) {

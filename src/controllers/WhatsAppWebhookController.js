@@ -60,7 +60,7 @@ class WhatsAppWebhookController {
                   const claimedLead = await LeadWorkflowService.claimLead(
                     leadId,
                     'nextcar',
-                    context,
+                    { ...context, channel: 'wapa' },
                   );
 
                   if (claimedLead) {

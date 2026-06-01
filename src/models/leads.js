@@ -390,8 +390,12 @@ class Lead {
     }
 
     if (vendedorId) {
-      whereConditions.push(`vendedor_id = $${paramCount}`);
-      params.push(vendedorId);
+      whereConditions.push(`(
+        COALESCE(vendedor_id::text, '') ILIKE $${paramCount}
+        OR COALESCE(vendedor_whatsapp::text, '') ILIKE $${paramCount}
+        OR COALESCE(metadata->'wa'->>'sellerName', '') ILIKE $${paramCount}
+      )`);
+      params.push(`%${vendedorId}%`);
       paramCount++;
     }
 
@@ -419,6 +423,7 @@ class Lead {
         OR email_remetente ILIKE $${paramCount + 1}
         OR telefone ILIKE $${paramCount + 1}
         OR nome ILIKE $${paramCount + 1}
+        OR vendedor_id ILIKE $${paramCount + 1}
         OR vendedor_whatsapp ILIKE $${paramCount + 1}
       )
     `);
@@ -685,7 +690,12 @@ class Lead {
       SELECT
         vendedor_id,
         vendedor_whatsapp,
-        COALESCE(metadata->'wa'->>'sellerName', 'Não definido') AS seller_name,
+        COALESCE(
+          NULLIF(vendedor_id, ''),
+          NULLIF(vendedor_whatsapp, ''),
+          metadata->'wa'->>'sellerName',
+          'Não definido'
+        ) AS seller_name,
         COUNT(*)::int AS atendidos,
         COUNT(*) FILTER (WHERE status = 'lido')::int AS lidos,
         COUNT(*) FILTER (WHERE status = 'contatado')::int AS contatados,
@@ -829,10 +839,17 @@ class Lead {
 
     const now = new Date();
     const normalizedSeller = String(sellerName || "").trim() || "nextcar";
+    const claimChannel = String(
+      options.channel || options.claimChannel || "room",
+    )
+      .trim()
+      .toLowerCase();
+    const sellerColumn = claimChannel === "wapa" ? "vendedor_whatsapp" : "vendedor_id";
     const waPatch = {
       claimedAt: now.toISOString(),
       attendanceStartedAt: now.toISOString(),
       openConversationAt: now.toISOString(),
+      claimChannel,
       sellerSelectedBy: normalizedSeller,
       sellerId: normalizedSeller,
       sellerName: normalizedSeller,
@@ -845,7 +862,7 @@ class Lead {
 
     const query = `
       UPDATE ${tableName}
-         SET vendedor_id = $1,
+         SET ${sellerColumn} = $1,
              status = 'contatado',
              data_contato = $2,
              updated_at = NOW(),

@@ -194,9 +194,13 @@ class LeadWorkflowService {
 
   static async claimLead(leadId, from = null, context = {}) {
     const sellerMarker = String(from || "").trim() || "nextcar";
+    const claimChannel = String(context.channel || context.claimChannel || "room")
+      .trim()
+      .toLowerCase();
     const claimedLead = await Lead.claimLead(leadId, sellerMarker, {
       schema: context.schema,
       tenantId: context.tenantId,
+      channel: claimChannel,
     });
 
     if (!claimedLead) return null;
