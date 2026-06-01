@@ -16,6 +16,7 @@ const TenantIntegrationService = require("./TenantIntegrationService");
 
 const REGULAR_EMAIL_SENDERS = new Set([
   "ofertas@a.mercadolivre.com.br",
+  "comunicacoes@info.mercadolivre.com.br",
   "mailer@vindi.com.br",
   "nao-responder@mercadolivre.com",
   "dicas@newsolx.com.br",
