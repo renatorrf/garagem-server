@@ -724,3 +724,7 @@ cron.schedule("0 * * * *", async () => {
     console.error("Erro ao expirar sessões:", error.message);
   }
 });
+
+// Alias opcional caso queira expor uma rota específica para o painel de leads.
+// Se preferir, use diretamente POST /garagemweb/api/auth/login no frontend.
+exports.loginPainelLeads = exports.login;
