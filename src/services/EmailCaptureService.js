@@ -22,6 +22,7 @@ const REGULAR_EMAIL_SENDERS = new Set([
   "dicas@newsolx.com.br",
   "notificacao@acesso.io",
   "promocion@r.mercadopago.com.br",
+  "no-reply@mercadolibre.com"
 ]);
 
 class EmailCaptureService {
