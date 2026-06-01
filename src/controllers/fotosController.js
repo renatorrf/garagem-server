@@ -41,19 +41,14 @@ function bufferToDataUri(buffer, mimeType = "image/jpeg") {
 }
 
 function normalizeMoneyDisplay(value) {
-  const text = normalizeText(value, "");
-
-  if (!text) {
+  if (value === null || value === undefined || value === "") {
     return "--";
   }
 
-  const cleaned = text.replace(/\s+/g, " ").trim();
-
-  if (/^r\$/i.test(cleaned)) {
-    return cleaned.replace(/^r\$\s*/i, "R$ ");
-  }
-
-  return `R$ ${cleaned}`;
+  return Number(value).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
 }
 
 function getNumberEnv(name, fallback) {
