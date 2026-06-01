@@ -51,7 +51,8 @@ CREATE TABLE "nextcar"."tab_agenda" (
 	"concluido" boolean,
 	"seq_veiculo" integer,
 	"ind_cancelado" boolean DEFAULT false,
-	"motivo_cancelamento" varchar(255)
+	"motivo_cancelamento" varchar(255),
+	"notificado_em" timestamp NULL
 );
 CREATE TABLE "nextcar"."tab_alocador_despesa_veiculo" (
 	"seq_registro" serial PRIMARY KEY,

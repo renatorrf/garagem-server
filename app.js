@@ -124,6 +124,7 @@ const garagemWeb = require("./src/routes/garagemweb.router");
 const integrador = require("./src/routes/integradores.router");
 const emailCaptureRoutes = require("./src/routes/lead.router");
 const whatsappWebhookRoutes = require("./src/routes/whatsappWebhookRoutes");
+const pushNotificationsRoutes = require("./src/routes/pushNotifications.routes");
 const importadorGaraje = require("./src/controllers/importadorGaraje.controller");
 const authGaragemwebRoutes = require("./src/routes/authGaragemweb.routes");
 
@@ -136,6 +137,7 @@ app.use("/garagemweb/integradores", integrador);
 // Mantém compatibilidade com rotas antigas e novas
 app.use("/garagemweb/api", emailCaptureRoutes);
 //app.use("/garagemweb/leads", emailCaptureRoutes);
+app.use("/garagemweb/api/push", pushNotificationsRoutes);
 
 // WhatsApp webhook
 app.use("/webhooks/whatsapp", whatsappWebhookRoutes);
@@ -153,6 +155,24 @@ try {
   console.log("✅ LeadWorkflowService iniciado");
 } catch (error) {
   console.error("❌ Falha ao iniciar LeadWorkflowService:", error.message);
+}
+
+try {
+  const PushNotificationService = require("./src/services/PushNotificationService");
+  PushNotificationService.start().catch((error) =>
+    console.error("❌ Falha ao iniciar PushNotificationService:", error.message),
+  );
+} catch (error) {
+  console.error("❌ Falha ao iniciar PushNotificationService:", error.message);
+}
+
+try {
+  const AgendaReminderService = require("./src/services/AgendaReminderService");
+  AgendaReminderService.start().catch((error) =>
+    console.error("❌ Falha ao iniciar AgendaReminderService:", error.message),
+  );
+} catch (error) {
+  console.error("❌ Falha ao iniciar AgendaReminderService:", error.message);
 }
 
 try {
