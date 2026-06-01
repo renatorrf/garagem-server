@@ -711,6 +711,112 @@ exports.passkeyAuthenticateVerify = async (req, res) => {
   }
 };
 
+exports.createTenantUser = async (req, res) => {
+  try {
+    if (!req.user?.masterUser) {
+      return res.status(403).json({
+        success: false,
+        message: "Apenas usuário master pode criar novos usuários.",
+      });
+    }
+
+    const { nome, username, email, password, role, masterUser, ativo } =
+      req.body || {};
+
+    if (!nome || !username || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Informe nome, usuário e senha.",
+      });
+    }
+
+    const finalRole = String(role || "user")
+      .trim()
+      .toLowerCase();
+    const allowedRoles = [
+      "user",
+      "admin",
+      "manager",
+      "financeiro",
+      "vendedor",
+      "master",
+    ];
+
+    if (!allowedRoles.includes(finalRole)) {
+      return res.status(400).json({
+        success: false,
+        message: "Perfil de usuário inválido.",
+      });
+    }
+
+    const existing = await db.query(
+      `select id from public.users where lower(username) = lower($1) limit 1`,
+      [username],
+    );
+
+    if (existing.rows.length) {
+      return res.status(409).json({
+        success: false,
+        message: "Username já cadastrado.",
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    const result = await db.query(
+      `
+        insert into public.users (
+          tenant_id,
+          nome,
+          username,
+          email,
+          password_hash,
+          role,
+          master_user,
+          ativo,
+          created_at,
+          updated_at
+        )
+        values ($1, $2, $3, $4, $5, $6, $7, $8, now(), now())
+        returning
+          id,
+          tenant_id,
+          nome,
+          username,
+          email,
+          role,
+          master_user,
+          ativo,
+          created_at,
+          updated_at
+      `,
+      [
+        req.user.tenantId,
+        String(nome).trim(),
+        String(username).trim().toLowerCase(),
+        email ? String(email).trim().toLowerCase() : null,
+        passwordHash,
+        finalRole,
+        Boolean(masterUser),
+        ativo !== false,
+      ],
+    );
+
+    return res.json({
+      success: true,
+      message: "Usuário criado com sucesso.",
+      user: result.rows[0],
+    });
+  } catch (error) {
+    console.error("createTenantUser error", error);
+    return res.status(500).json({
+      success: false,
+      message: "Erro ao criar usuário.",
+      error: error.message,
+    });
+  }
+};
+
 cron.schedule("0 * * * *", async () => {
   try {
     await db.query(`

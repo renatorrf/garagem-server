@@ -5,6 +5,7 @@ const auth = require("../controllers/authGaragemweb.controller");
 router.post("/bootstrap-master", auth.bootstrapMaster);
 router.post("/login", auth.login);
 router.get("/me", auth.verifyJwt, auth.me);
+router.post("/users", auth.verifyJwt, auth.createTenantUser);
 
 router.post("/passkey/register/options", auth.passkeyRegisterOptions);
 router.post("/passkey/register/verify", auth.passkeyRegisterVerify);

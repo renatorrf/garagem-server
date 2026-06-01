@@ -59,6 +59,8 @@ if (process.env.NODE_ENV === "development") {
   app.use(morgan("dev"));
 }
 
+
+
 /**
  * Health endpoints
  * Devem ficar no topo para responder mesmo se algo mais falhar depois.
