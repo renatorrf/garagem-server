@@ -1,45 +1,32 @@
 "use strict";
 
 const PushNotificationService = require("../services/PushNotificationService");
-const { assertValidSchemaName } = require("../utils/tenantContext");
-const {
-  resolveLeadRoomUser,
-  isAllowedLeadRoomUser,
-} = require("../utils/leadsRoom");
+const { getSchemaFromReq } = require("../utils/tenantContext");
 
 function resolveScope(req) {
   return PushNotificationService.normalizeScope(
-    String(req?.query?.scope || req?.body?.scope || "leads-room"),
+    req?.query?.scope || req?.body?.scope || "painel-leads",
   );
 }
 
-function resolveSchemaName(req) {
+function resolveUsuario(req) {
   const raw =
-    req?.body?.schemaName ||
-    req?.query?.schemaName ||
-    process.env.SCHEMA_PADRAO ||
-    "nextcar";
+    req?.usuario?.usuario ||
+    req?.usuario?.username ||
+    req?.usuario?.cod_usuario ||
+    req?.usuario?.cod_vendedor ||
+    req?.user?.usuario ||
+    req?.user?.username ||
+    req?.user?.cod_usuario ||
+    req?.user?.cod_vendedor ||
+    req?.auth?.usuario ||
+    req?.auth?.username ||
+    req?.body?.usuario ||
+    req?.query?.usuario ||
+    req?.headers?.["x-push-user"] ||
+    "sistema";
 
-  return assertValidSchemaName(raw);
-}
-
-function resolveRoomCredentials(req) {
-  const vendor = resolveLeadRoomUser(
-    req?.body?.vendor || req?.body?.usuario || req?.query?.vendor || req?.query?.usuario,
-  );
-  const password = String(
-    req?.body?.password || req?.query?.password || req?.headers?.["x-room-password"] || "",
-  )
-    .trim()
-    .toLowerCase();
-
-  if (!vendor || !isAllowedLeadRoomUser(vendor) || password !== vendor) {
-    const error = new Error("Credenciais da room invalidas.");
-    error.statusCode = 401;
-    throw error;
-  }
-
-  return { vendor };
+  return PushNotificationService.normalizeUsuario(raw);
 }
 
 exports.getPublicKey = async (req, res) => {
@@ -47,7 +34,7 @@ exports.getPublicKey = async (req, res) => {
     if (!PushNotificationService.isConfigured()) {
       return res.status(503).json({
         success: false,
-        message: "Push notifications nao configuradas.",
+        message: "Push notifications não configuradas.",
       });
     }
 
@@ -65,15 +52,22 @@ exports.getPublicKey = async (req, res) => {
 
 exports.getStatus = async (req, res) => {
   try {
-    resolveRoomCredentials(req);
+    const schemaName = getSchemaFromReq(req);
+    if (!schemaName) {
+      return res.status(400).json({
+        success: false,
+        message: "Schema não especificado.",
+      });
+    }
 
-    const schemaName = resolveSchemaName(req);
     const scope = resolveScope(req);
+    const usuario = resolveUsuario(req);
     const endpoint = String(req?.query?.endpoint || "").trim();
 
     const status = await PushNotificationService.getSubscriptionStatus({
       schemaName,
       scope,
+      usuario,
       endpoint: endpoint || null,
     });
 
@@ -81,10 +75,11 @@ exports.getStatus = async (req, res) => {
       success: true,
       schemaName,
       scope,
+      usuario,
       ...status,
     });
   } catch (error) {
-    return res.status(error.statusCode || 500).json({
+    return res.status(500).json({
       success: false,
       message: error.message,
     });
@@ -93,23 +88,31 @@ exports.getStatus = async (req, res) => {
 
 exports.subscribe = async (req, res) => {
   try {
-    const { vendor } = resolveRoomCredentials(req);
-    const schemaName = resolveSchemaName(req);
+    const schemaName = getSchemaFromReq(req);
+    if (!schemaName) {
+      return res.status(400).json({
+        success: false,
+        message: "Schema não especificado.",
+      });
+    }
+
     const scope = resolveScope(req);
+    const usuario = resolveUsuario(req);
     const { subscription, deviceName } = req.body || {};
 
     if (!subscription) {
       return res.status(400).json({
         success: false,
-        message: "Subscription nao informada.",
+        message: "Subscription não informada.",
       });
     }
 
     const saved = await PushNotificationService.saveSubscription({
       schemaName,
       scope,
+      usuario,
       subscription,
-      deviceName: deviceName || vendor,
+      deviceName: deviceName || usuario,
       userAgent: req.headers["user-agent"] || null,
     });
 
@@ -119,7 +122,7 @@ exports.subscribe = async (req, res) => {
       data: saved,
     });
   } catch (error) {
-    return res.status(error.statusCode || 500).json({
+    return res.status(500).json({
       success: false,
       message: error.message,
     });
@@ -128,10 +131,16 @@ exports.subscribe = async (req, res) => {
 
 exports.unsubscribe = async (req, res) => {
   try {
-    resolveRoomCredentials(req);
+    const schemaName = getSchemaFromReq(req);
+    if (!schemaName) {
+      return res.status(400).json({
+        success: false,
+        message: "Schema não especificado.",
+      });
+    }
 
-    const schemaName = resolveSchemaName(req);
     const scope = resolveScope(req);
+    const usuario = resolveUsuario(req);
     const endpoint = String(
       req?.body?.endpoint || req?.query?.endpoint || "",
     ).trim();
@@ -139,13 +148,14 @@ exports.unsubscribe = async (req, res) => {
     if (!endpoint) {
       return res.status(400).json({
         success: false,
-        message: "Endpoint nao informado.",
+        message: "Endpoint não informado.",
       });
     }
 
     await PushNotificationService.deactivateSubscription({
       schemaName,
       scope,
+      usuario,
       endpoint,
     });
 
@@ -154,7 +164,7 @@ exports.unsubscribe = async (req, res) => {
       message: "Subscription desativada.",
     });
   } catch (error) {
-    return res.status(error.statusCode || 500).json({
+    return res.status(500).json({
       success: false,
       message: error.message,
     });

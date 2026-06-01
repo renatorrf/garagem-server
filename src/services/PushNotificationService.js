@@ -9,11 +9,24 @@ class PushNotificationService {
   static started = false;
 
   static normalizeScope(scope = "agenda") {
-    return String(scope || "agenda")
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9_-]/g, "")
-      .slice(0, 50) || "agenda";
+    return (
+      String(scope || "agenda")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]/g, "")
+        .slice(0, 50) || "agenda"
+    );
+  }
+
+  static normalizeUsuario(usuario = "sistema") {
+    return (
+      String(usuario || "sistema")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .replace(/[^a-z0-9_.@ -]/g, "")
+        .slice(0, 80) || "sistema"
+    );
   }
 
   static getConfig() {
@@ -67,9 +80,7 @@ class PushNotificationService {
     await this.ensureInfrastructure();
 
     if (!this.configureVapid()) {
-      console.log(
-        "⚠️ Push notifications aguardando configuração VAPID no ambiente.",
-      );
+      console.log("⚠️ Push notifications aguardando configuração VAPID no ambiente.");
       return;
     }
 
@@ -97,6 +108,7 @@ class PushNotificationService {
         seq_registro serial PRIMARY KEY,
         schema_name varchar(50) NOT NULL,
         scope varchar(50) NOT NULL DEFAULT 'agenda',
+        usuario varchar(80) NOT NULL DEFAULT 'sistema',
         endpoint text NOT NULL,
         p256dh text NOT NULL,
         auth text NOT NULL,
@@ -107,13 +119,39 @@ class PushNotificationService {
         ind_active boolean NOT NULL DEFAULT true,
         created_at timestamp NOT NULL DEFAULT NOW(),
         updated_at timestamp NOT NULL DEFAULT NOW(),
-        last_seen_at timestamp NULL,
-        CONSTRAINT tab_push_subscription_schema_scope_endpoint_uniq UNIQUE (
-          schema_name,
-          scope,
-          endpoint
-        )
+        last_seen_at timestamp NULL
       );
+    `);
+
+    await db.query(`
+      ALTER TABLE public.tab_push_subscription
+      ADD COLUMN IF NOT EXISTS usuario varchar(80);
+    `);
+
+    await db.query(`
+      UPDATE public.tab_push_subscription
+         SET usuario = 'sistema'
+       WHERE usuario IS NULL OR btrim(usuario) = '';
+    `);
+
+    await db.query(`
+      ALTER TABLE public.tab_push_subscription
+      ALTER COLUMN usuario SET DEFAULT 'sistema';
+    `);
+
+    await db.query(`
+      ALTER TABLE public.tab_push_subscription
+      ALTER COLUMN usuario SET NOT NULL;
+    `);
+
+    await db.query(`
+      ALTER TABLE public.tab_push_subscription
+      DROP CONSTRAINT IF EXISTS tab_push_subscription_schema_scope_endpoint_uniq;
+    `);
+
+    await db.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS tab_push_subscription_schema_scope_usuario_endpoint_uniq
+      ON public.tab_push_subscription (schema_name, scope, usuario, endpoint);
     `);
 
     this.infrastructureReady = true;
@@ -135,7 +173,9 @@ class PushNotificationService {
 
     if (check.rowCount > 0) return;
 
-    await db.query(`ALTER TABLE ${schema}.tab_agenda ADD COLUMN notificado_em timestamp NULL`);
+    await db.query(
+      `ALTER TABLE ${schema}.tab_agenda ADD COLUMN notificado_em timestamp NULL`,
+    );
   }
 
   static normalizeSubscription(subscription = {}) {
@@ -144,7 +184,9 @@ class PushNotificationService {
     const p256dh = String(keys.p256dh || "").trim();
     const auth = String(keys.auth || "").trim();
     const expirationTime =
-      subscription.expirationTime == null ? null : new Date(subscription.expirationTime);
+      subscription.expirationTime == null
+        ? null
+        : new Date(subscription.expirationTime);
 
     if (!endpoint || !p256dh || !auth) {
       throw new Error("Subscription inválida.");
@@ -161,6 +203,7 @@ class PushNotificationService {
   static async saveSubscription({
     schemaName,
     scope = "agenda",
+    usuario = "sistema",
     subscription,
     deviceName = null,
     userAgent = null,
@@ -170,6 +213,7 @@ class PushNotificationService {
 
     const schema = assertValidSchemaName(schemaName);
     const normalizedScope = this.normalizeScope(scope);
+    const normalizedUsuario = this.normalizeUsuario(usuario);
     const normalized = this.normalizeSubscription(subscription);
     const payload = JSON.stringify(subscription);
 
@@ -177,6 +221,7 @@ class PushNotificationService {
       INSERT INTO public.tab_push_subscription (
         schema_name,
         scope,
+        usuario,
         endpoint,
         p256dh,
         auth,
@@ -188,9 +233,9 @@ class PushNotificationService {
         updated_at,
         last_seen_at
       ) VALUES (
-        $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, true, NOW(), NOW()
+        $1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, true, NOW(), NOW()
       )
-      ON CONFLICT (schema_name, scope, endpoint)
+      ON CONFLICT (schema_name, scope, usuario, endpoint)
       DO UPDATE SET
         p256dh = EXCLUDED.p256dh,
         auth = EXCLUDED.auth,
@@ -207,6 +252,7 @@ class PushNotificationService {
     const result = await db.query(sql, [
       schema,
       normalizedScope,
+      normalizedUsuario,
       normalized.endpoint,
       normalized.p256dh,
       normalized.auth,
@@ -222,13 +268,25 @@ class PushNotificationService {
   static async deactivateSubscription({
     schemaName,
     scope = "agenda",
+    usuario = null,
     endpoint,
   }) {
+    await this.ensureInfrastructure();
+
     const schema = assertValidSchemaName(schemaName);
     const normalizedScope = this.normalizeScope(scope);
     const normalizedEndpoint = String(endpoint || "").trim();
+    const normalizedUsuario = usuario ? this.normalizeUsuario(usuario) : null;
 
     if (!normalizedEndpoint) return 0;
+
+    const params = [schema, normalizedScope, normalizedEndpoint];
+    let usuarioFilter = "";
+
+    if (normalizedUsuario) {
+      params.push(normalizedUsuario);
+      usuarioFilter = ` AND usuario = $${params.length}`;
+    }
 
     const result = await db.query(
       `
@@ -238,8 +296,9 @@ class PushNotificationService {
          WHERE schema_name = $1
            AND scope = $2
            AND endpoint = $3
+           ${usuarioFilter}
       `,
-      [schema, normalizedScope, normalizedEndpoint],
+      params,
     );
 
     return result.rowCount || 0;
@@ -248,45 +307,48 @@ class PushNotificationService {
   static async getSubscriptionStatus({
     schemaName,
     scope = "agenda",
+    usuario = null,
     endpoint = null,
   }) {
+    await this.ensureInfrastructure();
+
     const schema = assertValidSchemaName(schemaName);
     const normalizedScope = this.normalizeScope(scope);
     const normalizedEndpoint = String(endpoint || "").trim();
+    const normalizedUsuario = usuario ? this.normalizeUsuario(usuario) : null;
 
-    if (!normalizedEndpoint) {
-      const result = await db.query(
-        `
-          SELECT COUNT(*)::int AS total
-            FROM public.tab_push_subscription
-           WHERE schema_name = $1
-             AND scope = $2
-             AND ind_active = true
-        `,
-        [schema, normalizedScope],
-      );
+    const params = [schema, normalizedScope];
+    let endpointFilter = "";
+    let usuarioFilter = "";
 
-      return {
-        active: Number(result.rows?.[0]?.total || 0) > 0,
-        total: Number(result.rows?.[0]?.total || 0),
-      };
+    if (normalizedEndpoint) {
+      params.push(normalizedEndpoint);
+      endpointFilter = ` AND endpoint = $${params.length}`;
+    }
+
+    if (normalizedUsuario) {
+      params.push(normalizedUsuario);
+      usuarioFilter = ` AND usuario = $${params.length}`;
     }
 
     const result = await db.query(
       `
-        SELECT seq_registro, ind_active
+        SELECT COUNT(*)::int AS total
           FROM public.tab_push_subscription
          WHERE schema_name = $1
            AND scope = $2
-           AND endpoint = $3
-         LIMIT 1
+           AND ind_active = true
+           ${endpointFilter}
+           ${usuarioFilter}
       `,
-      [schema, normalizedScope, normalizedEndpoint],
+      params,
     );
 
+    const total = Number(result.rows?.[0]?.total || 0);
+
     return {
-      active: result.rowCount > 0 && result.rows[0].ind_active === true,
-      total: result.rowCount > 0 ? 1 : 0,
+      active: total > 0,
+      total,
     };
   }
 
@@ -346,9 +408,9 @@ class PushNotificationService {
     const origin = String(
       lead?.metadata?.plataforma || lead?.origem || "Lead",
     ).trim();
+    const openUrl = cfg.roomOpenUrl || `${cfg.appUrl}/painel-leads`;
 
-    const title =
-      status === "contatado" ? "Lead assumido" : "Novo lead na room";
+    const title = status === "contatado" ? "Lead assumido" : "Novo lead no painel";
     const bodyParts = [
       clientName,
       vehicleName,
@@ -361,20 +423,20 @@ class PushNotificationService {
         body: bodyParts.join(" - "),
         icon: cfg.iconUrl,
         badge: cfg.badgeUrl,
-        tag: `leads-room-${schemaName}-${lead?.id || "lead"}`,
+        tag: `painel-leads-${schemaName}-${lead?.id || "lead"}`,
         renotify: true,
         requireInteraction: true,
         data: {
-          url: cfg.roomOpenUrl || `${cfg.appUrl}/painel-leads`,
+          url: openUrl,
           schema: schemaName,
-          scope: "leads-room",
+          scope: "painel-leads",
           leadId: lead?.id || null,
           origin,
           claimedBy,
           onActionClick: {
             default: {
               operation: "openWindow",
-              url: cfg.roomOpenUrl || `${cfg.appUrl}/painel-leads`,
+              url: openUrl,
             },
           },
         },
@@ -400,7 +462,7 @@ class PushNotificationService {
 
     try {
       await webpush.sendNotification(subscription, JSON.stringify(payload));
-      return { success: true };
+      return { success: true, endpoint: subscriptionRow.endpoint };
     } catch (error) {
       const statusCode = Number(
         error?.statusCode ||
@@ -414,6 +476,7 @@ class PushNotificationService {
         await this.deactivateSubscription({
           schemaName: subscriptionRow.schema_name,
           scope: subscriptionRow.scope,
+          usuario: subscriptionRow.usuario,
           endpoint: subscriptionRow.endpoint,
         });
       }
@@ -423,6 +486,8 @@ class PushNotificationService {
   }
 
   static async getActiveSubscriptions(schemaName, scope = "agenda") {
+    await this.ensureInfrastructure();
+
     const schema = assertValidSchemaName(schemaName);
     const normalizedScope = this.normalizeScope(scope);
 
@@ -472,11 +537,15 @@ class PushNotificationService {
     lead,
     schemaName,
     claimedBy = null,
+    scope = "painel-leads",
   }) {
     if (!schemaName || !lead) return [];
+
+    const normalizedScope = this.normalizeScope(scope || "painel-leads");
+
     return this.sendNotificationToScope(
       schemaName,
-      "leads-room",
+      normalizedScope,
       this.buildLeadRoomPayload({ lead, schemaName, claimedBy }),
     );
   }

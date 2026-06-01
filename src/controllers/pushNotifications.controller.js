@@ -1,10 +1,30 @@
 const PushNotificationService = require("../services/PushNotificationService");
 const { getSchemaFromReq } = require("../utils/tenantContext");
 
-function resolveScope(req) {
-  return String(req?.query?.scope || req?.body?.scope || "agenda")
-    .trim()
-    .toLowerCase();
+function resolveScope(req, defaultScope = "agenda") {
+  return PushNotificationService.normalizeScope(
+    req?.query?.scope || req?.body?.scope || defaultScope,
+  );
+}
+
+function resolveUsuario(req) {
+  const raw =
+    req?.usuario?.usuario ||
+    req?.usuario?.username ||
+    req?.usuario?.cod_usuario ||
+    req?.usuario?.cod_vendedor ||
+    req?.user?.usuario ||
+    req?.user?.username ||
+    req?.user?.cod_usuario ||
+    req?.user?.cod_vendedor ||
+    req?.auth?.usuario ||
+    req?.auth?.username ||
+    req?.body?.usuario ||
+    req?.query?.usuario ||
+    req?.headers?.["x-push-user"] ||
+    "sistema";
+
+  return PushNotificationService.normalizeUsuario(raw);
 }
 
 exports.getPublicKey = async (req, res) => {
@@ -38,13 +58,14 @@ exports.getStatus = async (req, res) => {
       });
     }
 
-    await PushNotificationService.ensureInfrastructure();
-
     const scope = resolveScope(req);
+    const usuario = resolveUsuario(req);
     const endpoint = String(req?.query?.endpoint || "").trim();
+
     const status = await PushNotificationService.getSubscriptionStatus({
       schemaName,
       scope,
+      usuario,
       endpoint: endpoint || null,
     });
 
@@ -52,6 +73,7 @@ exports.getStatus = async (req, res) => {
       success: true,
       schemaName,
       scope,
+      usuario,
       ...status,
     });
   } catch (error) {
@@ -74,6 +96,7 @@ exports.subscribe = async (req, res) => {
 
     const { subscription, deviceName } = req.body || {};
     const scope = resolveScope(req);
+    const usuario = resolveUsuario(req);
 
     if (!subscription) {
       return res.status(400).json({
@@ -85,8 +108,9 @@ exports.subscribe = async (req, res) => {
     const saved = await PushNotificationService.saveSubscription({
       schemaName,
       scope,
+      usuario,
       subscription,
-      deviceName: deviceName || req.headers["x-device-name"] || null,
+      deviceName: deviceName || req.headers["x-device-name"] || usuario,
       userAgent: req.headers["user-agent"] || null,
     });
 
@@ -114,7 +138,10 @@ exports.unsubscribe = async (req, res) => {
     }
 
     const scope = resolveScope(req);
-    const endpoint = String(req?.body?.endpoint || req?.query?.endpoint || "").trim();
+    const usuario = resolveUsuario(req);
+    const endpoint = String(
+      req?.body?.endpoint || req?.query?.endpoint || "",
+    ).trim();
 
     if (!endpoint) {
       return res.status(400).json({
@@ -126,6 +153,7 @@ exports.unsubscribe = async (req, res) => {
     await PushNotificationService.deactivateSubscription({
       schemaName,
       scope,
+      usuario,
       endpoint,
     });
 
