@@ -1170,6 +1170,67 @@ class EmailCaptureService {
       .trim();
 
     const html = String(emailData?.html || "");
+    const normalizeText = (value = "") =>
+      String(value).replace(/\s+/g, " ").trim();
+
+    const isValidVehicleCandidate = (value = "") => {
+      const normalized = normalizeText(value);
+
+      if (!normalized || normalized.length < 8 || normalized.length > 140) {
+        return false;
+      }
+
+      return !/nome|telefone|email|oba!|um cliente est\u00E1|cliente busca|entre em contato|procurando|mensagem|an\u00FAncio|anuncio|baixe|baixar o app|plano profissional|central de relacionamento/i.test(
+        normalized,
+      );
+    };
+
+    const extractVehicleFromHtml = () => {
+      if (!html) return null;
+
+      try {
+        const $ = cheerio.load(html);
+
+        const priceNode = $("p")
+          .filter((_, el) => {
+            const textValue = normalizeText($(el).text());
+            return /^R\$\s*[\d\.\,]+(?:,\d{2})?$/i.test(textValue);
+          })
+          .first();
+
+        if (priceNode.length) {
+          const directPrevious = normalizeText(priceNode.prev("p").text());
+          if (isValidVehicleCandidate(directPrevious)) {
+            return directPrevious;
+          }
+
+          const previousCandidates = priceNode
+            .prevAll("p")
+            .map((_, el) => normalizeText($(el).text()))
+            .get()
+            .filter(isValidVehicleCandidate);
+
+          if (previousCandidates.length > 0) {
+            return previousCandidates[0];
+          }
+        }
+
+        const fallbackCandidates = [];
+        $("p").each((_, el) => {
+          const textValue = normalizeText($(el).text());
+          if (!isValidVehicleCandidate(textValue)) return;
+
+          if (/\b(19|20)\d{2}\b/.test(textValue) || /\b(flex|drive|manual|automatic|automa|tsi|cvt)\b/i.test(textValue)) {
+            fallbackCandidates.push(textValue);
+          }
+        });
+
+        return fallbackCandidates[0] || null;
+      } catch (error) {
+        console.warn("⚠️ Falha ao extrair veículo do HTML da OLX:", error.message);
+        return null;
+      }
+    };
 
     const htmlValue = (label) => {
       const re = new RegExp(
@@ -1198,37 +1259,41 @@ class EmailCaptureService {
 
     const telefone = telefoneRaw ? telefoneRaw.replace(/\D/g, "") : null;
 
-    let veiculo = null;
+    let veiculo = extractVehicleFromHtml();
+    let veiculoFromText = null;
 
-    const priceLineIdx = clean.search(/R\$\s*[\d\.\,]+/i);
-    if (priceLineIdx >= 0) {
-      const window = clean.slice(
-        Math.max(0, priceLineIdx - 400),
-        priceLineIdx + 200,
-      );
-      const lines = window
-        .split("\n")
-        .map((s) => s.trim())
-        .filter(Boolean);
+    if (!veiculo) {
+      const priceLineIdx = clean.search(/R\$\s*[\d\.\,]+/i);
+      if (priceLineIdx >= 0) {
+        const window = clean.slice(
+          Math.max(0, priceLineIdx - 400),
+          priceLineIdx + 200,
+        );
+        const lines = window
+          .split("\n")
+          .map((s) => s.trim())
+          .filter(Boolean);
 
-      for (let i = 0; i < lines.length; i++) {
-        const l = lines[i];
-        if (/^R\$\s*/i.test(l)) {
-          const prev = lines[i - 1];
-          if (
-            prev &&
-            prev.length > 6 &&
-            prev.length < 120 &&
-            !prev.includes("http") &&
-            !/nome|telefone|email/i.test(prev)
-          ) {
-            veiculo = prev;
-            break;
+        for (let i = 0; i < lines.length; i++) {
+          const l = lines[i];
+          if (/^R\$\s*/i.test(l)) {
+            const prev = lines[i - 1];
+            if (
+              prev &&
+              prev.length > 6 &&
+              prev.length < 120 &&
+              !prev.includes("http") &&
+              !/nome|telefone|email/i.test(prev)
+            ) {
+              veiculoFromText = prev;
+              break;
+            }
           }
         }
       }
     }
 
+    if (!veiculo) veiculo = veiculoFromText;
     if (!veiculo && subject) veiculo = subject;
 
     const preco =
