@@ -1,6 +1,10 @@
 const Lead = require("../models/leads");
 const LeadWorkflowService = require("../services/LeadWorkflowService");
 const {
+  isAllowedLeadRoomUser,
+  resolveLeadRoomUser,
+} = require("../utils/leadsRoom");
+const {
   getSchemaFromReq,
   getTenantIdFromReq,
 } = require("../utils/tenantContext");
@@ -97,6 +101,7 @@ class LeadController {
     try {
       const { id } = req.params;
       const schema = getSchemaFromReq(req);
+      const tenantId = getTenantIdFromReq(req);
       const lead = await Lead.findById(id, { schema, tenantId });
 
       if (!lead) {
@@ -317,6 +322,7 @@ class LeadController {
   async startAttendance(req, res) {
     try {
       const { id } = req.params;
+      const body = req.body || {};
       const schema = getSchemaFromReq(req);
       const tenantId = getTenantIdFromReq(req);
       const lead = await Lead.findById(id, { schema, tenantId });
@@ -327,10 +333,35 @@ class LeadController {
         });
       }
 
-      const updatedLead = await LeadWorkflowService.claimLead(id, "nextcar", {
+      const requestedSeller = resolveLeadRoomUser(
+        body.vendedorId || body.usuario || body.vendedor || body.claimant,
+      );
+      const sellerMarker =
+        requestedSeller ||
+        String(body.vendedorId || body.usuario || body.vendedor || "").trim() ||
+        "nextcar";
+
+      if (
+        (body.vendedorId || body.usuario || body.vendedor || body.claimant) &&
+        !isAllowedLeadRoomUser(sellerMarker)
+      ) {
+        return res.status(400).json({
+          success: false,
+          error: "Vendedor invalido para a room.",
+        });
+      }
+
+      const updatedLead = await LeadWorkflowService.claimLead(id, sellerMarker, {
         schema,
         tenantId,
       });
+
+      if (!updatedLead) {
+        return res.status(409).json({
+          success: false,
+          error: "Lead ja foi assumido por outro usuario.",
+        });
+      }
 
       res.json({
         success: true,

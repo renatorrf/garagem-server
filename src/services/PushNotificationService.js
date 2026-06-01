@@ -39,6 +39,10 @@ class PushNotificationService {
       process.env.PUSH_DEFAULT_OPEN_URL || `${appUrl}/agenda`,
     ).replace(/\/+$/, "");
 
+    const roomOpenUrl = String(
+      process.env.PUSH_LEADS_ROOM_OPEN_URL || `${appUrl}/painel-leads`,
+    ).replace(/\/+$/, "");
+
     return {
       publicKey,
       privateKey,
@@ -47,6 +51,7 @@ class PushNotificationService {
       iconUrl,
       badgeUrl,
       defaultOpenUrl,
+      roomOpenUrl,
     };
   }
 
@@ -331,6 +336,52 @@ class PushNotificationService {
     };
   }
 
+  static buildLeadRoomPayload({ lead, schemaName, claimedBy = null }) {
+    const cfg = this.getConfig();
+    const clientName = String(lead?.nome || lead?.remetente || "Cliente").trim();
+    const vehicleName = String(
+      lead?.veiculoInteresse || lead?.assunto || "Novo lead",
+    ).trim();
+    const status = String(lead?.status || "novo").trim().toLowerCase();
+    const origin = String(
+      lead?.metadata?.plataforma || lead?.origem || "Lead",
+    ).trim();
+
+    const title =
+      status === "contatado" ? "Lead assumido" : "Novo lead na room";
+    const bodyParts = [
+      clientName,
+      vehicleName,
+      claimedBy ? `Assumido por ${claimedBy}` : null,
+    ].filter(Boolean);
+
+    return {
+      notification: {
+        title,
+        body: bodyParts.join(" - "),
+        icon: cfg.iconUrl,
+        badge: cfg.badgeUrl,
+        tag: `leads-room-${schemaName}-${lead?.id || "lead"}`,
+        renotify: true,
+        requireInteraction: true,
+        data: {
+          url: cfg.roomOpenUrl || `${cfg.appUrl}/painel-leads`,
+          schema: schemaName,
+          scope: "leads-room",
+          leadId: lead?.id || null,
+          origin,
+          claimedBy,
+          onActionClick: {
+            default: {
+              operation: "openWindow",
+              url: cfg.roomOpenUrl || `${cfg.appUrl}/painel-leads`,
+            },
+          },
+        },
+      },
+    };
+  }
+
   static buildSubscriptionObject(subscriptionRow) {
     return {
       endpoint: subscriptionRow.endpoint,
@@ -388,6 +439,46 @@ class PushNotificationService {
     );
 
     return result.rows || [];
+  }
+
+  static async sendNotificationToScope(schemaName, scope, payload) {
+    if (!this.configureVapid()) {
+      return [];
+    }
+
+    const subscriptions = await this.getActiveSubscriptions(schemaName, scope);
+    const results = [];
+
+    for (const subscriptionRow of subscriptions) {
+      try {
+        const result = await this.sendNotificationToSubscription(
+          subscriptionRow,
+          payload,
+        );
+        results.push(result);
+      } catch (error) {
+        results.push({
+          success: false,
+          endpoint: subscriptionRow.endpoint,
+          error: error.message,
+        });
+      }
+    }
+
+    return results;
+  }
+
+  static async sendLeadRoomNotification({
+    lead,
+    schemaName,
+    claimedBy = null,
+  }) {
+    if (!schemaName || !lead) return [];
+    return this.sendNotificationToScope(
+      schemaName,
+      "leads-room",
+      this.buildLeadRoomPayload({ lead, schemaName, claimedBy }),
+    );
   }
 }
 

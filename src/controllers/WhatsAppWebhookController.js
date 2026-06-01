@@ -57,8 +57,18 @@ class WhatsAppWebhookController {
                     from,
                   });
 
-                  await LeadWorkflowService.claimLead(leadId, 'nextcar', context);
-                  await LeadWorkflowService.openCustomerConversation(leadId, context);
+                  const claimedLead = await LeadWorkflowService.claimLead(
+                    leadId,
+                    'nextcar',
+                    context,
+                  );
+
+                  if (claimedLead) {
+                    await LeadWorkflowService.openCustomerConversation(
+                      leadId,
+                      context,
+                    );
+                  }
                   continue;
                 }
                 console.log('🔘 Button reply recebido:', { id, title, from });

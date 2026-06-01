@@ -5,6 +5,7 @@ const app = require("./app");
 const http = require("http");
 const axios = require("axios");
 const { Server: SocketIOServer } = require("socket.io");
+const { registerWebsocket } = require("./src/controllers/websocket.controller");
 
 let Sandbox;
 try {
@@ -32,9 +33,7 @@ const io = new SocketIOServer(server, {
   },
 });
 
-io.on("connection", (socket) => {
-  socket.on("disconnect", () => {});
-});
+registerWebsocket(io);
 
 /**
  * Teste opcional da API Koyeb

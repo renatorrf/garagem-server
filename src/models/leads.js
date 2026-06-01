@@ -822,6 +822,61 @@ class Lead {
     };
   }
 
+  static async claimLead(id, sellerName, options = {}) {
+    const tableName = Lead.resolveTableName({
+      schema: options.schema || this._schema,
+    });
+
+    const now = new Date();
+    const normalizedSeller = String(sellerName || "").trim() || "nextcar";
+    const waPatch = {
+      claimedAt: now.toISOString(),
+      attendanceStartedAt: now.toISOString(),
+      openConversationAt: now.toISOString(),
+      sellerSelectedBy: normalizedSeller,
+      sellerId: normalizedSeller,
+      sellerName: normalizedSeller,
+      sellerSelectedAt: now.toISOString(),
+      estimatedEndAt: null,
+      nextReminderAt: null,
+      lastStatus: "contatado",
+      lastStatusAt: now.toISOString(),
+    };
+
+    const query = `
+      UPDATE ${tableName}
+         SET vendedor_id = $1,
+             status = 'contatado',
+             data_contato = $2,
+             updated_at = NOW(),
+             metadata = jsonb_set(
+               COALESCE(metadata, '{}'::jsonb),
+               '{wa}',
+               COALESCE(metadata->'wa', '{}'::jsonb) || $4::jsonb,
+               true
+             )
+       WHERE id = $3
+         AND deleted_at IS NULL
+         AND status IN ('novo', 'lido')
+       RETURNING *;
+    `;
+
+    const result = await db.query(query, [
+      normalizedSeller,
+      now,
+      id,
+      JSON.stringify(waPatch),
+    ]);
+
+    return result.rows[0]
+      ? new Lead({
+          ...result.rows[0],
+          _schema: options.schema || this._schema,
+          _tenantId: options.tenantId || this._tenantId,
+        })
+      : null;
+  }
+
   static async export({
     schema,
     tenantId,

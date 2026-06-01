@@ -125,6 +125,7 @@ const integrador = require("./src/routes/integradores.router");
 const emailCaptureRoutes = require("./src/routes/lead.router");
 const whatsappWebhookRoutes = require("./src/routes/whatsappWebhookRoutes");
 const pushNotificationsRoutes = require("./src/routes/pushNotifications.routes");
+const pushRoomRoutes = require("./src/routes/pushRoom.routes");
 const importadorGaraje = require("./src/controllers/importadorGaraje.controller");
 const authGaragemwebRoutes = require("./src/routes/authGaragemweb.routes");
 
@@ -138,6 +139,7 @@ app.use("/garagemweb/integradores", integrador);
 app.use("/garagemweb/api", emailCaptureRoutes);
 //app.use("/garagemweb/leads", emailCaptureRoutes);
 app.use("/garagemweb/api/push", pushNotificationsRoutes);
+app.use("/garagemweb/api/push-room", pushRoomRoutes);
 
 // WhatsApp webhook
 app.use("/webhooks/whatsapp", whatsappWebhookRoutes);

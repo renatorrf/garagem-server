@@ -2,6 +2,11 @@ const db = require("../config/database");
 const Lead = require("../models/leads");
 const WhatsAppService = require("./WhatsAppService");
 const TenantIntegrationService = require("./TenantIntegrationService");
+const PushNotificationService = require("./PushNotificationService");
+const {
+  emitLeadRoomEvent,
+  ROOM_LEADS,
+} = require("../controllers/websocket.controller");
 
 class LeadWorkflowService {
   static start() {
@@ -125,7 +130,7 @@ class LeadWorkflowService {
 
     if (!lead) return null;
 
-    await this.updateLeadWa(lead, {
+    const updatedLead = await this.updateLeadWa(lead, {
       dispatchPhone: cfg.sellerPhone,
       notifyWamid,
       sellerKey: null,
@@ -149,6 +154,8 @@ class LeadWorkflowService {
       messageStatuses: [],
     });
 
+    const roomLead = updatedLead || lead;
+
     if (notifyWamid) {
       console.log(
         `📲 Lead ${savedLead.id} notificado no WhatsApp (${cfg.sellerPhone})`,
@@ -159,38 +166,67 @@ class LeadWorkflowService {
       );
     }
 
-    return lead;
+    emitLeadRoomEvent(
+      "leads-room:lead:new",
+      {
+        room: ROOM_LEADS,
+        lead: roomLead,
+        source: "workflow",
+        notifiedAt: new Date().toISOString(),
+      },
+      ROOM_LEADS,
+    );
+
+    try {
+      await PushNotificationService.sendLeadRoomNotification({
+        lead: roomLead,
+        schemaName: cfg.schema,
+      });
+    } catch (pushError) {
+      console.error(
+        `⚠️ Falha ao enviar push da room para lead ${savedLead.id}:`,
+        pushError.message,
+      );
+    }
+
+    return roomLead;
   }
 
   static async claimLead(leadId, from = null, context = {}) {
-    const lead = await Lead.findById(leadId, {
+    const sellerMarker = String(from || "").trim() || "nextcar";
+    const claimedLead = await Lead.claimLead(leadId, sellerMarker, {
       schema: context.schema,
       tenantId: context.tenantId,
     });
-    if (!lead) return null;
 
-    const now = new Date();
-    const sellerMarker = from || "nextcar";
+    if (!claimedLead) return null;
 
-    return this.updateLeadWa(
-      lead,
+    emitLeadRoomEvent(
+      "leads-room:lead:claimed",
       {
-        claimedAt: now.toISOString(),
-        attendanceStartedAt: now.toISOString(),
-        openConversationAt: now.toISOString(),
-        sellerSelectedBy: sellerMarker,
-        sellerKey: null,
-        sellerId: null,
-        sellerName: null,
-        sellerSelectedAt: null,
-        estimatedEndAt: null,
-        nextReminderAt: null,
+        room: ROOM_LEADS,
+        lead: claimedLead,
+        claimedBy: sellerMarker,
+        claimedAt: new Date().toISOString(),
+        source: "workflow",
       },
-      {
-        status: "contatado",
-        dataContato: now,
-      },
+      ROOM_LEADS,
     );
+
+    try {
+      await PushNotificationService.sendLeadRoomNotification({
+        lead: claimedLead,
+        schemaName: context.schema || claimedLead._schema,
+        claimedBy: sellerMarker,
+      });
+    } catch (pushError) {
+      console.error(
+        `⚠️ Falha ao enviar push de claim para lead ${leadId}:`,
+        pushError.message,
+      );
+    }
+
+    return claimedLead;
   }
 
   static async openCustomerConversation(leadId, context = {}) {
