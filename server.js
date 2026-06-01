@@ -6,7 +6,6 @@ const http = require("http");
 const axios = require("axios");
 const { Server: SocketIOServer } = require("socket.io");
 const { registerWebsocket } = require("./src/controllers/websocket.controller");
-const { encryptText } = require("./src/utils/cryptoTenant");
 
 let Sandbox;
 try {

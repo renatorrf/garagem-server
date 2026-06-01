@@ -41,6 +41,7 @@ const corsOptions = {
     "X-Requested-With",
     "Accept",
     "Origin",
+    "x-push-user"
   ],
   credentials: true,
   optionsSuccessStatus: 200,
