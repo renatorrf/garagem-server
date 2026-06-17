@@ -19,6 +19,7 @@ const REGULAR_EMAIL_SENDERS = new Set([
   "comunicacoes@info.mercadolivre.com.br",
   "mailer@vindi.com.br",
   "nao-responder@mercadolivre.com",
+  "noreply@mercadolivre.com",
   "dicas@newsolx.com.br",
   "notificacao@acesso.io",
   "promocion@r.mercadopago.com.br",
