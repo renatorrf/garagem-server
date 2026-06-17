@@ -375,7 +375,7 @@ exports.login = async (req, res) => {
       });
     }
 
-    const expiresAt = moment().add(12, "hours").toDate();
+    const expiresAt = moment().add(30, "days").toDate();
     await saveSession({
       userId: user.id,
       tenantId: user.tenant_id,

@@ -770,6 +770,7 @@ class EmailCaptureService {
         "falta pouco! sua edição estará ativa em breve!",
         "parabéns, o seu anúncio está ativo!",
         "seu anúncio vai expirar em breve",
+        "Seu vencimento está chegando",
       ];
 
       if (regularSubjects.some((s) => subject.includes(s))) {
