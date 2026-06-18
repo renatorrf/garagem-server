@@ -444,6 +444,39 @@ class PushNotificationService {
     };
   }
 
+  static buildSessionExpirationPayload({ expiresAt }) {
+    const cfg = this.getConfig();
+    const openUrl = cfg.roomOpenUrl || `${cfg.appUrl}/painel-leads`;
+    const expiration = moment(expiresAt);
+    const expirationLabel = expiration.isValid()
+      ? expiration.format("DD/MM [Ã s] HH:mm")
+      : "em breve";
+
+    return {
+      notification: {
+        title: "Reconecte-se ao Painel de Leads",
+        body: `Sua sessÃ£o expira em breve (${expirationLabel}). Entre novamente para continuar conectado.`,
+        icon: cfg.iconUrl,
+        badge: cfg.badgeUrl,
+        tag: "painel-leads-session-expiring",
+        renotify: true,
+        requireInteraction: true,
+        data: {
+          url: openUrl,
+          scope: "painel-leads",
+          type: "session-expiring",
+          expiresAt,
+          onActionClick: {
+            default: {
+              operation: "openWindow",
+              url: openUrl,
+            },
+          },
+        },
+      },
+    };
+  }
+
   static buildSubscriptionObject(subscriptionRow) {
     return {
       endpoint: subscriptionRow.endpoint,
@@ -506,12 +539,55 @@ class PushNotificationService {
     return result.rows || [];
   }
 
-  static async sendNotificationToScope(schemaName, scope, payload) {
-    if (!this.configureVapid()) {
-      return [];
+  static async getActiveSubscriptionsForScopes(
+    schemaName,
+    scopes = [],
+    usuario = null,
+  ) {
+    await this.ensureInfrastructure();
+
+    const schema = assertValidSchemaName(schemaName);
+    const normalizedScopes = [
+      ...new Set(scopes.map((scope) => this.normalizeScope(scope))),
+    ];
+
+    if (!normalizedScopes.length) return [];
+
+    const normalizedUsuario = usuario
+      ? this.normalizeUsuario(usuario)
+      : null;
+    const params = [schema, normalizedScopes];
+    let usuarioFilter = "";
+
+    if (normalizedUsuario) {
+      params.push(normalizedUsuario);
+      usuarioFilter = ` AND usuario = $${params.length}`;
     }
 
-    const subscriptions = await this.getActiveSubscriptions(schemaName, scope);
+    const result = await db.query(
+      `
+        SELECT *
+          FROM public.tab_push_subscription
+         WHERE schema_name = $1
+           AND scope = ANY($2::text[])
+           AND ind_active = true
+           ${usuarioFilter}
+         ORDER BY seq_registro ASC
+      `,
+      params,
+    );
+
+    const uniqueByEndpoint = new Map();
+    for (const subscription of result.rows || []) {
+      if (!uniqueByEndpoint.has(subscription.endpoint)) {
+        uniqueByEndpoint.set(subscription.endpoint, subscription);
+      }
+    }
+
+    return [...uniqueByEndpoint.values()];
+  }
+
+  static async sendNotificationToSubscriptions(subscriptions, payload) {
     const results = [];
 
     for (const subscriptionRow of subscriptions) {
@@ -533,6 +609,15 @@ class PushNotificationService {
     return results;
   }
 
+  static async sendNotificationToScope(schemaName, scope, payload) {
+    if (!this.configureVapid()) {
+      return [];
+    }
+
+    const subscriptions = await this.getActiveSubscriptions(schemaName, scope);
+    return this.sendNotificationToSubscriptions(subscriptions, payload);
+  }
+
   static async sendLeadRoomNotification({
     lead,
     schemaName,
@@ -543,10 +628,58 @@ class PushNotificationService {
 
     const normalizedScope = this.normalizeScope(scope || "painel-leads");
 
-    return this.sendNotificationToScope(
+    if (!this.configureVapid()) return [];
+
+    const scopes = [normalizedScope];
+    if (normalizedScope === "painel-leads") {
+      scopes.push("leads-room");
+    }
+
+    const subscriptions = await this.getActiveSubscriptionsForScopes(
       schemaName,
-      normalizedScope,
+      scopes,
+    );
+    const results = await this.sendNotificationToSubscriptions(
+      subscriptions,
       this.buildLeadRoomPayload({ lead, schemaName, claimedBy }),
+    );
+    const delivered = results.filter((result) => result.success).length;
+    const failed = results.length - delivered;
+
+    console.log(
+      `Push painel-leads ${lead.id}: ${delivered} entregue(s), ${failed} falha(s).`,
+    );
+
+    if (failed) {
+      console.error(
+        "Falhas no push painel-leads:",
+        results
+          .filter((result) => !result.success)
+          .map((result) => result.error),
+      );
+    }
+
+    return results;
+  }
+
+  static async sendSessionExpirationNotification({
+    schemaName,
+    usuario,
+    expiresAt,
+  }) {
+    if (!schemaName || !usuario || !expiresAt || !this.configureVapid()) {
+      return [];
+    }
+
+    const subscriptions = await this.getActiveSubscriptionsForScopes(
+      schemaName,
+      ["painel-leads"],
+      usuario,
+    );
+
+    return this.sendNotificationToSubscriptions(
+      subscriptions,
+      this.buildSessionExpirationPayload({ expiresAt }),
     );
   }
 }

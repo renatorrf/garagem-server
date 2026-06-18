@@ -181,6 +181,23 @@ try {
 }
 
 try {
+  const SessionExpirationNotificationService = require(
+    "./src/services/SessionExpirationNotificationService",
+  );
+  SessionExpirationNotificationService.start().catch((error) =>
+    console.error(
+      "Falha ao iniciar avisos de expiraÃ§Ã£o de sessÃ£o:",
+      error.message,
+    ),
+  );
+} catch (error) {
+  console.error(
+    "Falha ao iniciar avisos de expiraÃ§Ã£o de sessÃ£o:",
+    error.message,
+  );
+}
+
+try {
   importadorGaraje.startGarajeCron({
     schema: process.env.SCHEMA_PADRAO,
     url: process.env.GARAJE_URL,

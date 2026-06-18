@@ -2,7 +2,6 @@ const db = require("../config/database");
 if (process.env.NODE_ENV !== "production") {
   require("dotenv-safe").config({ example: ".env.example" });
 }
-const moment = require("moment");
 const { isoUint8Array } = require("@simplewebauthn/server/helpers");
 const cron = require("node-cron");
 const crypto = require("crypto");
@@ -21,7 +20,7 @@ const {
 
 const JWT_SECRET =
   process.env.JWT_SECRET || process.env.SECRET || "trocar-em-producao";
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "12h";
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
 const RP_NAME = process.env.WEBAUTHN_RP_NAME || "Next Car";
 const RP_ID =
   process.env.WEBAUTHN_RP_ID ||
@@ -60,6 +59,16 @@ function signAuthToken(user) {
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN },
   );
+}
+
+function getAuthTokenExpiresAt(token) {
+  const decoded = jwt.decode(token);
+
+  if (!decoded?.exp) {
+    throw new Error("Token gerado sem data de expiraÃ§Ã£o.");
+  }
+
+  return new Date(Number(decoded.exp) * 1000);
 }
 
 async function getUserByUsername(username) {
@@ -375,7 +384,8 @@ exports.login = async (req, res) => {
       });
     }
 
-    const expiresAt = moment().add(12, "hours").toDate();
+    const token = signAuthToken(user);
+    const expiresAt = getAuthTokenExpiresAt(token);
     await saveSession({
       userId: user.id,
       tenantId: user.tenant_id,
@@ -384,11 +394,10 @@ exports.login = async (req, res) => {
       expiresAt,
     });
 
-    const token = signAuthToken(user);
-
     return res.json({
       success: true,
       token,
+      expiresAt: expiresAt.toISOString(),
       user: {
         id: user.id,
         nome: user.nome,
@@ -676,7 +685,8 @@ exports.passkeyAuthenticateVerify = async (req, res) => {
 
     challengeStore.delete(`auth:${user.username}`);
 
-    const expiresAt = moment().add(12, "hours").toDate();
+    const token = signAuthToken(user);
+    const expiresAt = getAuthTokenExpiresAt(token);
     await saveSession({
       userId: user.id,
       tenantId: user.tenant_id,
@@ -685,11 +695,10 @@ exports.passkeyAuthenticateVerify = async (req, res) => {
       expiresAt,
     });
 
-    const token = signAuthToken(user);
-
     return res.json({
       success: true,
       token,
+      expiresAt: expiresAt.toISOString(),
       user: {
         id: user.id,
         nome: user.nome,
