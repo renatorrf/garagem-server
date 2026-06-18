@@ -29,6 +29,28 @@ class PushNotificationService {
     );
   }
 
+  static normalizeNotificationText(value = "") {
+    return String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^\x20-\x7E]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  static normalizeNotificationPayload(payload = {}) {
+    if (!payload?.notification) return payload;
+
+    return {
+      ...payload,
+      notification: {
+        ...payload.notification,
+        title: this.normalizeNotificationText(payload.notification.title),
+        body: this.normalizeNotificationText(payload.notification.body),
+      },
+    };
+  }
+
   static getConfig() {
     const publicKey = String(process.env.PUSH_VAPID_PUBLIC_KEY || "").trim();
     const privateKey = String(process.env.PUSH_VAPID_PRIVATE_KEY || "").trim();
@@ -363,7 +385,7 @@ class PushNotificationService {
     const title = "Lembrete da agenda";
     const subject = String(agenda.titulo || "Compromisso").trim();
     const bodyParts = [
-      `Amanhã às ${appointmentAt.isValid() ? appointmentAt.format("HH:mm") : agenda.hora}`,
+      `Amanha as ${appointmentAt.isValid() ? appointmentAt.format("HH:mm") : agenda.hora}`,
       subject,
     ].filter(Boolean);
 
@@ -449,13 +471,13 @@ class PushNotificationService {
     const openUrl = cfg.roomOpenUrl || `${cfg.appUrl}/painel-leads`;
     const expiration = moment(expiresAt);
     const expirationLabel = expiration.isValid()
-      ? expiration.format("DD/MM [Ã s] HH:mm")
+      ? expiration.format("DD/MM [as] HH:mm")
       : "em breve";
 
     return {
       notification: {
         title: "Reconecte-se ao Painel de Leads",
-        body: `Sua sessÃ£o expira em breve (${expirationLabel}). Entre novamente para continuar conectado.`,
+        body: `Sua sessao expira em breve (${expirationLabel}). Entre novamente para continuar conectado.`,
         icon: cfg.iconUrl,
         badge: cfg.badgeUrl,
         tag: "painel-leads-session-expiring",
@@ -492,9 +514,13 @@ class PushNotificationService {
 
   static async sendNotificationToSubscription(subscriptionRow, payload) {
     const subscription = this.buildSubscriptionObject(subscriptionRow);
+    const normalizedPayload = this.normalizeNotificationPayload(payload);
 
     try {
-      await webpush.sendNotification(subscription, JSON.stringify(payload));
+      await webpush.sendNotification(
+        subscription,
+        JSON.stringify(normalizedPayload),
+      );
       return { success: true, endpoint: subscriptionRow.endpoint };
     } catch (error) {
       const statusCode = Number(
