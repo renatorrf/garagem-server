@@ -26,6 +26,7 @@ const REGULAR_EMAIL_SENDERS = new Set([
   "promocion@r.mercadopago.com.br",
   "no-reply@mercadolibre.com",
   "naoresponda@clubeolx.com.br",
+  "comunicacoes@a.mercadolivre.com.br"
 ]);
 
 class EmailCaptureService {
@@ -763,9 +764,21 @@ class EmailCaptureService {
 
   shouldTreatAsRegularEmail(emailData, platform, platformKind = null) {
     const subject = String(emailData?.subject || "").toLowerCase();
+    const normalizedSubject = subject
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
     const senderEmail = String(
       emailData?.from?.value?.[0]?.address || "",
     ).toLowerCase();
+
+    if (
+      platform === "OLX" &&
+      normalizedSubject.includes(
+        "oba! tem mensagem nova para voce sobre:",
+      )
+    ) {
+      return "chat_event";
+    }
 
     if (this.isRegularEmailSender(emailData)) {
       return "email";
