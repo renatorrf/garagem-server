@@ -844,7 +844,9 @@ class Lead {
     )
       .trim()
       .toLowerCase();
-    const sellerColumn = claimChannel === "wapa" ? "vendedor_whatsapp" : "vendedor_id";
+    // Room users are textual logins; vendedor_id is a UUID reserved for
+    // integrations that provide an actual seller UUID.
+    const sellerColumn = "vendedor_whatsapp";
     const waPatch = {
       claimedAt: now.toISOString(),
       attendanceStartedAt: now.toISOString(),
