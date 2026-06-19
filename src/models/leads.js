@@ -844,9 +844,6 @@ class Lead {
     )
       .trim()
       .toLowerCase();
-    // Room users are textual logins; vendedor_id is a UUID reserved for
-    // integrations that provide an actual seller UUID.
-    const sellerColumn = "vendedor_whatsapp";
     const waPatch = {
       claimedAt: now.toISOString(),
       attendanceStartedAt: now.toISOString(),
@@ -864,7 +861,7 @@ class Lead {
 
     const query = `
       UPDATE ${tableName}
-         SET ${sellerColumn} = $1,
+         SET vendedor_whatsapp = $1,
              status = 'contatado',
              data_contato = $2,
              updated_at = NOW(),
