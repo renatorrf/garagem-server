@@ -14,6 +14,7 @@ const Lead = require("../models/leads");
 const LeadWorkflowService = require("./LeadWorkflowService");
 const TenantIntegrationService = require("./TenantIntegrationService");
 
+// Lista de remetentes que devem ser tratados como emails comuns, sem extração de dados ou disparo de WhatsApp
 const REGULAR_EMAIL_SENDERS = new Set([
   "ofertas@a.mercadolivre.com.br",
   "comunicacoes@info.mercadolivre.com.br",
@@ -23,7 +24,8 @@ const REGULAR_EMAIL_SENDERS = new Set([
   "dicas@newsolx.com.br",
   "notificacao@acesso.io",
   "promocion@r.mercadopago.com.br",
-  "no-reply@mercadolibre.com"
+  "no-reply@mercadolibre.com",
+  "naoresponda@clubeolx.com.br",
 ]);
 
 class EmailCaptureService {
@@ -78,7 +80,6 @@ class EmailCaptureService {
     this.tenantId = runtimeConfig.tenantId || this.tenantId;
 
     return new Promise((resolve, reject) => {
-
       if (
         !this.config.user ||
         !this.config.password ||
@@ -305,10 +306,14 @@ class EmailCaptureService {
         return null;
       }
 
-      const effectiveSchema = options.schema || this.schema || process.env.SCHEMA_PADRAO || "nextcar";
+      const effectiveSchema =
+        options.schema || this.schema || process.env.SCHEMA_PADRAO || "nextcar";
       const effectiveTenantId = options.tenantId || this.tenantId || null;
 
-      const existingLead = await Lead.findByEmailId(messageId, { schema: effectiveSchema, tenantId: effectiveTenantId });
+      const existingLead = await Lead.findByEmailId(messageId, {
+        schema: effectiveSchema,
+        tenantId: effectiveTenantId,
+      });
       if (existingLead) {
         console.log(`⚠️ Lead já existe: ${messageId}`);
         return null;
@@ -318,8 +323,14 @@ class EmailCaptureService {
       const forceRegularEmail = this.isRegularEmailSender(emailData);
       let platformData = this.detectAndParsePlatform(emailData);
 
-      if (forceRegularEmail && (!platformData.platform || !platformData.parsed)) {
-        platformData = this.buildRegularEmailPlatformData(emailData, fallbackText);
+      if (
+        forceRegularEmail &&
+        (!platformData.platform || !platformData.parsed)
+      ) {
+        platformData = this.buildRegularEmailPlatformData(
+          emailData,
+          fallbackText,
+        );
       }
 
       let leadData;
@@ -449,8 +460,15 @@ class EmailCaptureService {
         };
       }
 
-      const lead = new Lead({ ...leadData, _schema: effectiveSchema, _tenantId: effectiveTenantId });
-      const savedLead = await lead.save({ schema: effectiveSchema, tenantId: effectiveTenantId });
+      const lead = new Lead({
+        ...leadData,
+        _schema: effectiveSchema,
+        _tenantId: effectiveTenantId,
+      });
+      const savedLead = await lead.save({
+        schema: effectiveSchema,
+        tenantId: effectiveTenantId,
+      });
 
       if (savedLead) {
         console.log(`✅ Lead ${savedLead.id} salvo com sucesso!`);
@@ -464,9 +482,15 @@ class EmailCaptureService {
             savedLead?.metadata?.tipoClassificacao || "lead";
 
           if (classification === "lead") {
-            await LeadWorkflowService.onNewLead(savedLead, { schema: effectiveSchema, tenantId: effectiveTenantId });
+            await LeadWorkflowService.onNewLead(savedLead, {
+              schema: effectiveSchema,
+              tenantId: effectiveTenantId,
+            });
           } else if (classification === "chat_event") {
-            await LeadWorkflowService.onChatEvent(savedLead, { schema: effectiveSchema, tenantId: effectiveTenantId });
+            await LeadWorkflowService.onChatEvent(savedLead, {
+              schema: effectiveSchema,
+              tenantId: effectiveTenantId,
+            });
           } else {
             console.log("📧 Email comum, sem disparo de WhatsApp");
           }
@@ -878,7 +902,9 @@ class EmailCaptureService {
       const normalizedDecoded = decoded.replace(/\\\//g, "/");
 
       const phoneMatch =
-        normalizedDecoded.match(/api\.whatsapp\.com\/send\?phone=55(\d{10,11})/i) ||
+        normalizedDecoded.match(
+          /api\.whatsapp\.com\/send\?phone=55(\d{10,11})/i,
+        ) ||
         normalizedDecoded.match(/wa\.me\/55(\d{10,11})/i) ||
         normalizedDecoded.match(/phone=55(\d{10,11})/i);
 
@@ -888,10 +914,15 @@ class EmailCaptureService {
 
       const genericDigits = normalizedDecoded.match(/\b55\d{10,11}\b/)?.[0];
       if (genericDigits) {
-        return genericDigits.startsWith("55") ? genericDigits.slice(2) : genericDigits;
+        return genericDigits.startsWith("55")
+          ? genericDigits.slice(2)
+          : genericDigits;
       }
     } catch (error) {
-      console.warn("⚠️ Falha ao decodificar link rastreado do BV:", error.message);
+      console.warn(
+        "⚠️ Falha ao decodificar link rastreado do BV:",
+        error.message,
+      );
     }
 
     return null;
@@ -971,10 +1002,14 @@ class EmailCaptureService {
         )?.[1]
         ?.trim() ||
       combined
-        .match(/([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s]+)\s+está interessado na sua oferta/i)?.[1]
+        .match(
+          /([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s]+)\s+está interessado na sua oferta/i,
+        )?.[1]
         ?.trim() ||
       combined
-        .match(/([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s]+)\s+esta interessado na sua oferta/i)?.[1]
+        .match(
+          /([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s]+)\s+esta interessado na sua oferta/i,
+        )?.[1]
         ?.trim() ||
       subject?.match(/^(.+?)\s+está interessado na sua oferta/i)?.[1]?.trim() ||
       subject?.match(/^(.+?)\s+esta interessado na sua oferta/i)?.[1]?.trim() ||
@@ -985,8 +1020,12 @@ class EmailCaptureService {
     let telefone =
       combined.match(/api\.whatsapp\.com\/send\?phone=55(\d{10,11})/i)?.[1] ||
       combined.match(/wa\.me\/55(\d{10,11})/i)?.[1] ||
-      this.extractPhoneFromTrackedWhatsappLink([clean, html, combined].join("\n")) ||
-      combined.match(/\(?\d{2}\)?\s*9?\d{4,5}-?\d{4}/)?.[0]?.replace(/\D/g, "") ||
+      this.extractPhoneFromTrackedWhatsappLink(
+        [clean, html, combined].join("\n"),
+      ) ||
+      combined
+        .match(/\(?\d{2}\)?\s*9?\d{4,5}-?\d{4}/)?.[0]
+        ?.replace(/\D/g, "") ||
       null;
 
     const email =
@@ -1222,14 +1261,20 @@ class EmailCaptureService {
           const textValue = normalizeText($(el).text());
           if (!isValidVehicleCandidate(textValue)) return;
 
-          if (/\b(19|20)\d{2}\b/.test(textValue) || /\b(flex|drive|manual|automatic|automa|tsi|cvt)\b/i.test(textValue)) {
+          if (
+            /\b(19|20)\d{2}\b/.test(textValue) ||
+            /\b(flex|drive|manual|automatic|automa|tsi|cvt)\b/i.test(textValue)
+          ) {
             fallbackCandidates.push(textValue);
           }
         });
 
         return fallbackCandidates[0] || null;
       } catch (error) {
-        console.warn("⚠️ Falha ao extrair veículo do HTML da OLX:", error.message);
+        console.warn(
+          "⚠️ Falha ao extrair veículo do HTML da OLX:",
+          error.message,
+        );
         return null;
       }
     };
@@ -1716,9 +1761,7 @@ class EmailCaptureService {
     const pick = (regex) => combined.match(regex)?.[1]?.trim() || null;
 
     const nome =
-      pick(/Ol[áa],\s*([^!\n]+)!/i) ||
-      pick(/Nome:\s*([^\n]+)/i) ||
-      null;
+      pick(/Ol[áa],\s*([^!\n]+)!/i) || pick(/Nome:\s*([^\n]+)/i) || null;
 
     const email =
       pick(/E-?mail:\s*([^\s@]+@[^\s]+)/i) ||
@@ -1739,7 +1782,10 @@ class EmailCaptureService {
       cleanSubject.match(/Proposta para o carro usado\s+(.+)/i)?.[1]?.trim() ||
       cleanSubject.match(/Proposta para\s+(.+)/i)?.[1]?.trim() ||
       null;
-    const ano = pick(/Ano:\s*(\d{4})/i) || cleanSubject.match(/\b(19|20)\d{2}\b/)?.[0] || null;
+    const ano =
+      pick(/Ano:\s*(\d{4})/i) ||
+      cleanSubject.match(/\b(19|20)\d{2}\b/)?.[0] ||
+      null;
 
     let veiculo =
       veiculoBody ||
@@ -1777,8 +1823,9 @@ class EmailCaptureService {
         cor,
         ano,
         anunciante:
-          cleanText.match(/^(RATEO MOTORS|NEXT CAR|.+MOTORS)$/im)?.[1]?.trim() ||
-          null,
+          cleanText
+            .match(/^(RATEO MOTORS|NEXT CAR|.+MOTORS)$/im)?.[1]
+            ?.trim() || null,
       },
     };
   }
@@ -2044,8 +2091,15 @@ class EmailCaptureService {
 
   async createLead(leadData) {
     try {
-      const lead = new Lead({ ...leadData, _schema: effectiveSchema, _tenantId: effectiveTenantId });
-      const savedLead = await lead.save({ schema: effectiveSchema, tenantId: effectiveTenantId });
+      const lead = new Lead({
+        ...leadData,
+        _schema: effectiveSchema,
+        _tenantId: effectiveTenantId,
+      });
+      const savedLead = await lead.save({
+        schema: effectiveSchema,
+        tenantId: effectiveTenantId,
+      });
       this.statsCache.data = null;
       return savedLead;
     } catch (error) {
