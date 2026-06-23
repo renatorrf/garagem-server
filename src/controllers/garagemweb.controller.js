@@ -6250,6 +6250,181 @@ exports.registrarOperacaoParceiro = async (req, res) => {
   }
 };
 
+exports.atualizarOperacaoParceiro = async (req, res) => {
+  const schema = getSchemaFromReq(req);
+  if (!schema) {
+    return res.status(400).json({
+      success: false,
+      message: "Schema nao especificado nos headers",
+    });
+  }
+
+  const { data } = req.body;
+  if (!data) {
+    return res.status(400).json({
+      success: false,
+      message: "Dados nao fornecidos no corpo da requisicao",
+    });
+  }
+
+  const seqRegistro = Number(data.seq_registro);
+  if (!Number.isInteger(seqRegistro) || seqRegistro <= 0) {
+    return res.status(400).json({
+      success: false,
+      message: "seq_registro invalido",
+    });
+  }
+
+  const requiredFields = [
+    "des_movimento",
+    "dta_movimento",
+    "val_movimento",
+    "tipo_movimento",
+  ];
+  const missingFields = [];
+
+  requiredFields.forEach((field) => {
+    if (
+      data[field] === undefined ||
+      data[field] === null ||
+      data[field] === ""
+    ) {
+      missingFields.push(field);
+    }
+  });
+
+  if (missingFields.length > 0) {
+    return res.status(400).json({
+      success: false,
+      message: "Campos obrigatorios faltando",
+      missingFields,
+    });
+  }
+
+  const tipoMovimento = String(data.tipo_movimento || "").toUpperCase();
+  if (!["C", "D"].includes(tipoMovimento)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Tipo de movimentacao invalido. Use "C" ou "D"',
+    });
+  }
+
+  const dataMovimento = new Date(data.dta_movimento);
+  if (isNaN(dataMovimento.getTime())) {
+    return res.status(400).json({
+      success: false,
+      message: "Data da movimentacao invalida",
+    });
+  }
+
+  const valorAbsoluto = Math.abs(Number(data.val_movimento));
+  if (!Number.isFinite(valorAbsoluto) || valorAbsoluto <= 0) {
+    return res.status(400).json({
+      success: false,
+      message: "Valor da movimentacao deve ser maior que zero",
+    });
+  }
+
+  const codParceiro =
+    data.cod_parceiro === undefined || data.cod_parceiro === null
+      ? null
+      : Number(data.cod_parceiro);
+
+  if (
+    codParceiro !== null &&
+    (!Number.isInteger(codParceiro) || codParceiro <= 0)
+  ) {
+    return res.status(400).json({
+      success: false,
+      message: "cod_parceiro invalido",
+    });
+  }
+
+  const valorMovimento = parseFloat(
+    (tipoMovimento === "D" ? -valorAbsoluto : valorAbsoluto).toFixed(2),
+  );
+
+  try {
+    const queryResult = await db.transaction(async (client) => {
+      const updateQuery = `
+        UPDATE ${schema}.tab_conta_parceiro
+           SET des_movimento = $1,
+               dta_movimento = $2,
+               val_movimento = $3,
+               tipo_movimento = $4,
+               observacao = $5,
+               cod_banco = $6,
+               des_banco = $7
+         WHERE seq_registro = $8
+           AND ($9::integer IS NULL OR cod_parceiro = $9::integer)
+         RETURNING seq_registro, cod_parceiro, nom_parceiro, des_movimento,
+                   dta_movimento, val_movimento, tipo_movimento, observacao,
+                   cod_banco, des_banco
+      `;
+
+      const values = [
+        String(data.des_movimento || "").trim(),
+        data.dta_movimento,
+        valorMovimento,
+        tipoMovimento,
+        data.observacao ? String(data.observacao).trim() : null,
+        data.cod_banco || null,
+        data.des_banco || null,
+        seqRegistro,
+        codParceiro,
+      ];
+
+      const result = await client.query(updateQuery, values);
+
+      if (result.rowCount === 0) {
+        throw new Error("Movimento da conta do parceiro nao encontrado.");
+      }
+
+      const parceiroAtualizado = result.rows[0].cod_parceiro;
+      let saldoAtual = null;
+
+      if (parceiroAtualizado) {
+        const saldoResult = await client.query(
+          `
+            SELECT COALESCE(SUM(val_movimento), 0) as saldo_total
+              FROM ${schema}.tab_conta_parceiro
+             WHERE cod_parceiro = $1
+          `,
+          [parceiroAtualizado],
+        );
+
+        saldoAtual = parseFloat(saldoResult.rows[0].saldo_total);
+      }
+
+      return {
+        registro_conta_parceiro: result.rows[0],
+        saldo_atual: saldoAtual,
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Movimento atualizado com sucesso",
+      data: queryResult,
+    });
+  } catch (error) {
+    console.error("Erro ao atualizar operacao parceiro:", {
+      error: error.message,
+      stack: error.stack,
+      endpoint: "atualizarOperacaoParceiro",
+      timestamp: new Date().toISOString(),
+    });
+
+    return res.status(500).json({
+      success: false,
+      message: "Erro ao atualizar movimento do parceiro",
+      details: error.message,
+      errorCode: error.code,
+      timestamp: new Date().toISOString(),
+    });
+  }
+};
+
 exports.buscaContaParceiro = async (req, res) => {
   // 1. ValidaÃ§Ã£o bÃ¡sica
   const schema = getSchemaFromReq(req);

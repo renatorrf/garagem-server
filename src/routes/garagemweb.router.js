@@ -48,6 +48,7 @@ router.post("/cadastraParceiros", garagemWeb.cadastraParceiros);
 router.post("/buscaParceiros", garagemWeb.buscaParceiros);
 router.post("/editaParceiros", garagemWeb.editaParceiros);
 router.post("/registrarOperacaoParceiro", garagemWeb.registrarOperacaoParceiro);
+router.post("/atualizarOperacaoParceiro", garagemWeb.atualizarOperacaoParceiro);
 router.post("/buscaContaParceiro", garagemWeb.buscaContaParceiro);
 
 router.post("/cadastraDespesaFixa", garagemWeb.cadastraDespesaFixa);
