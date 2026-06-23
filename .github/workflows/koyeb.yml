@@ -2,7 +2,12 @@ name: Wake Koyeb App
 
 on:
   schedule:
-   - cron: "*/10 11-21 * * 1-5"
+    # 08:00 até 20:50 BRT = 11:00 até 23:50 UTC
+    - cron: "*/10 11-23 * * *"
+
+    # 21:00 até 22:50 BRT = 00:00 até 01:50 UTC do dia seguinte
+    - cron: "*/10 0-1 * * *"
+
   workflow_dispatch:
 
 jobs:
