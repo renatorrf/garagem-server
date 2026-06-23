@@ -6780,7 +6780,8 @@ exports.updateMovimentoFinanceiro = async (req, res) => {
         : null;
       const seqPreCadastroEfetivo =
         categoria === 95 ? seqPreCadastro || seqVeiculo : seqPreCadastro;
-      const seqVeiculoPersistido = categoria === 95 ? null : seqVeiculo;
+      const seqVeiculoPersistido =
+        categoria === 95 ? seqPreCadastroEfetivo : seqVeiculo;
       const codParceiro = movimento.cod_parceiro
         ? Number(movimento.cod_parceiro)
         : null;
@@ -6829,7 +6830,10 @@ exports.updateMovimentoFinanceiro = async (req, res) => {
           [movimento.seq_registro],
         );
 
-        if (movimentoAtual.seq_veiculo) {
+        if (
+          movimentoAtual.seq_veiculo &&
+          Number(movimentoAtual.cod_categoria_movimento || 0) !== 95
+        ) {
           await client.query(
             `
               UPDATE ${schema}.tab_veiculo
@@ -6845,7 +6849,9 @@ exports.updateMovimentoFinanceiro = async (req, res) => {
         let saidasPreCadastroRemovidas = 0;
         const seqPreCadastroAtual = movimentoAtual.seq_movimentacao_relacionada
           ? Number(movimentoAtual.seq_movimentacao_relacionada)
-          : null;
+          : movimentoAtual.seq_veiculo
+            ? Number(movimentoAtual.seq_veiculo)
+            : null;
 
         if (
           Number(movimentoAtual.cod_categoria_movimento || 0) === 95 &&
