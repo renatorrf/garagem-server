@@ -6787,6 +6787,110 @@ exports.updateMovimentoFinanceiro = async (req, res) => {
       const codBancoDestino = movimento.cod_banco_destino
         ? Number(movimento.cod_banco_destino)
         : null;
+      const movimentoAtualResult = await client.query(
+        `
+          SELECT *
+            FROM ${schema}.tab_movimentacao
+           WHERE seq_registro = $1
+           FOR UPDATE
+        `,
+        [movimento.seq_registro],
+      );
+
+      if (movimentoAtualResult.rowCount === 0) {
+        throw new Error("Movimento nÃ£o encontrado para atualizaÃ§Ã£o.");
+      }
+
+      const movimentoAtual = movimentoAtualResult.rows[0];
+      const desconciliar =
+        movimento.ind_conciliado === false &&
+        !movimento.cod_categoria_movimento &&
+        !movimento.des_categoria_movimento;
+
+      if (desconciliar) {
+        const result = await client.query(
+          `
+            UPDATE ${schema}.tab_movimentacao
+               SET cod_categoria_movimento = NULL,
+                   des_categoria_movimento = NULL,
+                   ind_conciliado = false,
+                   dta_conciliado = NULL,
+                   seq_veiculo = NULL,
+                   cod_parceiro = NULL,
+                   nom_parceiro = NULL,
+                   cod_banco_destino = NULL,
+                   des_banco_destino = NULL,
+                   seq_movimentacao_relacionada = NULL,
+                   criterio_conciliacao = NULL,
+                   des_status_validacao = 'PENDENTE'
+             WHERE seq_registro = $1
+         RETURNING *
+          `,
+          [movimento.seq_registro],
+        );
+
+        if (movimentoAtual.seq_veiculo) {
+          await client.query(
+            `
+              UPDATE ${schema}.tab_veiculo
+                 SET cod_movimentacao = NULL,
+                     financeiro_incluso = false
+               WHERE seq_veiculo = $1
+                 AND cod_movimentacao = $2
+            `,
+            [movimentoAtual.seq_veiculo, movimento.seq_registro],
+          );
+        }
+
+        let saidasPreCadastroRemovidas = 0;
+        const seqPreCadastroAtual = movimentoAtual.seq_movimentacao_relacionada
+          ? Number(movimentoAtual.seq_movimentacao_relacionada)
+          : null;
+
+        if (
+          Number(movimentoAtual.cod_categoria_movimento || 0) === 95 &&
+          seqPreCadastroAtual
+        ) {
+          const saidasResult = await client.query(
+            `
+              UPDATE ${schema}.tab_movimentacao
+                 SET ind_excluido = true,
+                     ind_conciliado = false,
+                     dta_conciliado = NULL,
+                     ind_alterado = true,
+                     des_status_validacao = 'DESCONCILIADO'
+               WHERE COALESCE(ind_excluido, false) = false
+                 AND tipo_movimento = 'S'
+                 AND (
+                      (
+                        seq_movimentacao_relacionada = $1
+                        AND origem_importacao = 'PRE_CADASTRO_COMPRA'
+                      )
+                   OR (
+                        seq_movimentacao_relacionada = $2
+                        AND origem_importacao = 'PRE_CADASTRO'
+                      )
+                 )
+            `,
+            [movimento.seq_registro, seqPreCadastroAtual],
+          );
+
+          saidasPreCadastroRemovidas = saidasResult.rowCount;
+
+          await client.query(
+            `UPDATE ${schema}.tab_pre_cadastro_vei
+                SET ind_utilizado = false
+              WHERE seq_registro = $1`,
+            [seqPreCadastroAtual],
+          );
+        }
+
+        return {
+          rows: result.rows,
+          rowCount: result.rowCount,
+          saidasPreCadastroRemovidas,
+        };
+      }
 
       const validarCategoria = () => {
         switch (categoria) {
