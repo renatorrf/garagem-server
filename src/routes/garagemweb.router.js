@@ -79,6 +79,7 @@ router.post("/buscaDespesaVeiculo", garagemWeb.buscaDespesaVeiculo);
 router.post("/buscaMovimentoFinanceiro", garagemWeb.buscaMovimentoFinanceiro);
 router.post("/importarFinanceiroOFX", garagemWeb.importarFinanceiroOFX);
 router.post("/conciliarEncontrados", garagemWeb.conciliarEncontrados);
+router.post("/auditarMovimentoFinanceiro", garagemWeb.auditarMovimentoFinanceiro);
 router.post("/updateMovimentoFinanceiro", garagemWeb.updateMovimentoFinanceiro);
 
 router.post("/cadastraDespesaOperacional", garagemWeb.cadastraDespesaOperacional);

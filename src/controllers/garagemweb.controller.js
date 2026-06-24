@@ -2767,6 +2767,76 @@ exports.buscaMovimentoFinanceiro = async (req, res) => {
   }
 };
 
+exports.auditarMovimentoFinanceiro = async (req, res) => {
+  const schema = getSchemaFromReq(req);
+  const { seq_registro, ind_auditado, dta_auditoria } = req.body || {};
+  const seqRegistro = Number(seq_registro);
+  const auditado = ind_auditado === true;
+  const dataAuditoria = auditado
+    ? String(dta_auditoria || new Date().toISOString()).slice(0, 100)
+    : null;
+
+  if (!schema) {
+    return res.status(400).json({
+      success: false,
+      message: "Schema nÃ£o especificado nos headers",
+    });
+  }
+
+  if (!Number.isInteger(seqRegistro) || seqRegistro <= 0) {
+    return res.status(400).json({
+      success: false,
+      message: "Movimento financeiro invÃ¡lido",
+    });
+  }
+
+  try {
+    const queryResult = await db.transaction(async (client) => {
+      const updateQuery = `
+        UPDATE ${schema}.tab_movimentacao
+           SET ind_auditado = $1,
+               dta_auditoria = $2
+         WHERE seq_registro = $3
+         RETURNING *;
+      `;
+
+      const result = await client.query(updateQuery, [
+        auditado,
+        dataAuditoria,
+        seqRegistro,
+      ]);
+
+      return {
+        rows: result.rows,
+        rowCount: result.rowCount,
+      };
+    });
+
+    if (!queryResult.rowCount) {
+      return res.status(404).json({
+        success: false,
+        message: "Movimento financeiro nÃ£o encontrado",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: auditado
+        ? "Movimento marcado como auditado"
+        : "Movimento removido da auditoria",
+      data: queryResult,
+    });
+  } catch (error) {
+    console.error("Erro na auditoria do movimento financeiro:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Erro ao auditar movimento financeiro",
+      details: error.message,
+      errorDetails: error.stack,
+    });
+  }
+};
+
 exports.importarFinanceiroOFX = async (req, res) => {
   const { movimentosSelecionados, banco } = req.body;
   const schema = getSchemaFromReq(req);
