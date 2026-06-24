@@ -2729,7 +2729,11 @@ exports.buscaMovimentoFinanceiro = async (req, res) => {
         SELECT a.*
         FROM ${schema}.tab_movimentacao a
         ${whereClause}
-        ORDER BY a.dta_movimento DESC, a.seq_registro DESC
+        ORDER BY
+          a.dta_movimento::date DESC,
+          CASE WHEN a.tipo_movimento = 'E' THEN 0 ELSE 1 END,
+          a.dta_movimento DESC,
+          a.seq_registro DESC
         LIMIT $${p}
       `;
 
@@ -6799,6 +6803,7 @@ async function conciliarCompraPreCadastro({
   movimentoEntrada,
   seqPreCadastro,
   dtaConciliado,
+  dtaMovimentoReferencia,
 }) {
   const compraResult = await client.query(
     `
@@ -6830,7 +6835,10 @@ async function conciliarCompraPreCadastro({
   }
 
   const dataMovimento =
-    movimentoEntrada.dta_movimento || moment().format("YYYY-MM-DD");
+    dtaMovimentoReferencia ||
+    movimentoEntrada?.dta_movimento ||
+    dtaConciliado ||
+    moment().format("YYYY-MM-DD");
   const updateResult = await client.query(
     `
       UPDATE ${schema}.tab_movimentacao
@@ -7121,12 +7129,20 @@ exports.updateMovimentoFinanceiro = async (req, res) => {
       let compraPreCadastroConciliada = null;
 
       if (categoria === 95 && seqPreCadastroEfetivo) {
+        const movimentoEntradaConciliado = result.rows[0];
+        const dtaMovimentoReferencia =
+          movimentoEntradaConciliado?.dta_movimento ||
+          movimento.dta_movimento ||
+          movimentoAtual.dta_movimento ||
+          values[3];
+
         compraPreCadastroConciliada = await conciliarCompraPreCadastro({
           client,
           schema,
-          movimentoEntrada: result.rows[0],
+          movimentoEntrada: movimentoEntradaConciliado,
           seqPreCadastro: seqPreCadastroEfetivo,
           dtaConciliado: values[3],
+          dtaMovimentoReferencia,
         });
 
         const encerrarPreCadastro =

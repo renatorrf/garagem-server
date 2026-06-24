@@ -423,7 +423,7 @@ class Lead {
         OR email_remetente ILIKE $${paramCount + 1}
         OR telefone ILIKE $${paramCount + 1}
         OR nome ILIKE $${paramCount + 1}
-        OR vendedor_id ILIKE $${paramCount + 1}
+        OR COALESCE(vendedor_id::text, '') ILIKE $${paramCount + 1}
         OR vendedor_whatsapp ILIKE $${paramCount + 1}
       )
     `);
@@ -504,6 +504,27 @@ class Lead {
   static async getDashboardStats(dataInicio, dataFim, schema, options = {}) {
     const leadTable = Lead.resolveTableName(options);
     const schemaName = resolveSchemaValue(schema);
+    const now = new Date();
+    const inicioMesCorrente = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      1,
+      0,
+      0,
+      0,
+      0,
+    ).toISOString();
+    const fimMesCorrente = new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      1,
+      0,
+      0,
+      0,
+      0,
+    ).toISOString();
+    const ini = String(dataInicio || "").trim() || inicioMesCorrente;
+    const fim = String(dataFim || "").trim() || fimMesCorrente;
 
     console.log(leadTable);
 
@@ -511,16 +532,13 @@ class Lead {
     const params = [];
     let paramCount = 1;
 
-    if (dataInicio) {
-      whereConditions.push(`data_recebimento >= $${paramCount}`);
-      params.push(dataInicio);
-      paramCount++;
-    }
-    if (dataFim) {
-      whereConditions.push(`data_recebimento < $${paramCount}`);
-      params.push(dataFim);
-      paramCount++;
-    }
+    whereConditions.push(`data_recebimento >= $${paramCount}`);
+    params.push(ini);
+    paramCount++;
+
+    whereConditions.push(`data_recebimento < $${paramCount}`);
+    params.push(fim);
+    paramCount++;
 
     const whereClause = `WHERE ${whereConditions.join(" AND ")}`;
 
@@ -544,10 +562,6 @@ class Lead {
     `;
 
     const result = await db.getOne(statsQuery, params);
-
-    const ini =
-      dataInicio || new Date(Date.now() - 30 * 86400000).toISOString();
-    const fim = dataFim || new Date().toISOString();
 
     const timelineWhere = [
       "deleted_at IS NULL",
@@ -691,7 +705,7 @@ class Lead {
         vendedor_id,
         vendedor_whatsapp,
         COALESCE(
-          NULLIF(vendedor_id, ''),
+          NULLIF(vendedor_id::text, ''),
           NULLIF(vendedor_whatsapp, ''),
           metadata->'wa'->>'sellerName',
           'Não definido'
