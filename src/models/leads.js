@@ -360,6 +360,7 @@ class Lead {
     prioridade,
     dataInicio,
     dataFim,
+    dataCampo,
     search,
     vendedorId,
     page = 1,
@@ -399,14 +400,26 @@ class Lead {
       paramCount++;
     }
 
+    const normalizedDateField = String(dataCampo || "")
+      .trim()
+      .toLowerCase();
+    const dateFilterExpression =
+      normalizedDateField === "contato"
+        ? `COALESCE(
+            NULLIF(metadata->'wa'->>'attendanceStartedAt', '')::timestamptz,
+            NULLIF(metadata->'wa'->>'claimedAt', '')::timestamptz,
+            data_contato::timestamptz
+          )`
+        : "data_recebimento";
+
     if (dataInicio) {
-      whereConditions.push(`data_recebimento >= $${paramCount}`);
+      whereConditions.push(`${dateFilterExpression} >= $${paramCount}`);
       params.push(dataInicio);
       paramCount++;
     }
 
     if (dataFim) {
-      whereConditions.push(`data_recebimento <= $${paramCount}`);
+      whereConditions.push(`${dateFilterExpression} <= $${paramCount}`);
       params.push(dataFim);
       paramCount++;
     }
