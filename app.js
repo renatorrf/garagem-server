@@ -9,6 +9,12 @@ require("dotenv").config();
 
 const app = express();
 
+function captureRawBody(req, _res, buf) {
+  if (buf && buf.length) {
+    req.rawBody = Buffer.from(buf);
+  }
+}
+
 /**
  * CORS
  */
@@ -51,9 +57,11 @@ const corsOptions = {
  * Middlewares
  */
 app.use(cors(corsOptions));
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ limit: "50mb", extended: true }));
-app.use(express.json({ type: "application/vnd.api+json" }));
+app.use(express.json({ limit: "50mb", verify: captureRawBody }));
+app.use(
+  express.urlencoded({ limit: "50mb", extended: true, verify: captureRawBody }),
+);
+app.use(express.json({ type: "application/vnd.api+json", verify: captureRawBody }));
 
 if (process.env.NODE_ENV === "development") {
   const morgan = require("morgan");
@@ -127,6 +135,7 @@ const garagemWeb = require("./src/routes/garagemweb.router");
 const integrador = require("./src/routes/integradores.router");
 const emailCaptureRoutes = require("./src/routes/lead.router");
 const whatsappWebhookRoutes = require("./src/routes/whatsappWebhookRoutes");
+const facebookLeadAdsRoutes = require("./src/routes/facebookLeadAds.routes");
 const pushNotificationsRoutes = require("./src/routes/pushNotifications.routes");
 const pushRoomRoutes = require("./src/routes/pushRoom.routes");
 const importadorGaraje = require("./src/controllers/importadorGaraje.controller");
@@ -141,12 +150,14 @@ app.use("/garagemweb/integradores", integrador);
 // Mantém compatibilidade com rotas antigas e novas
 app.use("/garagemweb/api", emailCaptureRoutes);
 //app.use("/garagemweb/leads", emailCaptureRoutes);
+app.use("/garagemweb/api/facebook/lead-ads", facebookLeadAdsRoutes);
 app.use("/garagemweb/api/push", pushNotificationsRoutes);
 app.use("/garagemweb/api/push-room", pushRoomRoutes);
 
 // WhatsApp webhook
 app.use("/webhooks/whatsapp", whatsappWebhookRoutes);
 app.use("/garagemweb/webhooks/whatsapp", whatsappWebhookRoutes);
+app.use("/garagemweb/webhooks/facebook/lead-ads", facebookLeadAdsRoutes);
 
 // Importação manualf
 app.post("/importar-garaje", importadorGaraje.importarGarajeManual);
