@@ -403,11 +403,17 @@ class Lead {
     const normalizedDateField = String(dataCampo || "")
       .trim()
       .toLowerCase();
+    const safeWaTimestamp = (field) => `
+            CASE
+              WHEN NULLIF(metadata->'wa'->>'${field}', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+              THEN NULLIF(metadata->'wa'->>'${field}', '')::timestamptz
+            END`;
     const dateFilterExpression =
       normalizedDateField === "contato"
         ? `COALESCE(
-            NULLIF(metadata->'wa'->>'attendanceStartedAt', '')::timestamptz,
-            NULLIF(metadata->'wa'->>'claimedAt', '')::timestamptz,
+            ${safeWaTimestamp("attendanceStartedAt")},
+            ${safeWaTimestamp("claimedAt")},
+            ${safeWaTimestamp("openConversationAt")},
             data_contato::timestamptz
           )`
         : "data_recebimento";
