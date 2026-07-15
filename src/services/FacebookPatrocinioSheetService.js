@@ -285,13 +285,13 @@ class FacebookPatrocinioSheetService {
       this.firstValue(row, ["email", "e_mail", "email_address"]) || null;
     const veiculo =
       this.firstValue(row, [
+        "ad_name",
         "veiculo",
         "veiculo_interesse",
         "vehicle",
         "modelo",
         "carro",
         "produto",
-        "ad_name",
         "anuncio",
       ]) ||
       this.firstValueByMatch(
