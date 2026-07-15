@@ -51,6 +51,37 @@ function normalizeMoneyDisplay(value) {
   });
 }
 
+function normalizeIntegerDisplay(value) {
+  if (value === null || value === undefined || value === "") {
+    return "--";
+  }
+
+  const raw = String(value)
+    .trim()
+    .replace(/[^\d.,-]/g, "");
+  let integerPart = raw;
+
+  if (raw.includes(",") && raw.includes(".")) {
+    integerPart = raw.replace(/\./g, "").split(",")[0];
+  } else if (raw.includes(",")) {
+    const parts = raw.split(",");
+    integerPart = parts[1]?.length === 3 ? parts.join("") : parts[0];
+  } else if (raw.includes(".")) {
+    const parts = raw.split(".");
+    const looksLikeThousands =
+      parts.length > 1 && parts.slice(1).every((part) => part.length === 3);
+    integerPart = looksLikeThousands ? parts.join("") : parts[0];
+  }
+
+  const digits = integerPart.replace(/\D/g, "");
+  if (!digits) return normalizeText(value, "--");
+
+  return Number(digits).toLocaleString("pt-BR", {
+    maximumFractionDigits: 0,
+    minimumFractionDigits: 0,
+  });
+}
+
 function getNumberEnv(name, fallback) {
   const raw = process.env[name];
   const parsed = Number(raw);
@@ -213,8 +244,24 @@ function normalizeTemplateMeta(req) {
   return {
     valor: normalizeMoneyDisplay(valor),
     ano: ano || "--",
-    km: km || "--",
+    km: normalizeIntegerDisplay(km),
   };
+}
+
+async function getTemplate(req, res) {
+  try {
+    await getTemplateAsset();
+
+    return res.sendFile(TEMPLATE_PATH);
+  } catch (error) {
+    console.error("Erro ao carregar template de fotos:", error);
+
+    return res.status(404).json({
+      success: false,
+      message: "Template de fotos nao encontrado.",
+      details: error?.message,
+    });
+  }
 }
 
 async function renderVehicleCard(file, meta, templateAsset) {
@@ -336,7 +383,9 @@ async function editarComTemplate(req, res) {
 }
 
 module.exports = {
+  getTemplate,
   editarComTemplate,
   buildValueLayerSvg,
   renderVehicleCard,
+  normalizeIntegerDisplay,
 };

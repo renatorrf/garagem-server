@@ -95,6 +95,8 @@ router.post("/buscaCliente", garagemWeb.buscaCliente);
 router.post("/cadastrarCliente", garagemWeb.cadastrarCliente);
 router.post("/vinculaVeiculoCliente", garagemWeb.vinculaVeiculoCliente);
 
+router.get("/fotos/template", fotosController.getTemplate);
+router.get("/fotos/template/asset", fotosController.getTemplate);
 router.post("/fotos/template", uploadFotos.any(), fotosController.editarComTemplate);
 
 router.post("/buscaDadosEmpresa", garagemWeb.buscaDadosEmpresa);

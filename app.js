@@ -5,6 +5,7 @@
 
 const express = require("express");
 const cors = require("cors");
+const path = require("path");
 require("dotenv").config();
 
 const app = express();
@@ -62,6 +63,8 @@ app.use(
   express.urlencoded({ limit: "50mb", extended: true, verify: captureRawBody }),
 );
 app.use(express.json({ type: "application/vnd.api+json", verify: captureRawBody }));
+app.use("/assets", express.static(path.join(__dirname, "assets")));
+app.use("/garagemweb/assets", express.static(path.join(__dirname, "assets")));
 
 if (process.env.NODE_ENV === "development") {
   const morgan = require("morgan");
