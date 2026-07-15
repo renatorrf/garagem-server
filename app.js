@@ -136,6 +136,7 @@ const integrador = require("./src/routes/integradores.router");
 const emailCaptureRoutes = require("./src/routes/lead.router");
 const whatsappWebhookRoutes = require("./src/routes/whatsappWebhookRoutes");
 const facebookLeadAdsRoutes = require("./src/routes/facebookLeadAds.routes");
+const facebookPatrocinioRoutes = require("./src/routes/facebookPatrocinio.routes");
 const pushNotificationsRoutes = require("./src/routes/pushNotifications.routes");
 const pushRoomRoutes = require("./src/routes/pushRoom.routes");
 const importadorGaraje = require("./src/controllers/importadorGaraje.controller");
@@ -151,6 +152,7 @@ app.use("/garagemweb/integradores", integrador);
 app.use("/garagemweb/api", emailCaptureRoutes);
 //app.use("/garagemweb/leads", emailCaptureRoutes);
 app.use("/garagemweb/api/facebook/lead-ads", facebookLeadAdsRoutes);
+app.use("/garagemweb/api/facebook-patrocinio", facebookPatrocinioRoutes);
 app.use("/garagemweb/api/push", pushNotificationsRoutes);
 app.use("/garagemweb/api/push-room", pushRoomRoutes);
 
@@ -171,6 +173,18 @@ try {
   console.log("✅ LeadWorkflowService iniciado");
 } catch (error) {
   console.error("❌ Falha ao iniciar LeadWorkflowService:", error.message);
+}
+
+try {
+  const FacebookPatrocinioSheetService = require(
+    "./src/services/FacebookPatrocinioSheetService",
+  );
+  FacebookPatrocinioSheetService.start();
+} catch (error) {
+  console.error(
+    "Falha ao iniciar FacebookPatrocinioSheetService:",
+    error.message,
+  );
 }
 
 try {
