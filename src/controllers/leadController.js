@@ -1,4 +1,5 @@
 const Lead = require("../models/leads");
+const crypto = require("crypto");
 const LeadWorkflowService = require("../services/LeadWorkflowService");
 const {
   isAllowedLeadRoomUser,
@@ -7,6 +8,7 @@ const {
 const {
   getSchemaFromReq,
   getTenantIdFromReq,
+  resolveSchemaValue,
 } = require("../utils/tenantContext");
 
 class LeadController {
@@ -102,8 +104,12 @@ class LeadController {
   async getLeadById(req, res) {
     try {
       const { id } = req.params;
-      const schema = getSchemaFromReq(req);
-      const tenantId = getTenantIdFromReq(req);
+      const schema = resolveSchemaValue(
+        process.env.PUBLIC_INTEREST_SCHEMA ||
+          process.env.SCHEMA_PADRAO ||
+          "nextcar",
+      );
+      const tenantId = null;
       const lead = await Lead.findById(id, { schema, tenantId });
 
       if (!lead) {
@@ -143,6 +149,115 @@ class LeadController {
       });
     } catch (error) {
       res.status(400).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  }
+
+  async createClientInterestLead(req, res) {
+    try {
+      const body = req.body || {};
+      const nome = String(body.nome || body.name || "")
+        .trim()
+        .replace(/\s+/g, " ");
+      const telefone = String(body.whatsapp || body.telefone || body.phone || "")
+        .replace(/\D/g, "");
+      const mensagem = String(body.mensagem || body.message || "")
+        .trim()
+        .slice(0, 1200);
+      const pageUrl = String(body.pageUrl || body.url || "")
+        .trim()
+        .slice(0, 500);
+
+      if (nome.length < 3) {
+        return res.status(400).json({
+          success: false,
+          error: "Nome invalido.",
+        });
+      }
+
+      if (telefone.length < 10 || telefone.length > 13) {
+        return res.status(400).json({
+          success: false,
+          error: "WhatsApp invalido.",
+        });
+      }
+
+      if (mensagem.length < 5) {
+        return res.status(400).json({
+          success: false,
+          error: "Mensagem invalida.",
+        });
+      }
+
+      const schema = getSchemaFromReq(req);
+      const tenantId = getTenantIdFromReq(req);
+      const publicId = `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
+      const emailId = `not-lead-facebook-${publicId}`;
+      const receivedAt = new Date();
+
+      const leadData = {
+        emailId,
+        remetente: nome,
+        emailRemetente: `${emailId}@not-lead-facebook.local`,
+        assunto: "Interesse manual Facebook Ads",
+        telefone,
+        nome,
+        veiculoInteresse: "Interesse informado pelo cliente",
+        mensagem,
+        origem: "not-lead-facebook",
+        status: "novo",
+        prioridade: "media",
+        dataRecebimento: receivedAt,
+        metadata: {
+          plataforma: "Facebook formulario manual",
+          origem: "not-lead-facebook",
+          fonte: "interesse-cliente",
+          tipoClassificacao: "not-lead-facebook",
+          classificadoComo: "not-lead-facebook",
+          publicForm: {
+            route: "interesse-cliente",
+            pageUrl: pageUrl || null,
+            submittedAt: receivedAt.toISOString(),
+            userAgent: String(req.headers["user-agent"] || "").slice(0, 250),
+          },
+        },
+        tags: ["not-lead-facebook", "facebook", "formulario-publico"],
+      };
+
+      const lead = new Lead({
+        ...leadData,
+        _schema: schema,
+        _tenantId: tenantId,
+      });
+      const savedLead = await lead.save({ schema, tenantId });
+
+      if (!savedLead) {
+        throw new Error("Nao foi possivel registrar o interesse.");
+      }
+
+      let workflowResult = null;
+
+      try {
+        workflowResult = await LeadWorkflowService.onNewLead(savedLead, {
+          schema,
+          tenantId,
+        });
+      } catch (workflowError) {
+        console.error(
+          `Falha ao iniciar workflow do interesse publico ${savedLead.id}:`,
+          workflowError.message,
+        );
+      }
+
+      return res.status(201).json({
+        success: true,
+        message: "Interesse registrado com sucesso.",
+        data: workflowResult || savedLead,
+      });
+    } catch (error) {
+      return res.status(400).json({
         success: false,
         error: error.message,
       });

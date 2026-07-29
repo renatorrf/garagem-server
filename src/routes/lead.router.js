@@ -30,6 +30,7 @@ router.post('/leads/search', leads.searchLeads);
 router.get('/leads/export', leads.exportLeads);
 router.post('/leads/assign', leads.assignToSeller);
 
+router.post('/leads/interesse-cliente', leads.createClientInterestLead);
 router.post('/leads/simulacao-compra', leads.createSimulationLead);
 router.post('/leads/:id/retry-whatsapp', leads.retryWhatsApp);
 router.post('/leads/:id/start-attendance', leads.startAttendance);
