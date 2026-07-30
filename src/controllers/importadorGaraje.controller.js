@@ -46,7 +46,20 @@ function toInt(v) {
 
 function toMoney(v) {
   if (v == null) return null;
-  const s = String(v).trim().replace(/\./g, "").replace(",", ".");
+  const raw = String(v).trim();
+  const onlyNumber = raw.replace(/[^\d,.-]/g, "");
+  const lastComma = onlyNumber.lastIndexOf(",");
+  const lastDot = onlyNumber.lastIndexOf(".");
+  let s = onlyNumber;
+
+  if (lastComma > lastDot) {
+    s = onlyNumber.replace(/\./g, "").replace(",", ".");
+  } else if (lastDot > -1 && /[.,]\d{3}$/.test(onlyNumber)) {
+    s = onlyNumber.replace(/[.,]/g, "");
+  } else {
+    s = onlyNumber.replace(/,/g, "");
+  }
+
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
 }
@@ -92,18 +105,26 @@ async function mapWithConcurrency(items, limit, mapper) {
 /**
  * Checa se já existe id_importacao (evita duplicado)
  */
-async function buscaImportado(schema, id_importacao) {
-  if (!id_importacao) return false;
+async function buscaImportados(schema, id_importacao) {
+  if (!id_importacao) return [];
 
   const q = `
-    SELECT seq_veiculo, ind_status
+    SELECT
+      seq_veiculo,
+      ind_status,
+      COALESCE(financeiro_incluso, false) AS financeiro_incluso,
+      cod_movimentacao,
+      COALESCE(cliques, 0) AS cliques,
+      COALESCE(negociacoes_enviadas, 0) AS negociacoes_enviadas
     FROM ${schema}.tab_veiculo
-    WHERE ind_importado = true
-      AND id_importacao = $1
-    LIMIT 1
+    WHERE id_importacao::text = $1
+      AND COALESCE(ind_status, 'A') <> 'E'
+    ORDER BY
+      CASE WHEN ind_status = 'V' THEN 1 ELSE 0 END,
+      seq_veiculo DESC
   `;
-  const r = await db.query(q, [id_importacao]);
-  return r.rows[0] || null;
+  const r = await db.query(q, [String(id_importacao)]);
+  return r.rows || [];
 }
 
 /**
@@ -244,6 +265,11 @@ async function atualizarVeiculoImportado(schema, seqVeiculo, payload) {
     km,
     val_venda_esperado,
     observacoes,
+    ind_tipo_veiculo,
+    cod_parceiro,
+    des_proprietario,
+    ind_veiculo_investidor,
+    ind_ajustado_importacao,
     id_importacao,
   } = dados_veiculo;
 
@@ -268,6 +294,12 @@ async function atualizarVeiculoImportado(schema, seqVeiculo, payload) {
     motorizacao,
     portas,
     cambio,
+    ind_tipo_veiculo,
+    cod_parceiro: cod_parceiro || 0,
+    des_proprietario:
+      ind_tipo_veiculo === "P" ? "Next Car" : des_proprietario,
+    ind_veiculo_investidor,
+    ind_ajustado_importacao,
     ind_importado: true,
     id_importacao,
     ind_excluido_garage: false,
@@ -292,7 +324,7 @@ async function atualizarVeiculoImportado(schema, seqVeiculo, payload) {
       UPDATE ${schema}.tab_veiculo
          SET ${setClause}
        WHERE seq_veiculo = $${values.length}
-         AND ind_importado = true
+         AND COALESCE(ind_status, 'A') <> 'V'
        RETURNING seq_veiculo;
     `;
 
@@ -328,6 +360,202 @@ async function atualizarVeiculoImportado(schema, seqVeiculo, payload) {
 
       await client.query(insertImagensQuery, insertValues);
     }
+  });
+}
+
+function preservarContadores(existentes = []) {
+  return existentes.reduce(
+    (acc, item) => ({
+      cliques: Math.max(acc.cliques, Number(item.cliques || 0)),
+      negociacoes_enviadas: Math.max(
+        acc.negociacoes_enviadas,
+        Number(item.negociacoes_enviadas || 0),
+      ),
+    }),
+    { cliques: 0, negociacoes_enviadas: 0 },
+  );
+}
+
+async function inserirVeiculoImportado(client, schema, payload, { contadores = {} } = {}) {
+  const dataAtual = new Date().toISOString();
+  const { dados_veiculo, imagens_veiculo } = payload;
+
+  const imagensValidas = Array.isArray(imagens_veiculo)
+    ? imagens_veiculo.filter((img) => img && img.src).slice(0, 12)
+    : [];
+
+  const {
+    ind_tipo_veiculo,
+    nome_documento,
+    des_veiculo_personalizado,
+    documento,
+    marca,
+    modelo,
+    modelo_completo,
+    ano_fabricacao,
+    ano_modelo,
+    placa,
+    chassis,
+    renavam,
+    cor,
+    crv,
+    combustivel,
+    motorizacao,
+    portas,
+    cambio,
+    km,
+    dta_compra,
+    val_venda_esperado,
+    observacoes,
+    cod_parceiro,
+    des_proprietario,
+    ind_veiculo_investidor,
+    ind_ajustado_importacao,
+    ind_importado,
+    id_importacao,
+    ind_excluido_garage,
+  } = dados_veiculo;
+
+  const veiculoFields = {
+    des_veiculo: `${marca ?? ""} ${modelo ?? ""}`.trim(),
+    des_veiculo_personalizado,
+    observacoes:
+      observacoes == null
+        ? `Cor: ${cor ?? ""}, Combustivel: ${combustivel ?? ""}, Motor: ${motorizacao ?? ""}, Portas: ${portas ?? ""}, Cambio: ${cambio ?? ""}, KM: ${km ?? ""}`
+        : observacoes,
+    dta_compra,
+    img_veiculo_capa_url: imagensValidas?.[0]?.src ?? null,
+    ind_tipo_veiculo,
+    des_proprietario:
+      ind_tipo_veiculo === "P" ? "Next Car" : des_proprietario,
+    val_venda_esperado,
+    cod_parceiro: cod_parceiro || 0,
+    documento,
+    nome_documento,
+    renavam,
+    placa,
+    ano_fabricacao,
+    ano_modelo,
+    des_veiculo_completa:
+      `${marca ?? ""} ${modelo ?? ""} ${ano_fabricacao ?? ""} ${cor ?? ""}`.trim(),
+    chassis,
+    modelo,
+    modelo_completo,
+    marca,
+    cor,
+    crv,
+    km,
+    dta_lancamento: dataAtual,
+    dta_ultima_alteracao: dataAtual,
+    combustivel,
+    motorizacao,
+    portas,
+    cambio,
+    valor_investido_investidor: 0,
+    valor_investido_proprio: 0,
+    ind_veiculo_investidor,
+    ind_ajustado_importacao,
+    ind_importado,
+    id_importacao,
+    ind_excluido_garage,
+    cliques: Number(contadores.cliques || 0),
+    negociacoes_enviadas: Number(contadores.negociacoes_enviadas || 0),
+  };
+
+  const fixedValues = {
+    ind_status: "A",
+    val_venda: null,
+    val_compra: null,
+    dta_venda: null,
+    ind_troca: null,
+    seq_veiculo_origem: null,
+    ind_retorno_vinculado: false,
+    cod_usuario_vinculado: 0,
+    ind_ocorrencia_aberta: false,
+    ind_financiado: false,
+  };
+
+  const allFields = {
+    ...veiculoFields,
+    ...fixedValues,
+  };
+
+  Object.keys(allFields).forEach((key) => {
+    if (allFields[key] === undefined) {
+      delete allFields[key];
+    }
+  });
+
+  const columns = Object.keys(allFields);
+  const values = Object.values(allFields);
+  const placeholders = values.map((_, i) => `$${i + 1}`).join(", ");
+
+  const veiculoResult = await client.query(
+    `
+    INSERT INTO ${schema}.tab_veiculo (
+      ${columns.join(", ")}
+    ) VALUES (
+      ${placeholders}
+    )
+    RETURNING seq_veiculo;
+    `,
+    values,
+  );
+
+  const seqVeiculo = veiculoResult.rows[0].seq_veiculo;
+
+  if (imagensValidas.length > 0) {
+    const imageColumns = ["seq_veiculo"];
+    const imageValues = [seqVeiculo];
+    const imagePlaceholders = ["$1"];
+
+    for (let i = 0; i < imagensValidas.length; i++) {
+      const imageIndex = i + 1;
+      imageColumns.push(`img_${imageIndex}_url`);
+      imageValues.push(imagensValidas[i].src);
+      imagePlaceholders.push(`$${imageValues.length}`);
+    }
+
+    await client.query(
+      `
+      INSERT INTO ${schema}.tab_veiculo_imagem
+      (${imageColumns.join(", ")})
+      VALUES
+      (${imagePlaceholders.join(", ")})
+      `,
+      imageValues,
+    );
+  }
+
+  return seqVeiculo;
+}
+
+async function reinserirVeiculosImportados(schema, existentes, payload) {
+  const substituiveis = existentes.filter((item) => item.ind_status !== "V");
+  const seqs = substituiveis.map((item) => Number(item.seq_veiculo)).filter(Boolean);
+
+  if (seqs.length === 0) {
+    throw new Error("Nenhum veiculo importado disponivel para reinsercao");
+  }
+
+  const contadores = preservarContadores(substituiveis);
+
+  return db.transaction(async (client) => {
+    await client.query(
+      `DELETE FROM ${schema}.tab_veiculo_imagem WHERE seq_veiculo = ANY($1::int[])`,
+      [seqs],
+    );
+
+    await client.query(
+      `
+      DELETE FROM ${schema}.tab_veiculo
+       WHERE seq_veiculo = ANY($1::int[])
+         AND COALESCE(ind_status, 'A') <> 'V'
+      `,
+      [seqs],
+    );
+
+    return inserirVeiculoImportado(client, schema, payload, { contadores });
   });
 }
 
@@ -371,7 +599,12 @@ async function chamarCadastraVeiculo(schema, payload) {
 // ------------------------------------
 // Job principal
 // ------------------------------------
-async function importarGarajeJob({ schema, url, atualizarExistentes = false }) {
+async function importarGarajeJob({
+  schema,
+  url,
+  atualizarExistentes = false,
+  reinserir = false,
+}) {
   const json = await fetchGarajeXml(url);
 
   const veiculosNode = json?.estoque?.veiculo;
@@ -387,6 +620,7 @@ async function importarGarajeJob({ schema, url, atualizarExistentes = false }) {
 
   let importados = 0;
   let atualizados = 0;
+  let reinseridos = 0;
   let pulados = 0;
   let erros = 0;
 
@@ -396,7 +630,7 @@ async function importarGarajeJob({ schema, url, atualizarExistentes = false }) {
     veiculos.map((v) => normalizeText(v?.id)).filter(Boolean)
   );
 
-  if (veiculos.length > 0) {
+  if (idsXml.size > 0) {
     await db.query(
       `
       UPDATE ${schema}.tab_veiculo
@@ -404,7 +638,7 @@ async function importarGarajeJob({ schema, url, atualizarExistentes = false }) {
        WHERE ind_importado = true
          AND (ind_excluido_garage IS NULL OR ind_excluido_garage = false)
          AND id_importacao IS NOT NULL
-         AND NOT (id_importacao = ANY($1))
+         AND NOT (id_importacao::text = ANY($1::text[]))
       `,
       [Array.from(idsXml)]
     );
@@ -414,7 +648,10 @@ async function importarGarajeJob({ schema, url, atualizarExistentes = false }) {
     const idImp = normalizeText(v?.id);
 
     try {
-      const existente = await buscaImportado(schema, idImp);
+      const existentes = await buscaImportados(schema, idImp);
+      const existentesAtivos = existentes.filter((item) => item.ind_status !== "V");
+      const existentesVendidos = existentes.filter((item) => item.ind_status === "V");
+      const existente = existentesAtivos[0] || existentes[0] || null;
 
       if (existente && !atualizarExistentes) {
         pulados++;
@@ -427,7 +664,7 @@ async function importarGarajeJob({ schema, url, atualizarExistentes = false }) {
       });
 
       if (existente) {
-        if (existente.ind_status === "V") {
+        if (existentesAtivos.length === 0 && existentesVendidos.length > 0) {
           pulados++;
           detalhes.push({
             id_importacao: idImp,
@@ -437,7 +674,38 @@ async function importarGarajeJob({ schema, url, atualizarExistentes = false }) {
           continue;
         }
 
-        await atualizarVeiculoImportado(schema, existente.seq_veiculo, payload);
+        if (reinserir || existentesAtivos.length > 1) {
+          const seqNovo = await reinserirVeiculosImportados(schema, existentesAtivos, payload);
+
+          reinseridos++;
+          detalhes.push({
+            id_importacao: idImp,
+            seq_veiculo: seqNovo,
+            seq_veiculos_removidos: existentesAtivos.map((item) => item.seq_veiculo),
+            status: "reinserido",
+            motivo: reinserir ? "solicitado" : "duplicidade",
+            imgs: payload.imagens_veiculo.length,
+          });
+          continue;
+        }
+
+        try {
+          await atualizarVeiculoImportado(schema, existente.seq_veiculo, payload);
+        } catch (updateError) {
+          const seqNovo = await reinserirVeiculosImportados(schema, existentesAtivos, payload);
+
+          reinseridos++;
+          detalhes.push({
+            id_importacao: idImp,
+            seq_veiculo: seqNovo,
+            seq_veiculos_removidos: existentesAtivos.map((item) => item.seq_veiculo),
+            status: "reinserido",
+            motivo: "fallback_update",
+            erro_update: updateError.message,
+            imgs: payload.imagens_veiculo.length,
+          });
+          continue;
+        }
 
         atualizados++;
         detalhes.push({
@@ -471,6 +739,7 @@ async function importarGarajeJob({ schema, url, atualizarExistentes = false }) {
     totalXml: veiculos.length,
     importados,
     atualizados,
+    reinseridos,
     pulados,
     erros,
     detalhes,
@@ -488,6 +757,10 @@ exports.importarGarajeManual = async (req, res) => {
     req.body?.atualizarExistentes === true ||
     req.body?.reinserir === true ||
     req.body?.forceUpdate === true;
+  const reinserir =
+    req.body?.reinserir === true ||
+    req.body?.forceReinsert === true ||
+    req.body?.forcarReinsercao === true;
 
   if (!schema) {
     return res.status(400).json({
@@ -497,7 +770,12 @@ exports.importarGarajeManual = async (req, res) => {
   }
 
   try {
-    const result = await importarGarajeJob({ schema, url, atualizarExistentes });
+    const result = await importarGarajeJob({
+      schema,
+      url,
+      atualizarExistentes,
+      reinserir,
+    });
     return res.status(200).json({ success: true, schema, url, ...result });
   } catch (e) {
     console.error("importarGarajeManual erro:", e);
