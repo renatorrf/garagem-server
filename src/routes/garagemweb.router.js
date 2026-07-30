@@ -31,6 +31,7 @@ router.post("/salvaPreCadastro", garagemWeb.salvaPreCadastro);
 router.post("/buscaPreCadastro", garagemWeb.buscaPreCadastro);
 router.post("/updatePreCadastro", garagemWeb.updatePreCadastro);
 router.post("/importarGaraje", importarGaraje.importarGarajeManual);
+router.get("/importarGaraje/status/:jobId", importarGaraje.buscaStatusImportacaoGaraje);
 router.post("/excluirVeiculo", garagemWeb.excluirVeiculo);
 router.post("/buscaImgVeiculo", garagemWeb.buscaImgVeiculo);
 router.post("/salvaVeiculo", garagemWeb.salvaVeiculo);

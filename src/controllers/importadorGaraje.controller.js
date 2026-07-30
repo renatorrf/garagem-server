@@ -10,6 +10,7 @@
 
 const axios = require("axios");
 const cron = require("node-cron");
+const crypto = require("crypto");
 const { XMLParser } = require("fast-xml-parser");
 require("dotenv").config();
 const cloudinary = require("../services/Cloudinary.service");
@@ -32,6 +33,8 @@ const DEFAULT_SCHEMA = resolveSchemaValue(
   process.env.SCHEMA_PADRAO || "nextcar",
 );
 const TIMEZONE = process.env.TZ || "America/Sao_Paulo";
+const IMPORT_JOB_TTL_MS = 30 * 60 * 1000;
+const garajeImportJobs = new Map();
 
 // ------------------------------------
 // Helpers
@@ -790,6 +793,128 @@ async function importarGarajeJob({
   };
 }
 
+function getAsyncFlag(value) {
+  return value === true || value === "true" || value === "1" || value === 1;
+}
+
+function cleanupImportJobs() {
+  const now = Date.now();
+
+  for (const [jobId, job] of garajeImportJobs.entries()) {
+    const finishedAtMs = job.finishedAt ? Date.parse(job.finishedAt) : 0;
+
+    if (finishedAtMs && now - finishedAtMs > IMPORT_JOB_TTL_MS) {
+      garajeImportJobs.delete(jobId);
+    }
+  }
+}
+
+function serializeImportJob(job) {
+  const elapsedMs = job.finishedAt
+    ? Date.parse(job.finishedAt) - Date.parse(job.startedAt)
+    : Date.now() - Date.parse(job.startedAt);
+
+  return {
+    jobId: job.jobId,
+    status: job.status,
+    schema: job.schema,
+    url: job.url,
+    atualizarExistentes: job.atualizarExistentes,
+    reinserir: job.reinserir,
+    createdAt: job.createdAt,
+    startedAt: job.startedAt,
+    finishedAt: job.finishedAt,
+    elapsedMs,
+    result: job.result,
+    error: job.error,
+  };
+}
+
+function findActiveImportJob({ schema, url, atualizarExistentes, reinserir }) {
+  for (const job of garajeImportJobs.values()) {
+    const active = job.status === "running" || job.status === "queued";
+
+    if (
+      active &&
+      job.schema === schema &&
+      job.url === url &&
+      job.atualizarExistentes === atualizarExistentes &&
+      job.reinserir === reinserir
+    ) {
+      return job;
+    }
+  }
+
+  return null;
+}
+
+function startImportJob({ schema, url, atualizarExistentes, reinserir }) {
+  cleanupImportJobs();
+
+  const activeJob = findActiveImportJob({
+    schema,
+    url,
+    atualizarExistentes,
+    reinserir,
+  });
+
+  if (activeJob) {
+    return { job: activeJob, reused: true };
+  }
+
+  const now = new Date().toISOString();
+  const job = {
+    jobId: `${Date.now()}-${crypto.randomBytes(6).toString("hex")}`,
+    status: "running",
+    schema,
+    url,
+    atualizarExistentes,
+    reinserir,
+    createdAt: now,
+    startedAt: now,
+    finishedAt: null,
+    result: null,
+    error: null,
+  };
+
+  garajeImportJobs.set(job.jobId, job);
+
+  importarGarajeJob({
+    schema,
+    url,
+    atualizarExistentes,
+    reinserir,
+  })
+    .then((result) => {
+      job.status = "completed";
+      job.result = {
+        success: true,
+        schema,
+        url,
+        ...result,
+      };
+    })
+    .catch((error) => {
+      job.status = "failed";
+      job.error = {
+        message: error.message || "Falha ao importar",
+      };
+      console.error(`importarGaraje job ${job.jobId} erro:`, error);
+    })
+    .finally(() => {
+      job.finishedAt = new Date().toISOString();
+      const timer = setTimeout(() => {
+        garajeImportJobs.delete(job.jobId);
+      }, IMPORT_JOB_TTL_MS);
+
+      if (typeof timer.unref === "function") {
+        timer.unref();
+      }
+    });
+
+  return { job, reused: false };
+}
+
 // ------------------------------------
 // Endpoint manual
 // POST /importar-garaje  { url?: string, schema?: string }
@@ -806,6 +931,29 @@ exports.importarGarajeManual = async (req, res) => {
     req.body?.forceReinsert === true ||
     req.body?.forcarReinsercao === true ||
     req.body?.atualizarExistentes === true;
+  const asyncImport =
+    getAsyncFlag(req.body?.async) ||
+    getAsyncFlag(req.body?.assinc) ||
+    getAsyncFlag(req.body?.background) ||
+    getAsyncFlag(req.query?.async);
+
+  if (asyncImport && schema) {
+    const { job, reused } = startImportJob({
+      schema,
+      url,
+      atualizarExistentes,
+      reinserir,
+    });
+
+    return res.status(reused ? 200 : 202).json({
+      success: true,
+      async: true,
+      message: reused
+        ? "Importacao do Garaje ja esta em andamento."
+        : "Importacao do Garaje iniciada em segundo plano.",
+      ...serializeImportJob(job),
+    });
+  }
 
   if (!schema) {
     return res.status(400).json({
@@ -830,6 +978,27 @@ exports.importarGarajeManual = async (req, res) => {
       error: e.message,
     });
   }
+};
+
+exports.buscaStatusImportacaoGaraje = (req, res) => {
+  cleanupImportJobs();
+
+  const jobId = String(req.params?.jobId || req.query?.jobId || "").trim();
+  const job = garajeImportJobs.get(jobId);
+
+  if (!job) {
+    return res.status(404).json({
+      success: false,
+      message: "Importacao do Garaje nao encontrada ou expirada.",
+      jobId,
+    });
+  }
+
+  return res.status(200).json({
+    success: true,
+    async: true,
+    ...serializeImportJob(job),
+  });
 };
 
 // ------------------------------------
