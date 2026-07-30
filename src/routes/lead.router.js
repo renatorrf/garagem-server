@@ -30,6 +30,8 @@ router.post('/leads/search', leads.searchLeads);
 router.get('/leads/export', leads.exportLeads);
 router.post('/leads/assign', leads.assignToSeller);
 
+router.get('/vitrine/veiculos', leads.getPublicVehicleShowcase);
+router.post('/leads/app-nextcar', leads.createAppNextcarLead);
 router.post('/leads/interesse-cliente', leads.createClientInterestLead);
 router.post('/leads/simulacao-compra', leads.createSimulationLead);
 router.post('/leads/:id/retry-whatsapp', leads.retryWhatsApp);

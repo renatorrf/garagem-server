@@ -1,5 +1,6 @@
 const Lead = require("../models/leads");
 const crypto = require("crypto");
+const db = require("../config/database");
 const LeadWorkflowService = require("../services/LeadWorkflowService");
 const {
   isAllowedLeadRoomUser,
@@ -12,6 +13,15 @@ const {
 } = require("../utils/tenantContext");
 
 class LeadController {
+  resolvePublicSchema() {
+    return resolveSchemaValue(
+      process.env.PUBLIC_SHOWCASE_SCHEMA ||
+        process.env.PUBLIC_INTEREST_SCHEMA ||
+        process.env.SCHEMA_PADRAO ||
+        "nextcar",
+    );
+  }
+
   async getLeads(req, res) {
     try {
       const {
@@ -247,6 +257,293 @@ class LeadController {
       } catch (workflowError) {
         console.error(
           `Falha ao iniciar workflow do interesse publico ${savedLead.id}:`,
+          workflowError.message,
+        );
+      }
+
+      return res.status(201).json({
+        success: true,
+        message: "Interesse registrado com sucesso.",
+        data: workflowResult || savedLead,
+      });
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  }
+
+  async getPublicVehicleShowcase(req, res) {
+    try {
+      const schema = this.resolvePublicSchema();
+      const limit = Math.min(
+        Math.max(parseInt(req.query.limit || "60", 10) || 60, 1),
+        120,
+      );
+
+      const query = `
+        WITH imagens AS (
+          SELECT
+            seq_veiculo,
+            ARRAY_REMOVE(ARRAY[
+              img_1_url, img_2_url, img_3_url, img_4_url,
+              img_5_url, img_6_url, img_7_url, img_8_url,
+              img_9_url, img_10_url, img_11_url, img_12_url
+            ], NULL) AS imagens
+          FROM ${schema}.tab_veiculo_imagem
+        )
+        SELECT
+          v.seq_veiculo,
+          v.des_veiculo,
+          v.marca,
+          v.modelo,
+          v.modelo_completo,
+          v.ano_fabricacao,
+          v.ano_modelo,
+          v.km,
+          v.val_venda_esperado,
+          v.cor,
+          v.combustivel,
+          v.cambio,
+          v.portas,
+          v.img_veiculo_capa_url,
+          COALESCE(i.imagens, ARRAY[]::text[]) AS imagens
+        FROM ${schema}.tab_veiculo v
+        LEFT JOIN imagens i ON i.seq_veiculo = v.seq_veiculo
+        WHERE v.ind_status = 'A'
+          AND COALESCE(v.ind_importado, false) = true
+          AND COALESCE(v.ind_excluido_garage, false) = false
+        ORDER BY v.seq_veiculo DESC
+        LIMIT $1;
+      `;
+
+      const result = await db.query(query, [limit]);
+      const veiculos = result.rows.map((row) => {
+        const imagens = Array.isArray(row.imagens)
+          ? row.imagens.filter(Boolean)
+          : [];
+        const imagemCapa = row.img_veiculo_capa_url || imagens[0] || null;
+        const descricao = [
+          row.marca,
+          row.modelo,
+          row.modelo_completo,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .replace(/\s+/g, " ")
+          .trim();
+
+        return {
+          seqVeiculo: row.seq_veiculo,
+          descricao: descricao || row.des_veiculo || "Veiculo Next Car",
+          marca: row.marca || null,
+          modelo: row.modelo || null,
+          versao: row.modelo_completo || null,
+          valor: row.val_venda_esperado,
+          km: row.km,
+          anoFabricacao: row.ano_fabricacao,
+          anoModelo: row.ano_modelo,
+          cor: row.cor || null,
+          combustivel: row.combustivel || null,
+          cambio: row.cambio || null,
+          portas: row.portas || null,
+          imagemCapa,
+          imagens,
+        };
+      });
+
+      return res.json({
+        success: true,
+        data: veiculos,
+        count: veiculos.length,
+      });
+    } catch (error) {
+      console.error("Erro ao buscar vitrine publica:", error);
+      return res.status(500).json({
+        success: false,
+        error: "Falha ao carregar vitrine de veiculos.",
+        details: error.message,
+      });
+    }
+  }
+
+  async createAppNextcarLead(req, res) {
+    try {
+      const body = req.body || {};
+      const nome = String(body.nome || body.name || "")
+        .trim()
+        .replace(/\s+/g, " ");
+      const telefone = String(body.whatsapp || body.telefone || body.phone || "")
+        .replace(/\D/g, "");
+      const seqVeiculo = Number(body.seqVeiculo || body.seq_veiculo || 0) || null;
+      const veiculoInteresse = String(
+        body.veiculoInteresse || body.descricaoVeiculo || body.vehicle || "",
+      )
+        .trim()
+        .replace(/\s+/g, " ");
+      const pageUrl = String(body.pageUrl || body.url || "")
+        .trim()
+        .slice(0, 500);
+
+      if (nome.length < 3) {
+        return res.status(400).json({
+          success: false,
+          error: "Nome invalido.",
+        });
+      }
+
+      if (telefone.length < 10 || telefone.length > 13) {
+        return res.status(400).json({
+          success: false,
+          error: "WhatsApp invalido.",
+        });
+      }
+
+      if (!veiculoInteresse && !seqVeiculo) {
+        return res.status(400).json({
+          success: false,
+          error: "Veiculo de interesse nao informado.",
+        });
+      }
+
+      const schema = this.resolvePublicSchema();
+      const tenantId = null;
+      let vehicleSnapshot = null;
+
+      if (seqVeiculo) {
+        const vehicle = await db.getOne(
+          `
+          SELECT
+            seq_veiculo,
+            des_veiculo,
+            marca,
+            modelo,
+            modelo_completo,
+            ano_fabricacao,
+            ano_modelo,
+            km,
+            val_venda_esperado,
+            cor,
+            combustivel,
+            cambio,
+            img_veiculo_capa_url
+          FROM ${schema}.tab_veiculo
+          WHERE seq_veiculo = $1
+            AND ind_status = 'A'
+            AND COALESCE(ind_importado, false) = true
+            AND COALESCE(ind_excluido_garage, false) = false
+          LIMIT 1
+          `,
+          [seqVeiculo],
+        );
+
+        if (vehicle) {
+          const descricao = [
+            vehicle.marca,
+            vehicle.modelo,
+            vehicle.modelo_completo,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .replace(/\s+/g, " ")
+            .trim();
+
+          vehicleSnapshot = {
+            seqVeiculo: vehicle.seq_veiculo,
+            descricao: descricao || vehicle.des_veiculo || veiculoInteresse,
+            marca: vehicle.marca || null,
+            modelo: vehicle.modelo || null,
+            versao: vehicle.modelo_completo || null,
+            anoFabricacao: vehicle.ano_fabricacao || null,
+            anoModelo: vehicle.ano_modelo || null,
+            km: vehicle.km || null,
+            valor: vehicle.val_venda_esperado || null,
+            cor: vehicle.cor || null,
+            combustivel: vehicle.combustivel || null,
+            cambio: vehicle.cambio || null,
+            imagemCapa: vehicle.img_veiculo_capa_url || null,
+          };
+        }
+      }
+
+      const descricaoFinal =
+        vehicleSnapshot?.descricao ||
+        veiculoInteresse ||
+        "Veiculo Next Car";
+      const publicId = `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
+      const emailId = `app-nextcar-${publicId}`;
+      const receivedAt = new Date();
+      const valorTexto = vehicleSnapshot?.valor
+        ? `Valor anunciado: ${vehicleSnapshot.valor}`
+        : "Valor anunciado: nao informado";
+      const kmTexto = vehicleSnapshot?.km
+        ? `KM: ${vehicleSnapshot.km}`
+        : "KM: nao informado";
+      const anoTexto = vehicleSnapshot?.anoModelo || vehicleSnapshot?.anoFabricacao
+        ? `Ano: ${vehicleSnapshot?.anoFabricacao || ""}/${vehicleSnapshot?.anoModelo || ""}`
+        : "Ano: nao informado";
+
+      const leadData = {
+        emailId,
+        remetente: nome,
+        emailRemetente: `${emailId}@app-nextcar.local`,
+        assunto: "Interesse na vitrine Next Car",
+        telefone,
+        nome,
+        veiculoInteresse: descricaoFinal,
+        mensagem: [
+          "Cliente demonstrou interesse pela vitrine publica Next Car.",
+          `Veiculo: ${descricaoFinal}`,
+          valorTexto,
+          kmTexto,
+          anoTexto,
+        ].join("\n"),
+        origem: "app-nextcar",
+        status: "novo",
+        prioridade: "media",
+        dataRecebimento: receivedAt,
+        metadata: {
+          plataforma: "app-nextcar",
+          origem: "app-nextcar",
+          fonte: "vitrine-veiculos",
+          tipoClassificacao: "lead",
+          classificadoComo: "lead",
+          appNextcar: {
+            route: "vitrine-veiculos",
+            pageUrl: pageUrl || null,
+            submittedAt: receivedAt.toISOString(),
+            userAgent: String(req.headers["user-agent"] || "").slice(0, 250),
+            vehicle: vehicleSnapshot || {
+              seqVeiculo,
+              descricao: descricaoFinal,
+            },
+          },
+        },
+        tags: ["app-nextcar", "vitrine", "garaje"],
+      };
+
+      const lead = new Lead({
+        ...leadData,
+        _schema: schema,
+        _tenantId: tenantId,
+      });
+      const savedLead = await lead.save({ schema, tenantId });
+
+      if (!savedLead) {
+        throw new Error("Nao foi possivel registrar o interesse.");
+      }
+
+      let workflowResult = null;
+
+      try {
+        workflowResult = await LeadWorkflowService.onNewLead(savedLead, {
+          schema,
+          tenantId,
+        });
+      } catch (workflowError) {
+        console.error(
+          `Falha ao iniciar workflow app-nextcar ${savedLead.id}:`,
           workflowError.message,
         );
       }
