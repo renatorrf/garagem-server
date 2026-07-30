@@ -760,7 +760,8 @@ exports.importarGarajeManual = async (req, res) => {
   const reinserir =
     req.body?.reinserir === true ||
     req.body?.forceReinsert === true ||
-    req.body?.forcarReinsercao === true;
+    req.body?.forcarReinsercao === true ||
+    req.body?.atualizarExistentes === true;
 
   if (!schema) {
     return res.status(400).json({

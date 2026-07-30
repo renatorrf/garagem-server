@@ -503,6 +503,23 @@ class LeadController {
       const pageUrl = String(body.pageUrl || body.url || "")
         .trim()
         .slice(0, 500);
+      const tipoInteresseRaw = String(
+        body.tipoInteresse || body.tipo_interesse || body.tipo || "interesse",
+      )
+        .trim()
+        .toLowerCase();
+      const isCounterOffer = [
+        "contra-proposta",
+        "contra_proposta",
+        "contraproposta",
+        "retencao",
+      ].includes(tipoInteresseRaw);
+      const valorContraProposta = this.parseCurrencyValue(
+        body.valorContraProposta ||
+          body.valor_contra_proposta ||
+          body.valorProposto ||
+          body.proposta,
+      );
 
       if (nome.length < 3) {
         return res.status(400).json({
