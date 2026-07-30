@@ -3,6 +3,7 @@
 /**
  * Importador Garaje (XML -> cadastraVeiculo)
  * - Evita duplicados por id_importacao
+ * - Permite atualizar dados e fotos de veiculos ja importados quando solicitado
  * - Copia imagens do Garaje para o Cloudinary e salva URLs
  * - Pode rodar manual (endpoint) e por cron (12h e 18h)
  */
@@ -91,28 +92,29 @@ async function mapWithConcurrency(items, limit, mapper) {
 /**
  * Checa se já existe id_importacao (evita duplicado)
  */
-async function jaImportado(schema, id_importacao) {
+async function buscaImportado(schema, id_importacao) {
   if (!id_importacao) return false;
 
   const q = `
-    SELECT 1
+    SELECT seq_veiculo, ind_status
     FROM ${schema}.tab_veiculo
     WHERE ind_importado = true
       AND id_importacao = $1
     LIMIT 1
   `;
   const r = await db.query(q, [id_importacao]);
-  return r.rowCount > 0;
+  return r.rows[0] || null;
 }
 
 /**
  * Copia imagem remota do Garaje para o Cloudinary
  */
-async function uploadGarajeImageToCloudinary(url, publicId) {
+async function uploadGarajeImageToCloudinary(url, publicId, { overwrite = false } = {}) {
   const result = await cloudinary.uploader.upload(url, {
     folder: "veiculos",
     public_id: publicId,
-    overwrite: false,
+    overwrite,
+    invalidate: overwrite,
     resource_type: "image",
     transformation: [
       { width: 1200, crop: "limit" },
@@ -128,7 +130,7 @@ async function uploadGarajeImageToCloudinary(url, publicId) {
  * Mapeia um <veiculo> do XML para o payload do cadastraVeiculo
  * - Copia fotos para o Cloudinary e devolve URLs finais
  */
-async function mapVeiculoToCadastroPayloadAsync(v) {
+async function mapVeiculoToCadastroPayloadAsync(v, { overwriteImages = false } = {}) {
   const id_importacao = normalizeText(v.id);
 
   const marca = normalizeText(v.marca);
@@ -171,7 +173,9 @@ async function mapVeiculoToCadastroPayloadAsync(v) {
       placa || chassis || id_importacao || `veiculo_${Date.now()}`;
     const publicId = `garaje/${publicIdBase}_${idx + 1}`;
 
-    const secureUrl = await uploadGarajeImageToCloudinary(url, publicId);
+    const secureUrl = await uploadGarajeImageToCloudinary(url, publicId, {
+      overwrite: overwriteImages,
+    });
 
     return {
       id: idx + 1,
@@ -215,6 +219,118 @@ async function mapVeiculoToCadastroPayloadAsync(v) {
   };
 }
 
+async function atualizarVeiculoImportado(schema, seqVeiculo, payload) {
+  const dataAtual = new Date().toISOString();
+  const { dados_veiculo, imagens_veiculo } = payload;
+
+  const imagensValidas = Array.isArray(imagens_veiculo)
+    ? imagens_veiculo.filter((img) => img && img.src).slice(0, 12)
+    : [];
+
+  const {
+    marca,
+    modelo,
+    modelo_completo,
+    ano_fabricacao,
+    ano_modelo,
+    placa,
+    chassis,
+    renavam,
+    cor,
+    combustivel,
+    motorizacao,
+    portas,
+    cambio,
+    km,
+    val_venda_esperado,
+    observacoes,
+    id_importacao,
+  } = dados_veiculo;
+
+  const veiculoFields = {
+    des_veiculo: `${marca ?? ""} ${modelo ?? ""}`.trim(),
+    observacoes,
+    img_veiculo_capa_url: imagensValidas?.[0]?.src ?? null,
+    val_venda_esperado,
+    renavam,
+    placa,
+    ano_fabricacao,
+    ano_modelo,
+    des_veiculo_completa:
+      `${marca ?? ""} ${modelo ?? ""} ${ano_fabricacao ?? ""} ${cor ?? ""}`.trim(),
+    chassis,
+    modelo,
+    modelo_completo,
+    marca,
+    cor,
+    km,
+    combustivel,
+    motorizacao,
+    portas,
+    cambio,
+    ind_importado: true,
+    id_importacao,
+    ind_excluido_garage: false,
+    dta_ultima_alteracao: dataAtual,
+  };
+
+  Object.keys(veiculoFields).forEach((key) => {
+    if (veiculoFields[key] === undefined) {
+      delete veiculoFields[key];
+    }
+  });
+
+  await db.transaction(async (client) => {
+    const values = Object.values(veiculoFields);
+    const setClause = Object.keys(veiculoFields)
+      .map((key, index) => `${key} = $${index + 1}`)
+      .join(", ");
+
+    values.push(seqVeiculo);
+
+    const updateVeiculoQuery = `
+      UPDATE ${schema}.tab_veiculo
+         SET ${setClause}
+       WHERE seq_veiculo = $${values.length}
+         AND ind_importado = true
+       RETURNING seq_veiculo;
+    `;
+
+    const veiculoResult = await client.query(updateVeiculoQuery, values);
+
+    if (veiculoResult.rowCount === 0) {
+      throw new Error("Veiculo importado nao encontrado para atualizacao");
+    }
+
+    await client.query(
+      `DELETE FROM ${schema}.tab_veiculo_imagem WHERE seq_veiculo = $1`,
+      [seqVeiculo],
+    );
+
+    if (imagensValidas.length > 0) {
+      const columns = ["seq_veiculo"];
+      const insertValues = [seqVeiculo];
+      const placeholders = ["$1"];
+
+      for (let i = 0; i < imagensValidas.length; i++) {
+        const imageIndex = i + 1;
+        columns.push(`img_${imageIndex}_url`);
+        insertValues.push(imagensValidas[i].src);
+        placeholders.push(`$${insertValues.length}`);
+      }
+
+      const insertImagensQuery = `
+        INSERT INTO ${schema}.tab_veiculo_imagem
+        (${columns.join(", ")})
+        VALUES
+        (${placeholders.join(", ")})
+      `;
+
+      await client.query(insertImagensQuery, insertValues);
+    }
+  });
+}
+
 /**
  * Reaproveita seu cadastraVeiculo (sem HTTP real)
  */
@@ -255,7 +371,7 @@ async function chamarCadastraVeiculo(schema, payload) {
 // ------------------------------------
 // Job principal
 // ------------------------------------
-async function importarGarajeJob({ schema, url }) {
+async function importarGarajeJob({ schema, url, atualizarExistentes = false }) {
   const json = await fetchGarajeXml(url);
 
   const veiculosNode = json?.estoque?.veiculo;
@@ -270,6 +386,7 @@ async function importarGarajeJob({ schema, url }) {
   }
 
   let importados = 0;
+  let atualizados = 0;
   let pulados = 0;
   let erros = 0;
 
@@ -297,13 +414,40 @@ async function importarGarajeJob({ schema, url }) {
     const idImp = normalizeText(v?.id);
 
     try {
-      if (await jaImportado(schema, idImp)) {
+      const existente = await buscaImportado(schema, idImp);
+
+      if (existente && !atualizarExistentes) {
         pulados++;
         detalhes.push({ id_importacao: idImp, status: "pulado" });
         continue;
       }
 
-      const payload = await mapVeiculoToCadastroPayloadAsync(v);
+      const payload = await mapVeiculoToCadastroPayloadAsync(v, {
+        overwriteImages: Boolean(existente && atualizarExistentes),
+      });
+
+      if (existente) {
+        if (existente.ind_status === "V") {
+          pulados++;
+          detalhes.push({
+            id_importacao: idImp,
+            seq_veiculo: existente.seq_veiculo,
+            status: "pulado_vendido",
+          });
+          continue;
+        }
+
+        await atualizarVeiculoImportado(schema, existente.seq_veiculo, payload);
+
+        atualizados++;
+        detalhes.push({
+          id_importacao: idImp,
+          seq_veiculo: existente.seq_veiculo,
+          status: "atualizado",
+          imgs: payload.imagens_veiculo.length,
+        });
+        continue;
+      }
 
       await chamarCadastraVeiculo(schema, payload);
 
@@ -326,6 +470,7 @@ async function importarGarajeJob({ schema, url }) {
   return {
     totalXml: veiculos.length,
     importados,
+    atualizados,
     pulados,
     erros,
     detalhes,
@@ -339,6 +484,10 @@ async function importarGarajeJob({ schema, url }) {
 exports.importarGarajeManual = async (req, res) => {
   const schema = req.body?.schema || req.headers["schema"] || DEFAULT_SCHEMA;
   const url = req.body?.url || DEFAULT_GARAJE_URL;
+  const atualizarExistentes =
+    req.body?.atualizarExistentes === true ||
+    req.body?.reinserir === true ||
+    req.body?.forceUpdate === true;
 
   if (!schema) {
     return res.status(400).json({
@@ -348,7 +497,7 @@ exports.importarGarajeManual = async (req, res) => {
   }
 
   try {
-    const result = await importarGarajeJob({ schema, url });
+    const result = await importarGarajeJob({ schema, url, atualizarExistentes });
     return res.status(200).json({ success: true, schema, url, ...result });
   } catch (e) {
     console.error("importarGarajeManual erro:", e);

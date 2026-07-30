@@ -22,6 +22,47 @@ class LeadController {
     );
   }
 
+  parseCurrencyValue(value) {
+    if (typeof value === "number") {
+      return Number.isFinite(value) ? value : null;
+    }
+
+    const raw = String(value || "").trim().toLowerCase();
+    if (!raw) return null;
+
+    const hasMil = /\bmil\b/.test(raw);
+    const numericText = raw.replace(/[^\d,.-]/g, "");
+    if (!numericText) return null;
+
+    const lastComma = numericText.lastIndexOf(",");
+    const lastDot = numericText.lastIndexOf(".");
+    let normalized = numericText;
+
+    if (lastComma > lastDot) {
+      normalized = numericText.replace(/\./g, "").replace(",", ".");
+    } else if (lastDot > -1 && /[.,]\d{3}$/.test(numericText)) {
+      normalized = numericText.replace(/[.,]/g, "");
+    } else {
+      normalized = numericText.replace(/,/g, "");
+    }
+
+    const parsed = Number(normalized);
+    if (!Number.isFinite(parsed)) return null;
+
+    return hasMil && parsed < 1000 ? parsed * 1000 : parsed;
+  }
+
+  formatCurrencyBR(value) {
+    const parsed = Number(value || 0);
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+      maximumFractionDigits: 0,
+    }).format(parsed);
+  }
+
   async getLeads(req, res) {
     try {
       const {
@@ -179,6 +220,23 @@ class LeadController {
       const pageUrl = String(body.pageUrl || body.url || "")
         .trim()
         .slice(0, 500);
+      const tipoInteresseRaw = String(
+        body.tipoInteresse || body.tipo_interesse || body.tipo || "interesse",
+      )
+        .trim()
+        .toLowerCase();
+      const isCounterOffer = [
+        "contra-proposta",
+        "contra_proposta",
+        "contraproposta",
+        "retencao",
+      ].includes(tipoInteresseRaw);
+      const valorContraProposta = this.parseCurrencyValue(
+        body.valorContraProposta ||
+          body.valor_contra_proposta ||
+          body.valorProposto ||
+          body.proposta,
+      );
 
       if (nome.length < 3) {
         return res.status(400).json({
@@ -307,6 +365,8 @@ class LeadController {
           v.combustivel,
           v.cambio,
           v.portas,
+          COALESCE(v.cliques, 0) AS cliques,
+          COALESCE(v.negociacoes_enviadas, 0) AS negociacoes_enviadas,
           v.img_veiculo_capa_url,
           COALESCE(i.imagens, ARRAY[]::text[]) AS imagens
         FROM ${schema}.tab_veiculo v
@@ -348,6 +408,8 @@ class LeadController {
           combustivel: row.combustivel || null,
           cambio: row.cambio || null,
           portas: row.portas || null,
+          cliques: Number(row.cliques || 0),
+          negociacoesEnviadas: Number(row.negociacoes_enviadas || 0),
           imagemCapa,
           imagens,
         };
@@ -363,6 +425,62 @@ class LeadController {
       return res.status(500).json({
         success: false,
         error: "Falha ao carregar vitrine de veiculos.",
+        details: error.message,
+      });
+    }
+  }
+
+  async registerVehicleShowcaseClick(req, res) {
+    try {
+      const schema = this.resolvePublicSchema();
+      const seqVeiculo =
+        Number(req.params.seqVeiculo || req.body?.seqVeiculo || req.body?.seq_veiculo || 0) ||
+        null;
+
+      if (!seqVeiculo) {
+        return res.status(400).json({
+          success: false,
+          error: "Veiculo nao informado.",
+        });
+      }
+
+      const result = await db.query(
+        `
+        UPDATE ${schema}.tab_veiculo
+           SET cliques = COALESCE(cliques, 0) + 1
+         WHERE seq_veiculo = $1
+           AND ind_status = 'A'
+           AND COALESCE(ind_importado, false) = true
+           AND COALESCE(ind_excluido_garage, false) = false
+         RETURNING
+           COALESCE(cliques, 0) AS cliques,
+           COALESCE(negociacoes_enviadas, 0) AS negociacoes_enviadas;
+        `,
+        [seqVeiculo],
+      );
+
+      if (result.rowCount === 0) {
+        return res.status(404).json({
+          success: false,
+          error: "Veiculo nao encontrado na vitrine.",
+        });
+      }
+
+      const row = result.rows[0];
+
+      return res.json({
+        success: true,
+        data: {
+          seqVeiculo,
+          cliques: Number(row.cliques || 0),
+          negociacoesEnviadas: Number(row.negociacoes_enviadas || 0),
+        },
+      });
+    } catch (error) {
+      console.error("Erro ao registrar clique da vitrine:", error);
+      return res.status(500).json({
+        success: false,
+        error: "Falha ao registrar clique.",
         details: error.message,
       });
     }
@@ -404,6 +522,13 @@ class LeadController {
         return res.status(400).json({
           success: false,
           error: "Veiculo de interesse nao informado.",
+        });
+      }
+
+      if (isCounterOffer && (!valorContraProposta || valorContraProposta <= 0)) {
+        return res.status(400).json({
+          success: false,
+          error: "Valor da contra-proposta nao informado.",
         });
       }
 
@@ -477,28 +602,40 @@ class LeadController {
       const valorTexto = vehicleSnapshot?.valor
         ? `Valor anunciado: ${vehicleSnapshot.valor}`
         : "Valor anunciado: nao informado";
+      const valorContraPropostaTexto = this.formatCurrencyBR(valorContraProposta);
       const kmTexto = vehicleSnapshot?.km
         ? `KM: ${vehicleSnapshot.km}`
         : "KM: nao informado";
       const anoTexto = vehicleSnapshot?.anoModelo || vehicleSnapshot?.anoFabricacao
         ? `Ano: ${vehicleSnapshot?.anoFabricacao || ""}/${vehicleSnapshot?.anoModelo || ""}`
         : "Ano: nao informado";
+      const mensagemLead = [
+        isCounterOffer
+          ? "Cliente saiu do formulario principal e enviou uma contra-proposta pela vitrine publica Next Car."
+          : "Cliente demonstrou interesse pela vitrine publica Next Car.",
+        `Veiculo: ${descricaoFinal}`,
+        valorTexto,
+        ...(isCounterOffer
+          ? [
+              `Contra-proposta: ${valorContraPropostaTexto}`,
+              "Contexto: cliente fechou o formulario inicial e informou um valor para negociacao.",
+            ]
+          : []),
+        kmTexto,
+        anoTexto,
+      ].join("\n");
 
       const leadData = {
         emailId,
         remetente: nome,
         emailRemetente: `${emailId}@app-nextcar.local`,
-        assunto: "Interesse na vitrine Next Car",
+        assunto: isCounterOffer
+          ? "Contra-proposta na vitrine Next Car"
+          : "Interesse na vitrine Next Car",
         telefone,
         nome,
         veiculoInteresse: descricaoFinal,
-        mensagem: [
-          "Cliente demonstrou interesse pela vitrine publica Next Car.",
-          `Veiculo: ${descricaoFinal}`,
-          valorTexto,
-          kmTexto,
-          anoTexto,
-        ].join("\n"),
+        mensagem: mensagemLead,
         origem: "app-nextcar",
         status: "novo",
         prioridade: "media",
@@ -511,6 +648,7 @@ class LeadController {
           classificadoComo: "lead",
           appNextcar: {
             route: "vitrine-veiculos",
+            tipoInteresse: isCounterOffer ? "contra-proposta" : "interesse",
             pageUrl: pageUrl || null,
             submittedAt: receivedAt.toISOString(),
             userAgent: String(req.headers["user-agent"] || "").slice(0, 250),
@@ -518,9 +656,22 @@ class LeadController {
               seqVeiculo,
               descricao: descricaoFinal,
             },
+            ...(isCounterOffer
+              ? {
+                  contraProposta: {
+                    valorProposto: valorContraProposta,
+                    valorPropostoTexto: valorContraPropostaTexto,
+                    valorAnunciado: vehicleSnapshot?.valor || null,
+                    valorAnunciadoTexto: this.formatCurrencyBR(vehicleSnapshot?.valor),
+                    origem: "modal-retencao",
+                  },
+                }
+              : {}),
           },
         },
-        tags: ["app-nextcar", "vitrine", "garaje"],
+        tags: isCounterOffer
+          ? ["app-nextcar", "vitrine", "garaje", "contra-proposta"]
+          : ["app-nextcar", "vitrine", "garaje"],
       };
 
       const lead = new Lead({
@@ -532,6 +683,27 @@ class LeadController {
 
       if (!savedLead) {
         throw new Error("Nao foi possivel registrar o interesse.");
+      }
+
+      if (seqVeiculo && vehicleSnapshot) {
+        try {
+          await db.query(
+            `
+            UPDATE ${schema}.tab_veiculo
+               SET negociacoes_enviadas = COALESCE(negociacoes_enviadas, 0) + 1
+             WHERE seq_veiculo = $1
+               AND ind_status = 'A'
+               AND COALESCE(ind_importado, false) = true
+               AND COALESCE(ind_excluido_garage, false) = false
+            `,
+            [seqVeiculo],
+          );
+        } catch (counterError) {
+          console.error(
+            `Falha ao atualizar contador de negociacao do veiculo ${seqVeiculo}:`,
+            counterError.message,
+          );
+        }
       }
 
       let workflowResult = null;

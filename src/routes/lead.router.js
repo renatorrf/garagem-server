@@ -34,6 +34,7 @@ router.get('/leads/export', leadHandler('exportLeads'));
 router.post('/leads/assign', leadHandler('assignToSeller'));
 
 router.get('/vitrine/veiculos', leadHandler('getPublicVehicleShowcase'));
+router.post('/vitrine/veiculos/:seqVeiculo/clique', leadHandler('registerVehicleShowcaseClick'));
 router.post('/leads/app-nextcar', leadHandler('createAppNextcarLead'));
 router.post('/leads/interesse-cliente', leadHandler('createClientInterestLead'));
 router.post('/leads/simulacao-compra', leadHandler('createSimulationLead'));
