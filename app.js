@@ -19,11 +19,36 @@ function captureRawBody(req, _res, buf) {
 /**
  * CORS
  */
-const corsOptions = {
-  origin: [
+const corsAllowedHeaders = [
+  "Content-Type",
+  "Authorization",
+  "schema",
+  "X-Tenant-Schema",
+  "X-Tenant-Id",
+  "X-Requested-With",
+  "Accept",
+  "Origin",
+  "x-push-user",
+];
+
+const corsAllowedMethods = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"];
+
+function normalizeOrigin(origin) {
+  if (!origin) return "";
+
+  try {
+    return new URL(origin).origin;
+  } catch (_) {
+    return String(origin).replace(/\/+$/, "");
+  }
+}
+
+const corsAllowedOrigins = new Set(
+  [
     "https://localhost:8100",
     "http://localhost:8100",
     "https://nextcarltda.web.app",
+    "https://nextcarltda.firebaseapp.com",
     "http://localhost:3000",
     "http://54.232.189.113:8100",
     "http://54.232.189.113:4000",
@@ -36,20 +61,30 @@ const corsOptions = {
     "http://localhost:8080",
     "https://primecarapp-465cd.web.app",
     "https://primecarapp-465cd.firebaseapp.com",
-    "https://viacep.com.br/ws/38400718/json/",
-  ].filter(Boolean),
+    ...(process.env.CORS_ORIGINS || "")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean),
+  ]
+    .filter(Boolean)
+    .map(normalizeOrigin),
+);
+
+function isCorsOriginAllowed(origin) {
+  if (!origin) return true;
+  return corsAllowedOrigins.has(normalizeOrigin(origin));
+}
+
+const corsOptions = {
+  origin(origin, callback) {
+    if (isCorsOriginAllowed(origin)) {
+      return callback(null, origin || true);
+    }
+
+    return callback(null, false);
+  },
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-  allowedHeaders: [
-    "Content-Type",
-    "Authorization",
-    "schema",
-    "X-Tenant-Schema",
-    "X-Tenant-Id",
-    "X-Requested-With",
-    "Accept",
-    "Origin",
-    "x-push-user"
-  ],
+  allowedHeaders: corsAllowedHeaders,
   credentials: true,
   optionsSuccessStatus: 200,
 };
@@ -57,6 +92,27 @@ const corsOptions = {
 /**
  * Middlewares
  */
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+
+  if (origin && isCorsOriginAllowed(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+    res.header("Vary", "Origin");
+    res.header("Access-Control-Allow-Credentials", "true");
+    res.header("Access-Control-Allow-Methods", corsAllowedMethods.join(","));
+    res.header(
+      "Access-Control-Allow-Headers",
+      req.headers["access-control-request-headers"] ||
+        corsAllowedHeaders.join(","),
+    );
+  }
+
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+
+  return next();
+});
 app.use(cors(corsOptions));
 app.use(express.json({ limit: "50mb", verify: captureRawBody }));
 app.use(
