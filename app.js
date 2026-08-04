@@ -198,6 +198,7 @@ const facebookLeadAdsRoutes = require("./src/routes/facebookLeadAds.routes");
 const facebookPatrocinioRoutes = require("./src/routes/facebookPatrocinio.routes");
 const pushNotificationsRoutes = require("./src/routes/pushNotifications.routes");
 const pushRoomRoutes = require("./src/routes/pushRoom.routes");
+const vehicleCreditSimulationRoutes = require("./src/routes/vehicleCreditSimulation.routes");
 const importadorGaraje = require("./src/controllers/importadorGaraje.controller");
 const authGaragemwebRoutes = require("./src/routes/authGaragemweb.routes");
 
@@ -214,6 +215,7 @@ app.use("/garagemweb/api/facebook/lead-ads", facebookLeadAdsRoutes);
 app.use("/garagemweb/api/facebook-patrocinio", facebookPatrocinioRoutes);
 app.use("/garagemweb/api/push", pushNotificationsRoutes);
 app.use("/garagemweb/api/push-room", pushRoomRoutes);
+app.use("/garagemweb/api/credito-veiculo", vehicleCreditSimulationRoutes);
 
 // WhatsApp webhook
 app.use("/webhooks/whatsapp", whatsappWebhookRoutes);

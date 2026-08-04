@@ -762,6 +762,7 @@ class LeadController {
         valorFinanciado,
         inadimplencia,
         cenarios,
+        creditoBancario,
         origem,
         mensagem,
       } = req.body || {};
@@ -802,6 +803,7 @@ class LeadController {
             valorFinanciado: Number(valorFinanciado || 0),
             inadimplencia: inadimplencia || null,
             cenarios: Array.isArray(cenarios) ? cenarios : [],
+            creditoBancario: creditoBancario || null,
           },
         },
       };
