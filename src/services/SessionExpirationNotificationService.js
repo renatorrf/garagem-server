@@ -29,6 +29,11 @@ class SessionExpirationNotificationService {
       ALTER TABLE public.login_sessions
       ADD COLUMN IF NOT EXISTS expiration_notified_at timestamp NULL
     `);
+
+    await db.query(`
+      ALTER TABLE public.login_sessions
+      ALTER COLUMN expires_at DROP NOT NULL
+    `);
   }
 
   static async notifyExpiringSessions() {

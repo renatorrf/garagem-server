@@ -20,7 +20,22 @@ const {
 
 const JWT_SECRET =
   process.env.JWT_SECRET || process.env.SECRET || "trocar-em-producao";
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
+const JWT_EXPIRES_IN = String(process.env.JWT_EXPIRES_IN || "7d").trim();
+const JWT_PAINEL_LEADS_EXPIRES_IN = String(
+  process.env.JWT_PAINEL_LEADS_EXPIRES_IN || "never",
+).trim();
+const JWT_EXPIRATION_DISABLED_VALUES = new Set([
+  "",
+  "0",
+  "false",
+  "no",
+  "none",
+  "never",
+  "off",
+  "disabled",
+  "sem-expiracao",
+  "sem_expiracao",
+]);
 const RP_NAME = process.env.WEBAUTHN_RP_NAME || "Next Car";
 const RP_ID =
   process.env.WEBAUTHN_RP_ID ||
@@ -32,6 +47,25 @@ const ORIGIN =
   "http://localhost:8100";
 
 const challengeStore = new Map();
+let loginSessionExpiryNullablePromise = null;
+
+function resolveAuthTokenExpiresIn(scope) {
+  const normalizedScope = String(scope || "")
+    .trim()
+    .toLowerCase();
+
+  if (["painel-leads", "portal-leads", "leads"].includes(normalizedScope)) {
+    return JWT_PAINEL_LEADS_EXPIRES_IN;
+  }
+
+  return JWT_EXPIRES_IN;
+}
+
+function isJwtExpirationDisabled(expiresIn) {
+  return JWT_EXPIRATION_DISABLED_VALUES.has(
+    String(expiresIn || "").trim().toLowerCase(),
+  );
+}
 
 function createSchemaFromCnpjOrName(nomeFantasia, cnpj) {
   const cnpjDigits = sanitizeDigits(cnpj);
@@ -46,29 +80,54 @@ function createSchemaFromCnpjOrName(nomeFantasia, cnpj) {
     .substring(0, 50);
 }
 
-function signAuthToken(user) {
-  return jwt.sign(
-    {
-      sub: user.id,
-      username: user.username,
-      tenantId: user.tenant_id,
-      schema: user.schema_name,
-      role: user.role,
-      masterUser: user.master_user,
-    },
-    JWT_SECRET,
-    { expiresIn: JWT_EXPIRES_IN },
-  );
+function signAuthToken(user, options = {}) {
+  const tokenScope = String(options.scope || "")
+    .trim()
+    .toLowerCase();
+  const payload = {
+    sub: user.id,
+    username: user.username,
+    tenantId: user.tenant_id,
+    schema: user.schema_name,
+    role: user.role,
+    masterUser: user.master_user,
+    scope: tokenScope || "app",
+  };
+  const expiresIn = resolveAuthTokenExpiresIn(tokenScope);
+
+  if (isJwtExpirationDisabled(expiresIn)) {
+    return jwt.sign(payload, JWT_SECRET);
+  }
+
+  return jwt.sign(payload, JWT_SECRET, { expiresIn });
 }
 
 function getAuthTokenExpiresAt(token) {
   const decoded = jwt.decode(token);
 
   if (!decoded?.exp) {
-    throw new Error("Token gerado sem data de expiraÃ§Ã£o.");
+    return null;
   }
 
   return new Date(Number(decoded.exp) * 1000);
+}
+
+async function ensureLoginSessionExpiryNullable() {
+  if (!loginSessionExpiryNullablePromise) {
+    loginSessionExpiryNullablePromise = db
+      .query(
+        `
+          ALTER TABLE public.login_sessions
+          ALTER COLUMN expires_at DROP NOT NULL
+        `,
+      )
+      .catch((error) => {
+        loginSessionExpiryNullablePromise = null;
+        throw error;
+      });
+  }
+
+  return loginSessionExpiryNullablePromise;
 }
 
 async function getUserByUsername(username) {
@@ -127,6 +186,10 @@ async function saveSession({
   userAgent,
   expiresAt,
 }) {
+  if (!expiresAt) {
+    await ensureLoginSessionExpiryNullable();
+  }
+
   const jwtId = crypto.randomUUID();
 
   await db.query(
@@ -356,7 +419,7 @@ exports.bootstrapMaster = async (req, res) => {
 
 exports.login = async (req, res) => {
   try {
-    const { username, password } = req.body || {};
+    const { username, password, scope } = req.body || {};
 
     if (!username || !password) {
       return res.status(400).json({
@@ -384,7 +447,7 @@ exports.login = async (req, res) => {
       });
     }
 
-    const token = signAuthToken(user);
+    const token = signAuthToken(user, { scope });
     const expiresAt = getAuthTokenExpiresAt(token);
     await saveSession({
       userId: user.id,
@@ -397,7 +460,7 @@ exports.login = async (req, res) => {
     return res.json({
       success: true,
       token,
-      expiresAt: expiresAt.toISOString(),
+      expiresAt: expiresAt ? expiresAt.toISOString() : null,
       user: {
         id: user.id,
         nome: user.nome,
@@ -698,7 +761,7 @@ exports.passkeyAuthenticateVerify = async (req, res) => {
     return res.json({
       success: true,
       token,
-      expiresAt: expiresAt.toISOString(),
+      expiresAt: expiresAt ? expiresAt.toISOString() : null,
       user: {
         id: user.id,
         nome: user.nome,
